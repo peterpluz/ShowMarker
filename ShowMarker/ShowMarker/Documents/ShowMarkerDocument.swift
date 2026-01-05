@@ -10,11 +10,16 @@ struct ShowMarkerDocument: FileDocument {
     init() {}
 
     init(configuration: ReadConfiguration) throws {
-        // позже загрузка
+        guard let data = configuration.file.regularFileContents else {
+            return
+        }
+
+        let decoded = try JSONDecoder().decode(Project.self, from: data)
+        self.project = decoded
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        // позже сохранение
-        FileWrapper(regularFileWithContents: Data())
+        let data = try JSONEncoder().encode(project)
+        return FileWrapper(regularFileWithContents: data)
     }
 }
