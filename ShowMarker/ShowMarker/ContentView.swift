@@ -9,7 +9,7 @@ struct ContentView: View {
             Text("Project")
                 .font(.headline)
 
-            TextField("Project name", text: $document.projectName)
+            TextField("Project name", text: $document.project.name)
                 .textFieldStyle(.roundedBorder)
                 .padding()
         }
