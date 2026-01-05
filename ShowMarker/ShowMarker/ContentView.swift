@@ -1,24 +1,18 @@
-//
-//  ContentView.swift
-//  ShowMarker
-//
-//  Created by Пётр Гущин on 05.01.2026.
-//
-
 import SwiftUI
 
 struct ContentView: View {
+
+    @Binding var document: ShowMarkerDocument
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        VStack(spacing: 20) {
+            Text("Project")
+                .font(.headline)
+
+            TextField("Project name", text: $document.projectName)
+                .textFieldStyle(.roundedBorder)
+                .padding()
         }
         .padding()
     }
-}
-
-#Preview {
-    ContentView()
 }
