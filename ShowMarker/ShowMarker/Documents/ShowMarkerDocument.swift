@@ -1,7 +1,17 @@
-//
-//  ShowMarkerDocument.swift
-//  ShowMarker
-//
-//  Created by Пётр Гущин on 05.01.2026.
-//
+import SwiftUI
+import UniformTypeIdentifiers
 
+struct ShowMarkerDocument: FileDocument {
+
+    static var readableContentTypes: [UTType] { [.data] }
+
+    init() {}
+
+    init(configuration: ReadConfiguration) throws {
+        // пока пусто
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data())
+    }
+}
