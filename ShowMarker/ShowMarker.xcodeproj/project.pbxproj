@@ -10,9 +10,23 @@
 		D07DD4A62F0BB1CE00C26BF6 /* ShowMarker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ShowMarker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D07DD4DE2F0BFD2500C26BF6 /* Exceptions for "ShowMarker" folder in "ShowMarker" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Documents/ShowMarkerUTType.swift,
+				Info.plist,
+			);
+			target = D07DD4A52F0BB1CE00C26BF6 /* ShowMarker */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D07DD4A82F0BB1CE00C26BF6 /* ShowMarker */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D07DD4DE2F0BFD2500C26BF6 /* Exceptions for "ShowMarker" folder in "ShowMarker" target */,
+			);
 			path = ShowMarker;
 			sourceTree = "<group>";
 		};
@@ -253,6 +267,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShowMarker/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -284,6 +299,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShowMarker/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
