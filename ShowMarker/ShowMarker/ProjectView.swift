@@ -4,6 +4,9 @@ struct ProjectView: View {
 
     @Binding var document: ShowMarkerDocument
 
+    @State private var isAddTimelinePresented = false
+    @State private var newTimelineName = ""
+
     var body: some View {
         VStack(spacing: 24) {
 
@@ -30,10 +33,22 @@ struct ProjectView: View {
             Spacer()
 
             Button("Создать таймлайн") {
-                // заглушка — логика позже
+                newTimelineName = ""
+                isAddTimelinePresented = true
             }
             .buttonStyle(.borderedProminent)
         }
         .padding()
+        .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
+            TextField("Название", text: $newTimelineName)
+
+            Button("Создать") {
+                let name = newTimelineName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                document.project.timelines.append(Timeline(name: name))
+            }
+
+            Button("Отмена", role: .cancel) {}
+        }
     }
 }
