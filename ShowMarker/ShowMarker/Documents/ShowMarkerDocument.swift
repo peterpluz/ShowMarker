@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
 struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.data] }
