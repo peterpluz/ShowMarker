@@ -12,60 +12,58 @@ struct ProjectView: View {
     @State private var timelineToRename: Timeline?
 
     var body: some View {
-        VStack(spacing: 24) {
-
-            Spacer()
-
+        List {
             if document.project.timelines.isEmpty {
                 VStack(spacing: 8) {
                     Text("Нет таймлайнов")
                         .foregroundColor(.secondary)
+
                     Text("Начните с создания таймлайна")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             } else {
-                List {
-                    ForEach(document.project.timelines) { timeline in
-                        NavigationLink {
-                            TimelineScreen(timeline: timeline)
-                        } label: {
-                            Text(timeline.name)
-                        }
-                        .contextMenu {
-                            Button(
-                                action: {
-                                    timelineToRename = timeline
-                                    renameTimelineName = timeline.name
-                                    isRenamePresented = true
-                                },
-                                label: {
-                                    Text("Переименовать")
-                                }
-                            )
-                        }
+                ForEach(document.project.timelines) { timeline in
+                    NavigationLink {
+                        TimelineScreen(timeline: timeline)
+                    } label: {
+                        TimelineRow(title: timeline.name)
                     }
-                    .onDelete { offsets in
-                        document.removeTimelines(at: offsets)
-                    }
-                    .onMove { source, destination in
-                        document.moveTimelines(from: source, to: destination)
+                    .contextMenu {
+                        Button("Переименовать") {
+                            timelineToRename = timeline
+                            renameTimelineName = timeline.name
+                            isRenamePresented = true
+                        }
                     }
                 }
-                .toolbar {
-                    EditButton()
+                .onDelete { offsets in
+                    document.removeTimelines(at: offsets)
+                }
+                .onMove { source, destination in
+                    document.moveTimelines(from: source, to: destination)
                 }
             }
+        }
+        .listStyle(.insetGrouped)
+        .toolbar {
+            EditButton()
+        }
 
-            Spacer()
-
+        // Кнопка — как в стандартных приложениях Apple
+        .safeAreaInset(edge: .bottom) {
             Button("Создать таймлайн") {
                 newTimelineName = ""
                 isAddTimelinePresented = true
             }
             .buttonStyle(.borderedProminent)
+            .padding()
+            .background(.ultraThinMaterial)
         }
-        .padding()
 
         // Создание таймлайна
         .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
