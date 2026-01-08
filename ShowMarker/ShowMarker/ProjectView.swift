@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ProjectView: View {
 
-    @ObservedObject var document: ShowMarkerDocument
+    @Binding var document: ShowMarkerDocument
 
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""

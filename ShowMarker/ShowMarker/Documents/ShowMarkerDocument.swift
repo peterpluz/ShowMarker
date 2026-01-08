@@ -1,28 +1,29 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import Combine
 
-@MainActor
-final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
+struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] {
         [.smark]
     }
 
-    // Весь файл целиком — единая точка истины
-    @Published private(set) var file: ProjectFile
+    // ЕДИНСТВЕННЫЙ source of truth
+    var file: ProjectFile
 
-    // Только чтение проекта для UI
+    // Удобный доступ для UI
     var project: Project {
-        file.project
+        get { file.project }
+        set { file.project = newValue }
     }
 
-    // MARK: - Init
+    // MARK: - New document
 
     init() {
         let project = Project(name: "New Project")
         self.file = ProjectFile(project: project)
     }
+
+    // MARK: - Open document
 
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
@@ -31,63 +32,41 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
             return
         }
 
-        let decodedFile = try JSONDecoder().decode(ProjectFile.self, from: data)
+        let decoded = try JSONDecoder().decode(ProjectFile.self, from: data)
 
-        switch decodedFile.formatVersion {
-        case 1:
-            self.file = decodedFile
-        default:
+        guard decoded.formatVersion == 1 else {
             throw CocoaError(.fileReadCorruptFile)
         }
+
+        self.file = decoded
     }
 
-    // MARK: - ReferenceFileDocument
+    // MARK: - Save
 
-    func snapshot(contentType: UTType) throws -> ProjectFile {
-        file
-    }
-
-    func fileWrapper(
-        snapshot: ProjectFile,
-        configuration: WriteConfiguration
-    ) throws -> FileWrapper {
-        let data = try JSONEncoder().encode(snapshot)
-        return .init(regularFileWithContents: data)
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        let data = try JSONEncoder().encode(file)
+        return FileWrapper(regularFileWithContents: data)
     }
 
     // MARK: - Mutations
-    // ❗️ВАЖНО: каждая мутация = новое присваивание file
 
-    func addTimeline(name: String) {
-        var updated = file
-        updated.project.timelines.append(Timeline(name: name))
-        file = updated
+    mutating func addTimeline(name: String) {
+        let timeline = Timeline(name: name)
+        file.project.timelines.append(timeline)
     }
 
-    func removeTimeline(id: UUID) {
-        var updated = file
-        updated.project.timelines.removeAll { $0.id == id }
-        file = updated
+    mutating func removeTimelines(at offsets: IndexSet) {
+        file.project.timelines.remove(atOffsets: offsets)
     }
 
-    func removeTimelines(at offsets: IndexSet) {
-        var updated = file
-        updated.project.timelines.remove(atOffsets: offsets)
-        file = updated
-    }
-
-    func renameTimeline(id: UUID, name: String) {
-        var updated = file
-        guard let index = updated.project.timelines.firstIndex(where: { $0.id == id }) else {
+    mutating func renameTimeline(id: UUID, name: String) {
+        guard let index = file.project.timelines.firstIndex(where: { $0.id == id }) else {
             return
         }
-        updated.project.timelines[index].name = name
-        file = updated
+        file.project.timelines[index].name = name
     }
 
-    func moveTimelines(from source: IndexSet, to destination: Int) {
-        var updated = file
-        updated.project.timelines.move(fromOffsets: source, toOffset: destination)
-        file = updated
+    mutating func moveTimelines(from source: IndexSet, to destination: Int) {
+        file.project.timelines.move(fromOffsets: source, toOffset: destination)
     }
 }
