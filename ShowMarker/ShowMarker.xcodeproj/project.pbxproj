@@ -14,7 +14,6 @@
 		D07DD4DE2F0BFD2500C26BF6 /* Exceptions for "ShowMarker" folder in "ShowMarker" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Documents/ShowMarkerUTType.swift,
 				Info.plist,
 			);
 			target = D07DD4A52F0BB1CE00C26BF6 /* ShowMarker */;
