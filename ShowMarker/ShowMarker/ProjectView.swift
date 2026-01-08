@@ -48,7 +48,7 @@ struct ProjectView: View {
             Button("Создать") {
                 let name = newTimelineName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty else { return }
-                document.project.timelines.append(Timeline(name: name))
+                document.addTimeline(name: name)
             }
             Button("Отмена", role: .cancel) {}
         }

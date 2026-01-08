@@ -11,11 +11,12 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
     // Храним весь файл целиком
     @Published private(set) var file: ProjectFile
 
-    // Удобный доступ для UI
+    // Доступ к проекту (только через document)
     var project: Project {
-        get { file.project }
-        set { file.project = newValue }
+        file.project
     }
+
+    // MARK: - Init
 
     // Создание нового документа
     init() {
@@ -33,7 +34,7 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
 
         let decoded = try JSONDecoder().decode(ProjectFile.self, from: data)
 
-        // Подготовка к будущим миграциям
+        // Контроль версии формата
         switch decoded.formatVersion {
         case 1:
             self.file = decoded
@@ -42,17 +43,32 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         }
     }
 
-    // Snapshot для сохранения
+    // MARK: - ReferenceFileDocument
+
     func snapshot(contentType: UTType) throws -> ProjectFile {
         file
     }
 
-    // Запись на диск
     func fileWrapper(
         snapshot: ProjectFile,
         configuration: WriteConfiguration
     ) throws -> FileWrapper {
         let data = try JSONEncoder().encode(snapshot)
         return .init(regularFileWithContents: data)
+    }
+
+    // MARK: - Project mutations (Единственная точка бизнес-логики)
+
+    func renameProject(_ name: String) {
+        file.project.name = name
+    }
+
+    func addTimeline(name: String) {
+        let timeline = Timeline(name: name)
+        file.project.timelines.append(timeline)
+    }
+
+    func removeTimeline(id: UUID) {
+        file.project.timelines.removeAll { $0.id == id }
     }
 }
