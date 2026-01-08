@@ -10,8 +10,13 @@ struct TimelineScreen: View {
     @State private var isPickerPresented = false
     @State private var waveform: [Float] = []
 
+    private var timelineIndex: Int? {
+        document.file.project.timelines.firstIndex { $0.id == timelineID }
+    }
+
     private var timeline: Timeline? {
-        document.file.project.timelines.first { $0.id == timelineID }
+        guard let index = timelineIndex else { return nil }
+        return document.file.project.timelines[index]
     }
 
     var body: some View {
@@ -24,10 +29,8 @@ struct TimelineScreen: View {
                 Text(audio.originalFileName)
                     .font(.callout)
 
-                Text(
-                    "Время: \(format(player.currentTime)) / \(format(player.duration))"
-                )
-                .foregroundColor(.secondary)
+                Text("Время: \(format(player.currentTime)) / \(format(player.duration))")
+                    .foregroundColor(.secondary)
 
                 Button(player.isPlaying ? "Pause" : "Play") {
                     player.isPlaying ? player.pause() : player.play()
@@ -40,8 +43,10 @@ struct TimelineScreen: View {
         .navigationTitle(timeline?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            Button(timeline?.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
+            Button {
                 isPickerPresented = true
+            } label: {
+                Text(timeline?.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл")
             }
             .buttonStyle(.borderedProminent)
             .padding()
@@ -56,10 +61,10 @@ struct TimelineScreen: View {
             await loadWaveform()
             loadAudioIfNeeded()
         }
-        .onChange(of: timeline?.audio?.relativePath) {
-            Task {
-                await loadWaveform()
-                loadAudioIfNeeded()
+        .onDisappear {
+            // ВАЖНО: через MainActor
+            Task { @MainActor in
+                player.stop()
             }
         }
     }
@@ -79,12 +84,13 @@ struct TimelineScreen: View {
         }
     }
 
-    // MARK: - Audio
+    // MARK: - Audio import
 
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
             case .success(let urls) = result,
-            let url = urls.first
+            let url = urls.first,
+            let index = timelineIndex
         else { return }
 
         Task {
@@ -92,9 +98,11 @@ struct TimelineScreen: View {
             let duration = try? await asset.load(.duration)
 
             do {
-                try document.addAudio(
-                    to: timelineID,
-                    sourceURL: url,
+                let relativePath = try AudioStorage.copyToProject(from: url)
+
+                document.file.project.timelines[index].audio = TimelineAudio(
+                    relativePath: relativePath,
+                    originalFileName: url.lastPathComponent,
                     duration: duration?.seconds ?? 0
                 )
             } catch {
@@ -104,10 +112,7 @@ struct TimelineScreen: View {
     }
 
     private func loadAudioIfNeeded() {
-        guard
-            let audio = timeline?.audio
-        else { return }
-
+        guard let audio = timeline?.audio else { return }
         let url = AudioStorage.url(for: audio.relativePath)
         try? player.load(url: url)
     }
