@@ -77,4 +77,9 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         }
         file.project.timelines[index].name = name
     }
+    // MARK: - Ordering
+
+    func moveTimelines(from source: IndexSet, to destination: Int) {
+        file.project.timelines.move(fromOffsets: source, toOffset: destination)
+    }
 }

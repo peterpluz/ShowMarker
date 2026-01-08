@@ -48,6 +48,12 @@ struct ProjectView: View {
                     .onDelete { offsets in
                         document.removeTimelines(at: offsets)
                     }
+                    .onMove { source, destination in
+                        document.moveTimelines(from: source, to: destination)
+                    }
+                }
+                .toolbar {
+                    EditButton()
                 }
             }
 
