@@ -28,22 +28,15 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    /// deinit ВСЕГДА nonisolated → только через Task
-    deinit {
-        Task { @MainActor in
-            stopInternal()
-        }
-    }
-
-    // MARK: - Session
-
     private func setupAudioSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default)
-        try? session.setActive(true)
+        do {
+            try session.setCategory(.playback, mode: .default)
+            try session.setActive(true)
+        } catch {
+            print("AudioSession setup failed:", error)
+        }
     }
-
-    // MARK: - Load
 
     func load(url: URL) throws {
         audioFile = try AVAudioFile(forReading: url)
@@ -55,12 +48,10 @@ final class AudioPlayer: ObservableObject {
         currentTime = 0
     }
 
-    // MARK: - Control
-
     func play() {
         guard let file = audioFile else { return }
 
-        stopInternal()
+        player.stop()
         player.scheduleFile(file, at: nil)
         player.play()
 
@@ -74,20 +65,12 @@ final class AudioPlayer: ObservableObject {
         stopTracking()
     }
 
-    /// Публичный безопасный stop
     func stop() {
-        stopInternal()
-    }
-
-    /// ❗️ ТОЛЬКО MainActor
-    private func stopInternal() {
         player.stop()
         isPlaying = false
         currentTime = 0
         stopTracking()
     }
-
-    // MARK: - Time tracking
 
     private func startTracking() {
         stopTracking()
@@ -109,7 +92,7 @@ final class AudioPlayer: ObservableObject {
         currentTime = Double(time.sampleTime) / time.sampleRate
 
         if currentTime >= duration {
-            stopInternal()
+            stop()
         }
     }
 }
