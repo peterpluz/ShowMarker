@@ -8,23 +8,21 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         [.smark]
     }
 
-    // Храним весь файл целиком
+    // Весь файл целиком
     @Published private(set) var file: ProjectFile
 
-    // Доступ к проекту (только через document)
+    // Только чтение проекта
     var project: Project {
         file.project
     }
 
     // MARK: - Init
 
-    // Создание нового документа
     init() {
         let project = Project(name: "New Project")
         self.file = ProjectFile(project: project)
     }
 
-    // Открытие существующего файла
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
             let project = Project(name: "New Project")
@@ -32,12 +30,12 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
             return
         }
 
-        let decoded = try JSONDecoder().decode(ProjectFile.self, from: data)
+        // ⚠️ ВАЖНО: decode вне main-actor
+        let decodedFile = try JSONDecoder().decode(ProjectFile.self, from: data)
 
-        // Контроль версии формата
-        switch decoded.formatVersion {
+        switch decodedFile.formatVersion {
         case 1:
-            self.file = decoded
+            self.file = decodedFile
         default:
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -57,11 +55,7 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         return .init(regularFileWithContents: data)
     }
 
-    // MARK: - Project mutations (Единственная точка бизнес-логики)
-
-    func renameProject(_ name: String) {
-        file.project.name = name
-    }
+    // MARK: - Mutations (ЕДИНСТВЕННАЯ точка изменений)
 
     func addTimeline(name: String) {
         let timeline = Timeline(name: name)
@@ -70,5 +64,17 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
 
     func removeTimeline(id: UUID) {
         file.project.timelines.removeAll { $0.id == id }
+    }
+
+    // ✅ НОВОЕ — для List.onDelete
+    func removeTimelines(at offsets: IndexSet) {
+        file.project.timelines.remove(atOffsets: offsets)
+    }
+
+    func renameTimeline(id: UUID, name: String) {
+        guard let index = file.project.timelines.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        file.project.timelines[index].name = name
     }
 }
