@@ -1,29 +1,33 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ShowMarkerDocument: FileDocument {
+@MainActor
+final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
 
     static var readableContentTypes: [UTType] {
         [.smark]
     }
 
-    var project: Project
+    @Published var project: Project
 
     init() {
         self.project = Project(name: "New Project")
     }
 
-    init(configuration: FileDocumentReadConfiguration) throws {
+    init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
             self.project = Project(name: "New Project")
             return
         }
-
         self.project = try JSONDecoder().decode(Project.self, from: data)
     }
 
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let data = try JSONEncoder().encode(project)
+    func snapshot(contentType: UTType) throws -> Project {
+        project
+    }
+
+    func fileWrapper(snapshot: Project, configuration: WriteConfiguration) throws -> FileWrapper {
+        let data = try JSONEncoder().encode(snapshot)
         return .init(regularFileWithContents: data)
     }
 }
