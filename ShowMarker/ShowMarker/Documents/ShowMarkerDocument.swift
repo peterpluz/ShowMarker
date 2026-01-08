@@ -9,6 +9,8 @@ struct ShowMarkerDocument: FileDocument {
 
     var file: ProjectFile
 
+    // MARK: - Init
+
     init() {
         self.file = ProjectFile(project: Project(name: "New Project"))
     }
@@ -24,6 +26,8 @@ struct ShowMarkerDocument: FileDocument {
             self.file = ProjectFile(project: Project(name: "New Project"))
         }
     }
+
+    // MARK: - Save
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let data = try JSONEncoder().encode(file)
@@ -53,13 +57,18 @@ struct ShowMarkerDocument: FileDocument {
 
     mutating func addAudio(
         to timelineID: UUID,
-        fileName: String,
+        sourceURL: URL,
         duration: Double
-    ) {
-        guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+    ) throws {
+        guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            return
+        }
+
+        let relativePath = try AudioStorage.copyToProject(from: sourceURL)
 
         file.project.timelines[index].audio = TimelineAudio(
-            fileName: fileName,
+            relativePath: relativePath,
+            originalFileName: sourceURL.lastPathComponent,
             duration: duration
         )
     }

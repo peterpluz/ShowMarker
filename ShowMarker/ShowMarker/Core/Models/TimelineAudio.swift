@@ -2,12 +2,18 @@ import Foundation
 
 struct TimelineAudio: Codable, Identifiable {
     let id: UUID
-    let fileName: String
+    let relativePath: String      // Audio/xxxx.ext
+    let originalFileName: String
     let duration: Double
 
-    init(fileName: String, duration: Double) {
+    init(
+        relativePath: String,
+        originalFileName: String,
+        duration: Double
+    ) {
         self.id = UUID()
-        self.fileName = fileName
+        self.relativePath = relativePath
+        self.originalFileName = originalFileName
         self.duration = duration
     }
 }

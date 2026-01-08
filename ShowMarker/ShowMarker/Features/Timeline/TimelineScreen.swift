@@ -58,7 +58,7 @@ struct TimelineScreen: View {
 
     private func audioState(_ timeline: Timeline) -> some View {
         VStack(spacing: 12) {
-            Text(timeline.audio?.fileName ?? "")
+            Text(timeline.audio?.originalFileName ?? "")
             Text("Длительность: \(format(timeline.audio?.duration ?? 0))")
                 .foregroundColor(.secondary)
         }
@@ -75,11 +75,15 @@ struct TimelineScreen: View {
             let asset = AVURLAsset(url: url)
             let duration = try? await asset.load(.duration)
 
-            document.addAudio(
-                to: timelineID,
-                fileName: url.lastPathComponent,
-                duration: duration?.seconds ?? 0
-            )
+            do {
+                try document.addAudio(
+                    to: timelineID,
+                    sourceURL: url,
+                    duration: duration?.seconds ?? 0
+                )
+            } catch {
+                print("Audio copy failed:", error)
+            }
         }
     }
 
