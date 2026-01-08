@@ -13,11 +13,10 @@ struct ProjectView: View {
 
     var body: some View {
         List {
-            if document.project.timelines.isEmpty {
+            if document.file.project.timelines.isEmpty {
                 VStack(spacing: 8) {
                     Text("Нет таймлайнов")
                         .foregroundColor(.secondary)
-
                     Text("Начните с создания таймлайна")
                         .font(.footnote)
                         .foregroundColor(.secondary)
@@ -25,11 +24,13 @@ struct ProjectView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
                 .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
             } else {
-                ForEach(document.project.timelines) { timeline in
+                ForEach(document.file.project.timelines) { timeline in
                     NavigationLink {
-                        TimelineScreen(timeline: timeline)
+                        TimelineScreen(
+                            document: $document,
+                            timelineID: timeline.id
+                        )
                     } label: {
                         TimelineRow(title: timeline.name)
                     }
@@ -41,49 +42,34 @@ struct ProjectView: View {
                         }
                     }
                 }
-                .onDelete { offsets in
-                    document.removeTimelines(at: offsets)
-                }
-                .onMove { source, destination in
-                    document.moveTimelines(from: source, to: destination)
-                }
+                .onDelete { document.removeTimelines(at: $0) }
+                .onMove { document.moveTimelines(from: $0, to: $1) }
             }
         }
-        .listStyle(.insetGrouped)
-        .toolbar {
-            EditButton()
-        }
-
-        // ✅ Кнопка закреплена корректно, без визуального разрыва в Dark Mode
+        .toolbar { EditButton() }
         .safeAreaInset(edge: .bottom) {
             Button("Создать таймлайн") {
-                newTimelineName = ""
                 isAddTimelinePresented = true
             }
             .buttonStyle(.borderedProminent)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
+            .padding()
         }
-
-        // Создание таймлайна
         .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
             TextField("Название", text: $newTimelineName)
             Button("Создать") {
-                let name = newTimelineName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = newTimelineName.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
                 document.addTimeline(name: name)
             }
             Button("Отмена", role: .cancel) {}
         }
-
-        // Переименование таймлайна
         .alert("Переименовать таймлайн", isPresented: $isRenamePresented) {
             TextField("Название", text: $renameTimelineName)
             Button("Сохранить") {
-                guard let timeline = timelineToRename else { return }
-                let name = renameTimelineName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let t = timelineToRename else { return }
+                let name = renameTimelineName.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
-                document.renameTimeline(id: timeline.id, name: name)
+                document.renameTimeline(id: t.id, name: name)
             }
             Button("Отмена", role: .cancel) {}
         }

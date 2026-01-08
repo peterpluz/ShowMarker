@@ -4,10 +4,17 @@ struct Timeline: Codable, Identifiable {
     let id: UUID
     var name: String
     let createdAt: Date
+    var audio: TimelineAudio?
 
-    init(name: String) {
-        self.id = UUID()
+    init(
+        id: UUID = UUID(),
+        name: String,
+        createdAt: Date = Date(),
+        audio: TimelineAudio? = nil
+    ) {
+        self.id = id
         self.name = name
-        self.createdAt = Date()
+        self.createdAt = createdAt
+        self.audio = audio
     }
 }
