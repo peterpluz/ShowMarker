@@ -2,16 +2,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 
+@MainActor
 final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
 
     static var readableContentTypes: [UTType] {
         [.smark]
     }
 
-    // Весь файл целиком
+    // Весь файл целиком — единая точка истины
     @Published private(set) var file: ProjectFile
 
-    // Только чтение проекта
+    // Только чтение проекта для UI
     var project: Project {
         file.project
     }
@@ -30,7 +31,6 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
             return
         }
 
-        // ⚠️ ВАЖНО: decode вне main-actor
         let decodedFile = try JSONDecoder().decode(ProjectFile.self, from: data)
 
         switch decodedFile.formatVersion {
@@ -55,31 +55,39 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         return .init(regularFileWithContents: data)
     }
 
-    // MARK: - Mutations (ЕДИНСТВЕННАЯ точка изменений)
+    // MARK: - Mutations
+    // ❗️ВАЖНО: каждая мутация = новое присваивание file
 
     func addTimeline(name: String) {
-        let timeline = Timeline(name: name)
-        file.project.timelines.append(timeline)
+        var updated = file
+        updated.project.timelines.append(Timeline(name: name))
+        file = updated
     }
 
     func removeTimeline(id: UUID) {
-        file.project.timelines.removeAll { $0.id == id }
+        var updated = file
+        updated.project.timelines.removeAll { $0.id == id }
+        file = updated
     }
 
-    // ✅ НОВОЕ — для List.onDelete
     func removeTimelines(at offsets: IndexSet) {
-        file.project.timelines.remove(atOffsets: offsets)
+        var updated = file
+        updated.project.timelines.remove(atOffsets: offsets)
+        file = updated
     }
 
     func renameTimeline(id: UUID, name: String) {
-        guard let index = file.project.timelines.firstIndex(where: { $0.id == id }) else {
+        var updated = file
+        guard let index = updated.project.timelines.firstIndex(where: { $0.id == id }) else {
             return
         }
-        file.project.timelines[index].name = name
+        updated.project.timelines[index].name = name
+        file = updated
     }
-    // MARK: - Ordering
 
     func moveTimelines(from source: IndexSet, to destination: Int) {
-        file.project.timelines.move(fromOffsets: source, toOffset: destination)
+        var updated = file
+        updated.project.timelines.move(fromOffsets: source, toOffset: destination)
+        file = updated
     }
 }

@@ -54,15 +54,15 @@ struct ProjectView: View {
             EditButton()
         }
 
-        // Кнопка — как в стандартных приложениях Apple
+        // ✅ Кнопка закреплена корректно, без визуального разрыва в Dark Mode
         .safeAreaInset(edge: .bottom) {
             Button("Создать таймлайн") {
                 newTimelineName = ""
                 isAddTimelinePresented = true
             }
             .buttonStyle(.borderedProminent)
-            .padding()
-            .background(.ultraThinMaterial)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
         }
 
         // Создание таймлайна
