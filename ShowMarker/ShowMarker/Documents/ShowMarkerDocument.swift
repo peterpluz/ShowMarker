@@ -13,10 +13,8 @@ struct ShowMarkerDocument: FileDocument {
         self.project = Project(name: "New Project")
     }
 
-    init(configuration: ReadConfiguration) throws {
-        guard
-            let data = configuration.file.regularFileContents
-        else {
+    init(configuration: FileDocumentReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
             self.project = Project(name: "New Project")
             return
         }

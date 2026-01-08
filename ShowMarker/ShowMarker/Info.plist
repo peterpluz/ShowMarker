@@ -2,20 +2,52 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>Application supports opening documents in place</key>
-	<true/>
-	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>ShowMarker Project</string>
-			<key>LSHandlerRank</key>
-			<string>Default</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.peterpluz.showmarker.smark</string>
-			</array>
-		</dict>
-	</array>
+
+    <!-- Обязательный ключ для document-based app -->
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+
+    <!-- Тип документа, который приложение открывает -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>ShowMarker Project</string>
+
+            <key>LSHandlerRank</key>
+            <string>Default</string>
+
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.peterpluz.showmarker.smark</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- РЕШАЮЩИЙ БЛОК: экспорт собственного UTType -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.peterpluz.showmarker.smark</string>
+
+            <key>UTTypeDescription</key>
+            <string>ShowMarker Project</string>
+
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>smark</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+
 </dict>
 </plist>
