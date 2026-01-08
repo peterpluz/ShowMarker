@@ -10,10 +10,6 @@ struct ProjectView: View {
     var body: some View {
         VStack(spacing: 24) {
 
-            Text(document.project.name)
-                .font(.title2)
-                .fontWeight(.semibold)
-
             Spacer()
 
             if document.project.timelines.isEmpty {
