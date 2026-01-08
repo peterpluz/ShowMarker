@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Combine
 
-@MainActor
 final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
 
     static var readableContentTypes: [UTType] {
@@ -26,7 +26,10 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         project
     }
 
-    func fileWrapper(snapshot: Project, configuration: WriteConfiguration) throws -> FileWrapper {
+    func fileWrapper(
+        snapshot: Project,
+        configuration: WriteConfiguration
+    ) throws -> FileWrapper {
         let data = try JSONEncoder().encode(snapshot)
         return .init(regularFileWithContents: data)
     }
