@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 @main
 struct ShowMarkerApp: App {
     var body: some Scene {

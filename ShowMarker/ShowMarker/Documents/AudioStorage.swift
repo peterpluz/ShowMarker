@@ -21,22 +21,16 @@ enum AudioStorage {
     }
 
     static func copyToProject(from sourceURL: URL) throws -> String {
-
-        let didStartAccess = sourceURL.startAccessingSecurityScopedResource()
-        defer {
-            if didStartAccess {
-                sourceURL.stopAccessingSecurityScopedResource()
-            }
-        }
-
         let ext = sourceURL.pathExtension
         let fileName = UUID().uuidString + "." + ext
 
         let targetURL = try audioDirectory()
             .appendingPathComponent(fileName)
 
-        let data = try Data(contentsOf: sourceURL)
-        try data.write(to: targetURL, options: .atomic)
+        try FileManager.default.copyItem(
+            at: sourceURL,
+            to: targetURL
+        )
 
         return "Audio/\(fileName)"
     }

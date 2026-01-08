@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
 
+@MainActor
 struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.smark] }
