@@ -1,6 +1,4 @@
 import SwiftUI
-import Foundation
-import UniformTypeIdentifiers
 import AVFoundation
 
 struct TimelineScreen: View {
@@ -8,38 +6,39 @@ struct TimelineScreen: View {
     @Binding var document: ShowMarkerDocument
     let timelineID: UUID
 
+    @StateObject private var player = AudioPlayer()
     @State private var isPickerPresented = false
     @State private var waveform: [Float] = []
 
-    private var timelineIndex: Int? {
-        document.file.project.timelines.firstIndex { $0.id == timelineID }
-    }
-
     private var timeline: Timeline? {
-        guard let index = timelineIndex else { return nil }
-        return document.file.project.timelines[index]
+        document.file.project.timelines.first { $0.id == timelineID }
     }
 
     var body: some View {
         VStack(spacing: 16) {
-            if let timeline {
-                if let audio = timeline.audio {
-                    WaveformView(samples: waveform)
 
-                    Text(audio.originalFileName)
-                        .font(.callout)
+            WaveformView(samples: waveform)
+                .overlay(playhead, alignment: .leading)
 
-                    Text("Длительность: \(format(audio.duration))")
-                        .foregroundColor(.secondary)
-                } else {
-                    emptyState
+            if let audio = timeline?.audio {
+                Text(audio.originalFileName)
+                    .font(.callout)
+
+                Text(
+                    "Время: \(format(player.currentTime)) / \(format(player.duration))"
+                )
+                .foregroundColor(.secondary)
+
+                Button(player.isPlaying ? "Pause" : "Play") {
+                    player.isPlaying ? player.pause() : player.play()
                 }
+            } else {
+                emptyState
             }
         }
         .padding()
         .navigationTitle(timeline?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
-
         .safeAreaInset(edge: .bottom) {
             Button(timeline?.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
                 isPickerPresented = true
@@ -47,40 +46,40 @@ struct TimelineScreen: View {
             .buttonStyle(.borderedProminent)
             .padding()
         }
-
         .fileImporter(
             isPresented: $isPickerPresented,
             allowedContentTypes: [.audio],
             allowsMultipleSelection: false,
             onCompletion: handleAudio
         )
-
         .task {
-            await loadWaveformIfNeeded()
+            await loadWaveform()
+            loadAudioIfNeeded()
         }
-
-        // ✅ АКТУАЛЬНЫЙ onChange (iOS 17+)
         .onChange(of: timeline?.audio?.relativePath) {
             Task {
-                await loadWaveformIfNeeded(force: true)
+                await loadWaveform()
+                loadAudioIfNeeded()
             }
         }
     }
 
-    // MARK: - Empty state
+    // MARK: - Playhead
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Text("Нет аудиофайла")
-                .foregroundColor(.secondary)
-            Text("Добавьте аудио для работы с таймлайном")
-                .font(.footnote)
-                .foregroundColor(.secondary)
+    private var playhead: some View {
+        GeometryReader { geo in
+            let progress = player.duration > 0
+                ? player.currentTime / player.duration
+                : 0
+
+            Rectangle()
+                .fill(Color.red)
+                .frame(width: 2)
+                .offset(x: geo.size.width * CGFloat(progress))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Audio import
+    // MARK: - Audio
 
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
@@ -104,26 +103,39 @@ struct TimelineScreen: View {
         }
     }
 
-    // MARK: - Waveform
-
-    @MainActor
-    private func loadWaveformIfNeeded(force: Bool = false) async {
+    private func loadAudioIfNeeded() {
         guard
-            let audio = timeline?.audio,
-            waveform.isEmpty || force
+            let audio = timeline?.audio
         else { return }
 
         let url = AudioStorage.url(for: audio.relativePath)
-
-        do {
-            let samples = try await WaveformLoader.loadSamples(from: url)
-            waveform = samples
-        } catch {
-            waveform = []
-        }
+        try? player.load(url: url)
     }
 
-    // MARK: - Helpers
+    // MARK: - Waveform
+
+    private func loadWaveform() async {
+        guard let audio = timeline?.audio else {
+            waveform = []
+            return
+        }
+
+        let url = AudioStorage.url(for: audio.relativePath)
+        waveform = (try? await WaveformLoader.loadSamples(from: url)) ?? []
+    }
+
+    // MARK: - UI
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Text("Нет аудиофайла")
+                .foregroundColor(.secondary)
+            Text("Добавьте аудио для работы с таймлайном")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
     private func format(_ seconds: Double) -> String {
         let m = Int(seconds) / 60
