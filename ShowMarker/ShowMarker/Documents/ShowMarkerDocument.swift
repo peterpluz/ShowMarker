@@ -2,19 +2,15 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
 
+@MainActor
 struct ShowMarkerDocument: FileDocument {
 
-    // MARK: - FileDocument requirements
-
-    static var readableContentTypes: [UTType] {
-        [.smark]
-    }
-
-    // MARK: - Model
+    static var readableContentTypes: [UTType] { [.smark] }
+    static var writableContentTypes: [UTType] { [.smark] }
 
     var file: ProjectFile
 
-    // MARK: - Init (new document)
+    // MARK: - New document
 
     init() {
         self.file = ProjectFile(
@@ -22,32 +18,44 @@ struct ShowMarkerDocument: FileDocument {
         )
     }
 
-    // MARK: - Init (open document)
+    // MARK: - Open existing package
 
     init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else {
-            self.file = ProjectFile(
-                project: Project(name: "New Project")
-            )
-            return
+        let wrapper = configuration.file
+
+        guard
+            wrapper.isDirectory,
+            let projectWrapper = wrapper.fileWrappers?["project.json"],
+            let data = projectWrapper.regularFileContents
+        else {
+            throw CocoaError(.fileReadCorruptFile)
         }
 
         self.file = try JSONDecoder().decode(ProjectFile.self, from: data)
     }
 
-    // MARK: - Save document
+    // MARK: - Save as package
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+
         let data = try JSONEncoder().encode(file)
-        return .init(regularFileWithContents: data)
+
+        let projectWrapper = FileWrapper(
+            regularFileWithContents: data
+        )
+        projectWrapper.preferredFilename = "project.json"
+
+        let root = FileWrapper(directoryWithFileWrappers: [
+            "project.json": projectWrapper
+        ])
+
+        return root
     }
 
-    // MARK: - Timeline operations
+    // MARK: - Timeline ops
 
     mutating func addTimeline(name: String) {
-        file.project.timelines.append(
-            Timeline(name: name)
-        )
+        file.project.timelines.append(Timeline(name: name))
     }
 
     mutating func renameTimeline(id: UUID, name: String) {
@@ -63,7 +71,7 @@ struct ShowMarkerDocument: FileDocument {
         file.project.timelines.move(fromOffsets: source, toOffset: destination)
     }
 
-    // MARK: - Audio
+    // MARK: - Audio (model only, storage later)
 
     mutating func addAudio(
         to timelineID: UUID,
@@ -75,41 +83,10 @@ struct ShowMarkerDocument: FileDocument {
             throw CocoaError(.fileNoSuchFile)
         }
 
-        let relativePath = try Self.copyAudioToDocuments(sourceURL)
-
         file.project.timelines[index].audio = TimelineAudio(
-            relativePath: relativePath,
+            relativePath: "",
             originalFileName: sourceURL.lastPathComponent,
             duration: duration
         )
-    }
-
-    // MARK: - Audio storage
-
-    private static func copyAudioToDocuments(_ sourceURL: URL) throws -> String {
-        let fm = FileManager.default
-
-        let documents = try fm.url(
-            for: .documentDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-
-        let audioDir = documents.appendingPathComponent("ShowMarkerAudio", isDirectory: true)
-
-        if !fm.fileExists(atPath: audioDir.path) {
-            try fm.createDirectory(
-                at: audioDir,
-                withIntermediateDirectories: true
-            )
-        }
-
-        let fileName = UUID().uuidString + "_" + sourceURL.lastPathComponent
-        let destinationURL = audioDir.appendingPathComponent(fileName)
-
-        try fm.copyItem(at: sourceURL, to: destinationURL)
-
-        return "ShowMarkerAudio/\(fileName)"
     }
 }
