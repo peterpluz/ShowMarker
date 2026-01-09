@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 
-    <!-- Разрешаем работу с документами "на месте" -->
+    <!-- Обязательный ключ для document-based app -->
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
 
-    <!-- Тип документа приложения -->
+    <!-- Тип документа, который приложение открывает -->
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -15,7 +15,7 @@
             <string>ShowMarker Project</string>
 
             <key>LSHandlerRank</key>
-            <string>Owner</string>
+            <string>Default</string>
 
             <key>LSItemContentTypes</key>
             <array>
@@ -24,7 +24,7 @@
         </dict>
     </array>
 
-    <!-- Экспорт собственного UTType -->
+    <!-- РЕШАЮЩИЙ БЛОК: экспорт собственного UTType -->
     <key>UTExportedTypeDeclarations</key>
     <array>
         <dict>
@@ -34,15 +34,10 @@
             <key>UTTypeDescription</key>
             <string>ShowMarker Project</string>
 
-            <!-- ВАЖНО: это package -->
             <key>UTTypeConformsTo</key>
             <array>
-                <string>public.package</string>
+                <string>public.data</string>
             </array>
-
-            <!-- ВАЖНО: система должна считать это пакетом -->
-            <key>UTTypeIsPackage</key>
-            <true/>
 
             <key>UTTypeTagSpecification</key>
             <dict>
