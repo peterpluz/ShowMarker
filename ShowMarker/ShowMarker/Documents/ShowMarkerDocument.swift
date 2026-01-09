@@ -2,7 +2,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
 
-@MainActor
 struct ShowMarkerDocument: FileDocument {
 
     // MARK: - FileDocument requirements

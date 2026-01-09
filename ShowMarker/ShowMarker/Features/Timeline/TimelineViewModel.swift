@@ -3,61 +3,64 @@ import SwiftUI
 import Combine
 
 /// ViewModel for a single timeline.
-/// Holds a Binding to the FileDocument so that mutations persist correctly.
-/// Uses manual objectWillChange publishing to notify views after changes.
+/// Keeps local @Published state to guarantee immediate UI updates.
+@MainActor
 final class TimelineViewModel: ObservableObject {
 
-    // We store the Binding explicitly (not @Binding property wrapper).
+    // MARK: - Published state (IMPORTANT)
+
+    @Published private(set) var audio: TimelineAudio?
+    @Published private(set) var name: String = ""
+
+    // MARK: - Dependencies
+
     private var document: Binding<ShowMarkerDocument>
     let timelineID: UUID
 
-    // Manual publisher for ObservableObject
-    let objectWillChange = ObservableObjectPublisher()
+    // MARK: - Init
 
     init(document: Binding<ShowMarkerDocument>, timelineID: UUID) {
         self.document = document
         self.timelineID = timelineID
-    }
-
-    // MARK: - Accessors
-
-    var timeline: Timeline? {
-        guard let index = timelineIndex else { return nil }
-        return document.wrappedValue.file.project.timelines[index]
-    }
-
-    var name: String {
-        timeline?.name ?? ""
-    }
-
-    var audio: TimelineAudio? {
-        timeline?.audio
+        syncFromDocument()
     }
 
     // MARK: - Actions
 
-    /// Adds audio to the timeline and writes change back to the binding.
+    /// This method mutates the document; it is main-actor isolated.
     func addAudio(sourceURL: URL, duration: Double) throws {
-        // Work on a local copy (struct), mutate it, then write back.
         var doc = document.wrappedValue
-        try doc.addAudio(to: timelineID, sourceURL: sourceURL, duration: duration)
+        try doc.addAudio(
+            to: timelineID,
+            sourceURL: sourceURL,
+            duration: duration
+        )
         document.wrappedValue = doc
-
-        // notify SwiftUI observers
-        objectWillChange.send()
+        syncFromDocument()
     }
 
-    // Add other mutating helpers the same way, for example:
+    /// Rename helper — main-actor isolated
     func renameTimeline(name: String) {
         var doc = document.wrappedValue
         doc.renameTimeline(id: timelineID, name: name)
         document.wrappedValue = doc
-        objectWillChange.send()
+        syncFromDocument()
     }
 
-    // MARK: - Private
+    // MARK: - Sync
 
-    private var timelineIndex: Int? {
-        document.wrappedValue.file.project.timelines.firstIndex { $0.id == timelineID }
+    private func syncFromDocument() {
+        guard let timeline = document.wrappedValue
+            .file.project.timelines
+            .first(where: { $0.id == timelineID })
+        else {
+            // If timeline was removed, clear local state
+            self.name = ""
+            self.audio = nil
+            return
+        }
+
+        self.name = timeline.name
+        self.audio = timeline.audio
     }
 }

@@ -85,11 +85,13 @@ struct TimelineScreen: View {
         }
 
         Task {
+            // load duration asynchronously
             let asset = AVURLAsset(url: url)
             let duration = try? await asset.load(.duration)
 
             do {
-                try viewModel.addAudio(
+                // Вызов main-actor из не-main Task -> нужно await
+                try await viewModel.addAudio(
                     sourceURL: url,
                     duration: duration?.seconds ?? 0
                 )
