@@ -4,37 +4,33 @@ import AVFoundation
 
 struct TimelineScreen: View {
 
-    @Binding var document: ShowMarkerDocument
-    let timelineID: UUID
-
+    @StateObject private var viewModel: TimelineViewModel
     @State private var isPickerPresented = false
 
-    private var timelineIndex: Int? {
-        document.file.project.timelines.firstIndex { $0.id == timelineID }
-    }
-
-    private var timeline: Timeline? {
-        guard let index = timelineIndex else { return nil }
-        return document.file.project.timelines[index]
+    init(
+        document: Binding<ShowMarkerDocument>,
+        timelineID: UUID
+    ) {
+        _viewModel = StateObject(
+            wrappedValue: TimelineViewModel(
+                document: document,
+                timelineID: timelineID
+            )
+        )
     }
 
     var body: some View {
         VStack {
-            if let timeline {
-                if timeline.audio == nil {
-                    emptyState
-                } else {
-                    audioState(timeline)
-                }
+            if let audio = viewModel.audio {
+                audioState(audio)
             } else {
-                Text("Таймлайн не найден")
-                    .foregroundColor(.secondary)
+                emptyState
             }
         }
-        .navigationTitle(timeline?.name ?? "")
+        .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            Button(timeline?.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
+            Button(viewModel.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
                 isPickerPresented = true
             }
             .buttonStyle(.borderedProminent)
@@ -48,7 +44,7 @@ struct TimelineScreen: View {
         )
     }
 
-    // MARK: - States
+    // MARK: - UI States
 
     private var emptyState: some View {
         VStack(spacing: 8) {
@@ -61,16 +57,16 @@ struct TimelineScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func audioState(_ timeline: Timeline) -> some View {
+    private func audioState(_ audio: TimelineAudio) -> some View {
         VStack(spacing: 12) {
-            Text(timeline.audio?.originalFileName ?? "")
-            Text("Длительность: \(format(timeline.audio?.duration ?? 0))")
+            Text(audio.originalFileName)
+            Text("Длительность: \(format(audio.duration))")
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Actions
+    // MARK: - Audio Import (ВАЖНО)
 
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
@@ -78,13 +74,22 @@ struct TimelineScreen: View {
             let url = urls.first
         else { return }
 
+        // 🔴 ОБЯЗАТЕЛЬНО для fileImporter
+        guard url.startAccessingSecurityScopedResource() else {
+            print("Failed to access security scoped resource")
+            return
+        }
+
+        defer {
+            url.stopAccessingSecurityScopedResource()
+        }
+
         Task {
             let asset = AVURLAsset(url: url)
             let duration = try? await asset.load(.duration)
 
             do {
-                try document.addAudio(
-                    to: timelineID,
+                try viewModel.addAudio(
                     sourceURL: url,
                     duration: duration?.seconds ?? 0
                 )

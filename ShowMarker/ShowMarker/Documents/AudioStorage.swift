@@ -2,13 +2,10 @@ import Foundation
 
 enum AudioStorage {
 
-    static func audioDirectory() throws -> URL {
-        let docs = FileManager.default.urls(
-            for: .documentDirectory,
-            in: .userDomainMask
-        )[0]
-
-        let dir = docs.appendingPathComponent("Audio", isDirectory: true)
+    static func audioDirectory(documentURL: URL) throws -> URL {
+        let dir = documentURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("Audio", isDirectory: true)
 
         if !FileManager.default.fileExists(atPath: dir.path) {
             try FileManager.default.createDirectory(
@@ -20,12 +17,16 @@ enum AudioStorage {
         return dir
     }
 
-    static func copyToProject(from sourceURL: URL) throws -> String {
+    static func copyToProject(
+        from sourceURL: URL,
+        documentURL: URL
+    ) throws -> String {
+
         let ext = sourceURL.pathExtension
         let fileName = UUID().uuidString + "." + ext
 
-        let targetURL = try audioDirectory()
-            .appendingPathComponent(fileName)
+        let targetDir = try audioDirectory(documentURL: documentURL)
+        let targetURL = targetDir.appendingPathComponent(fileName)
 
         try FileManager.default.copyItem(
             at: sourceURL,
@@ -33,14 +34,5 @@ enum AudioStorage {
         )
 
         return "Audio/\(fileName)"
-    }
-
-    static func url(for relativePath: String) -> URL {
-        let docs = FileManager.default.urls(
-            for: .documentDirectory,
-            in: .userDomainMask
-        )[0]
-
-        return docs.appendingPathComponent(relativePath)
     }
 }
