@@ -4,7 +4,7 @@ import AVFoundation
 
 struct TimelineScreen: View {
 
-    @ObservedObject var document: ShowMarkerDocument
+    @Binding var document: ShowMarkerDocument
     let timelineID: UUID
 
     @State private var isPickerPresented = false

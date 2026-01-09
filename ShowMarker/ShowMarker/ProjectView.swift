@@ -2,8 +2,7 @@ import SwiftUI
 
 struct ProjectView: View {
 
-    // We receive the DocumentGroup wrapper and observe it.
-    @ObservedObject var document: ShowMarkerDocument
+    @Binding var document: ShowMarkerDocument
 
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
@@ -30,7 +29,7 @@ struct ProjectView: View {
                     ForEach(document.file.project.timelines) { timeline in
                         NavigationLink {
                             TimelineScreen(
-                                document: document,
+                                document: $document,
                                 timelineID: timeline.id
                             )
                         } label: {
