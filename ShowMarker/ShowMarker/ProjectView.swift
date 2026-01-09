@@ -2,7 +2,8 @@ import SwiftUI
 
 struct ProjectView: View {
 
-    @Binding var document: ShowMarkerDocument
+    // We receive the DocumentGroup wrapper and observe it.
+    @ObservedObject var document: ShowMarkerDocument
 
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
@@ -12,66 +13,69 @@ struct ProjectView: View {
     @State private var timelineToRename: Timeline?
 
     var body: some View {
-        List {
-            if document.file.project.timelines.isEmpty {
-                VStack(spacing: 8) {
-                    Text("Нет таймлайнов")
-                        .foregroundColor(.secondary)
-                    Text("Начните с создания таймлайна")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
-                .listRowSeparator(.hidden)
-            } else {
-                ForEach(document.file.project.timelines) { timeline in
-                    NavigationLink {
-                        TimelineScreen(
-                            document: $document,
-                            timelineID: timeline.id
-                        )
-                    } label: {
-                        TimelineRow(title: timeline.name)
+        NavigationView {
+            List {
+                if document.file.project.timelines.isEmpty {
+                    VStack(spacing: 8) {
+                        Text("Нет таймлайнов")
+                            .foregroundColor(.secondary)
+                        Text("Начните с создания таймлайна")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
-                    .contextMenu {
-                        Button("Переименовать") {
-                            timelineToRename = timeline
-                            renameTimelineName = timeline.name
-                            isRenamePresented = true
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+                    .listRowSeparator(.hidden)
+                } else {
+                    ForEach(document.file.project.timelines) { timeline in
+                        NavigationLink {
+                            TimelineScreen(
+                                document: document,
+                                timelineID: timeline.id
+                            )
+                        } label: {
+                            TimelineRow(title: timeline.name)
+                        }
+                        .contextMenu {
+                            Button("Переименовать") {
+                                timelineToRename = timeline
+                                renameTimelineName = timeline.name
+                                isRenamePresented = true
+                            }
                         }
                     }
+                    .onDelete { document.removeTimelines(at: $0) }
+                    .onMove { document.moveTimelines(from: $0, to: $1) }
                 }
-                .onDelete { document.removeTimelines(at: $0) }
-                .onMove { document.moveTimelines(from: $0, to: $1) }
             }
-        }
-        .toolbar { EditButton() }
-        .safeAreaInset(edge: .bottom) {
-            Button("Создать таймлайн") {
-                isAddTimelinePresented = true
+            .toolbar { EditButton() }
+            .safeAreaInset(edge: .bottom) {
+                Button("Создать таймлайн") {
+                    isAddTimelinePresented = true
+                }
+                .buttonStyle(.borderedProminent)
+                .padding()
             }
-            .buttonStyle(.borderedProminent)
-            .padding()
-        }
-        .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
-            TextField("Название", text: $newTimelineName)
-            Button("Создать") {
-                let name = newTimelineName.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return }
-                document.addTimeline(name: name)
+            .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
+                TextField("Название", text: $newTimelineName)
+                Button("Создать") {
+                    let name = newTimelineName.trimmingCharacters(in: .whitespaces)
+                    guard !name.isEmpty else { return }
+                    document.addTimeline(name: name)
+                    newTimelineName = ""
+                }
+                Button("Отмена", role: .cancel) {}
             }
-            Button("Отмена", role: .cancel) {}
-        }
-        .alert("Переименовать таймлайн", isPresented: $isRenamePresented) {
-            TextField("Название", text: $renameTimelineName)
-            Button("Сохранить") {
-                guard let t = timelineToRename else { return }
-                let name = renameTimelineName.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return }
-                document.renameTimeline(id: t.id, name: name)
+            .alert("Переименовать таймлайн", isPresented: $isRenamePresented) {
+                TextField("Название", text: $renameTimelineName)
+                Button("Сохранить") {
+                    guard let t = timelineToRename else { return }
+                    let name = renameTimelineName.trimmingCharacters(in: .whitespaces)
+                    guard !name.isEmpty else { return }
+                    document.renameTimeline(id: t.id, name: name)
+                }
+                Button("Отмена", role: .cancel) {}
             }
-            Button("Отмена", role: .cancel) {}
         }
     }
 }

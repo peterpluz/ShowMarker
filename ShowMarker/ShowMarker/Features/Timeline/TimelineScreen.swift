@@ -4,7 +4,7 @@ import AVFoundation
 
 struct TimelineScreen: View {
 
-    @Binding var document: ShowMarkerDocument
+    @ObservedObject var document: ShowMarkerDocument
     let timelineID: UUID
 
     @State private var isPickerPresented = false
@@ -26,6 +26,9 @@ struct TimelineScreen: View {
                 } else {
                     audioState(timeline)
                 }
+            } else {
+                Text("Таймлайн не найден")
+                    .foregroundColor(.secondary)
             }
         }
         .navigationTitle(timeline?.name ?? "")
@@ -44,6 +47,8 @@ struct TimelineScreen: View {
             onCompletion: handleAudio
         )
     }
+
+    // MARK: - States
 
     private var emptyState: some View {
         VStack(spacing: 8) {
@@ -64,6 +69,8 @@ struct TimelineScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    // MARK: - Actions
 
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
