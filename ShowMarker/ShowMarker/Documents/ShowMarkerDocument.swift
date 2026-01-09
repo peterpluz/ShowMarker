@@ -2,36 +2,57 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
 
-@MainActor
 struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.smark] }
 
     var file: ProjectFile
 
-    // MARK: - Init
+    // MARK: - Init (new)
 
     init() {
-        self.file = ProjectFile(project: Project(name: "New Project"))
+        self.file = ProjectFile(
+            project: Project(name: "New Project")
+        )
     }
+
+    // MARK: - Init (open)
 
     init(configuration: ReadConfiguration) throws {
-        if let data = configuration.file.regularFileContents {
-            let decoded = try JSONDecoder().decode(ProjectFile.self, from: data)
-            guard decoded.formatVersion == 1 else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-            self.file = decoded
-        } else {
-            self.file = ProjectFile(project: Project(name: "New Project"))
+        guard
+            let wrappers = configuration.file.fileWrappers,
+            let projectWrapper = wrappers["project.json"],
+            let data = projectWrapper.regularFileContents
+        else {
+            throw CocoaError(.fileReadCorruptFile)
         }
+
+        let decoded = try JSONDecoder().decode(ProjectFile.self, from: data)
+        guard decoded.formatVersion == 1 else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        self.file = decoded
     }
 
-    // MARK: - Save
+    // MARK: - Save (package)
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let data = try JSONEncoder().encode(file)
-        return FileWrapper(regularFileWithContents: data)
+
+        let projectData = try JSONEncoder().encode(file)
+
+        let wrappers: [String: FileWrapper] = [
+            "project.json": FileWrapper(
+                regularFileWithContents: projectData
+            ),
+            "Audio": FileWrapper(
+                directoryWithFileWrappers: [:]
+            )
+        ]
+
+        return FileWrapper(
+            directoryWithFileWrappers: wrappers
+        )
     }
 
     // MARK: - Timelines
@@ -53,7 +74,7 @@ struct ShowMarkerDocument: FileDocument {
         file.project.timelines[index].name = name
     }
 
-    // MARK: - Audio
+    // MARK: - Audio (временно)
 
     mutating func addAudio(
         to timelineID: UUID,
