@@ -17,6 +17,10 @@
             <key>LSHandlerRank</key>
             <string>Default</string>
 
+            <!-- Пометить как package (полезно для macOS/Finder, не повредит iOS) -->
+            <key>LSItemIsPackage</key>
+            <true/>
+
             <key>LSItemContentTypes</key>
             <array>
                 <string>com.peterpluz.showmarker.smark</string>
@@ -24,7 +28,7 @@
         </dict>
     </array>
 
-    <!-- РЕШАЮЩИЙ БЛОК: экспорт собственного UTType -->
+    <!-- ЭКСПОРТ СОБСТВЕННОГО UTType -->
     <key>UTExportedTypeDeclarations</key>
     <array>
         <dict>
@@ -34,8 +38,10 @@
             <key>UTTypeDescription</key>
             <string>ShowMarker Project</string>
 
+            <!-- Сигнал системе: это package-подобный тип -->
             <key>UTTypeConformsTo</key>
             <array>
+                <string>com.apple.package</string>
                 <string>public.data</string>
             </array>
 
@@ -45,6 +51,8 @@
                 <array>
                     <string>smark</string>
                 </array>
+                <key>public.mime-type</key>
+                <string>application/x-showmarker</string>
             </dict>
         </dict>
     </array>
