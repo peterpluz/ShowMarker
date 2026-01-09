@@ -1,33 +1,43 @@
 import Foundation
 import SwiftUI
 import Combine
+import AVFoundation
 
-/// ViewModel for a single timeline.
-/// Keeps local @Published state to guarantee immediate UI updates.
 @MainActor
 final class TimelineViewModel: ObservableObject {
-
-    // MARK: - Published state (IMPORTANT)
 
     @Published private(set) var audio: TimelineAudio?
     @Published private(set) var name: String = ""
 
-    // MARK: - Dependencies
+    // Player state
+    @Published var currentTime: Double = 0
+    @Published var isPlaying: Bool = false
+
+    private let player = AudioPlayerService()
+    private var cancellables = Set<AnyCancellable>()
 
     private var document: Binding<ShowMarkerDocument>
     let timelineID: UUID
 
-    // MARK: - Init
-
     init(document: Binding<ShowMarkerDocument>, timelineID: UUID) {
         self.document = document
         self.timelineID = timelineID
+        bindPlayer()
         syncFromDocument()
+    }
+
+    // MARK: - Player binding
+
+    private func bindPlayer() {
+        player.$currentTime
+            .assign(to: &$currentTime)
+
+        player.$isPlaying
+            .assign(to: &$isPlaying)
     }
 
     // MARK: - Actions
 
-    /// This method mutates the document; it is main-actor isolated.
     func addAudio(sourceURL: URL, duration: Double) throws {
         var doc = document.wrappedValue
         try doc.addAudio(
@@ -37,9 +47,22 @@ final class TimelineViewModel: ObservableObject {
         )
         document.wrappedValue = doc
         syncFromDocument()
+
+        try player.load(url: sourceURL)
     }
 
-    /// Rename helper — main-actor isolated
+    func togglePlayPause() {
+        player.togglePlayPause()
+    }
+
+    func seekBackward() {
+        player.seek(by: -5)
+    }
+
+    func seekForward() {
+        player.seek(by: 5)
+    }
+
     func renameTimeline(name: String) {
         var doc = document.wrappedValue
         doc.renameTimeline(id: timelineID, name: name)
@@ -54,7 +77,6 @@ final class TimelineViewModel: ObservableObject {
             .file.project.timelines
             .first(where: { $0.id == timelineID })
         else {
-            // If timeline was removed, clear local state
             self.name = ""
             self.audio = nil
             return
@@ -62,5 +84,25 @@ final class TimelineViewModel: ObservableObject {
 
         self.name = timeline.name
         self.audio = timeline.audio
+    }
+
+    // MARK: - Timecode
+
+    func timecode(fps: Int = 30) -> String {
+        let totalFrames = Int(currentTime * Double(fps))
+
+        let frames = totalFrames % fps
+        let totalSeconds = totalFrames / fps
+
+        let seconds = totalSeconds % 60
+        let totalMinutes = totalSeconds / 60
+
+        let minutes = totalMinutes % 60
+        let hours = totalMinutes / 60
+
+        return String(
+            format: "%02d:%02d:%02d:%02d",
+            hours, minutes, seconds, frames
+        )
     }
 }

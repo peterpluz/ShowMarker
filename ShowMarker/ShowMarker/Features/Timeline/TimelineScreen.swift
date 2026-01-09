@@ -20,12 +20,41 @@ struct TimelineScreen: View {
     }
 
     var body: some View {
-        VStack {
-            if let audio = viewModel.audio {
-                audioState(audio)
-            } else {
-                emptyState
+        VStack(spacing: 24) {
+
+            // Placeholder for waveform
+            Rectangle()
+                .fill(Color.secondary.opacity(0.15))
+                .frame(height: 160)
+                .overlay(Text("Waveform").foregroundColor(.secondary))
+
+            // Timecode
+            Text(viewModel.timecode())
+                .font(.system(.title2, design: .monospaced))
+
+            // Controls
+            HStack(spacing: 32) {
+                Button {
+                    viewModel.seekBackward()
+                } label: {
+                    Image(systemName: "gobackward.5")
+                }
+
+                Button {
+                    viewModel.togglePlayPause()
+                } label: {
+                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                }
+
+                Button {
+                    viewModel.seekForward()
+                } label: {
+                    Image(systemName: "goforward.5")
+                }
             }
+            .font(.title2)
+
+            Spacer()
         }
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -44,66 +73,27 @@ struct TimelineScreen: View {
         )
     }
 
-    // MARK: - UI States
-
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Text("Нет аудиофайла")
-                .foregroundColor(.secondary)
-            Text("Добавьте аудио для работы с таймлайном")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func audioState(_ audio: TimelineAudio) -> some View {
-        VStack(spacing: 12) {
-            Text(audio.originalFileName)
-            Text("Длительность: \(format(audio.duration))")
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: - Audio Import (ВАЖНО)
-
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
             case .success(let urls) = result,
             let url = urls.first
         else { return }
 
-        // 🔴 ОБЯЗАТЕЛЬНО для fileImporter
-        guard url.startAccessingSecurityScopedResource() else {
-            print("Failed to access security scoped resource")
-            return
-        }
-
-        defer {
-            url.stopAccessingSecurityScopedResource()
-        }
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
 
         Task {
-            // load duration asynchronously
             let asset = AVURLAsset(url: url)
             let duration = try? await asset.load(.duration)
 
             do {
-                // Вызов main-actor из не-main Task -> нужно await
-                try await viewModel.addAudio(
+                try viewModel.addAudio(
                     sourceURL: url,
                     duration: duration?.seconds ?? 0
                 )
             } catch {
-                print("Audio copy failed:", error)
+                print("Audio error:", error)
             }
         }
-    }
-
-    private func format(_ seconds: Double) -> String {
-        let m = Int(seconds) / 60
-        let s = Int(seconds) % 60
-        return String(format: "%02d:%02d", m, s)
     }
 }
