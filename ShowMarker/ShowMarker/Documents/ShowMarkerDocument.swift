@@ -2,7 +2,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
 
-@MainActor
 struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.smark] }
@@ -45,11 +44,11 @@ struct ShowMarkerDocument: FileDocument {
         )
         projectWrapper.preferredFilename = "project.json"
 
-        let root = FileWrapper(directoryWithFileWrappers: [
-            "project.json": projectWrapper
-        ])
-
-        return root
+        return FileWrapper(
+            directoryWithFileWrappers: [
+                "project.json": projectWrapper
+            ]
+        )
     }
 
     // MARK: - Timeline ops
@@ -59,7 +58,9 @@ struct ShowMarkerDocument: FileDocument {
     }
 
     mutating func renameTimeline(id: UUID, name: String) {
-        guard let index = file.project.timelines.firstIndex(where: { $0.id == id }) else { return }
+        guard let index = file.project.timelines.firstIndex(where: { $0.id == id }) else {
+            return
+        }
         file.project.timelines[index].name = name
     }
 
@@ -71,7 +72,7 @@ struct ShowMarkerDocument: FileDocument {
         file.project.timelines.move(fromOffsets: source, toOffset: destination)
     }
 
-    // MARK: - Audio (model only, storage later)
+    // MARK: - Audio (model only, safe)
 
     mutating func addAudio(
         to timelineID: UUID,
