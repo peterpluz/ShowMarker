@@ -1,5 +1,6 @@
 import Foundation
 
+/// Чистая модель. НИКАКИХ actor / UI / Combine.
 struct ProjectFile: Codable {
     let formatVersion: Int
     var project: Project

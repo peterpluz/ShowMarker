@@ -7,10 +7,6 @@ struct ProjectView: View {
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
 
-    @State private var isRenamePresented = false
-    @State private var renameTimelineName = ""
-    @State private var timelineToRename: Timeline?
-
     var body: some View {
         List {
             if document.file.project.timelines.isEmpty {
@@ -35,8 +31,12 @@ struct ProjectView: View {
                         TimelineRow(title: timeline.name)
                     }
                 }
-                .onDelete { document.removeTimelines(at: $0) }
-                .onMove { document.moveTimelines(from: $0, to: $1) }
+                .onDelete { offsets in
+                    document.removeTimelines(at: offsets)
+                }
+                .onMove { from, to in
+                    document.moveTimelines(from: from, to: to)
+                }
             }
         }
         .toolbar { EditButton() }
@@ -53,6 +53,7 @@ struct ProjectView: View {
                 let name = newTimelineName.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
                 document.addTimeline(name: name)
+                newTimelineName = ""
             }
             Button("Отмена", role: .cancel) {}
         }
