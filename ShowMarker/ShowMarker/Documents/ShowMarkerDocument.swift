@@ -9,8 +9,9 @@ struct ShowMarkerDocument: FileDocument {
     static var writableContentTypes: [UTType] { [.smark] }
 
     var file: ProjectFile
+
     /// Map filename -> bytes for audio files included in the package.
-    /// Stored only in memory for the duration of editing; persisted in package via fileWrapper().
+    /// filename = UUID.ext (без путей)
     var audioFiles: [String: Data] = [:]
 
     // MARK: - New document
@@ -37,11 +38,14 @@ struct ShowMarkerDocument: FileDocument {
         self.file = try JSONDecoder().decode(ProjectFile.self, from: data)
         self.audioFiles = [:]
 
-        // Load any files from Audio/ into audioFiles
-        for (path, fw) in wrappers where path.hasPrefix("Audio/") {
-            if let bytes = fw.regularFileContents {
-                let fileName = URL(fileURLWithPath: path).lastPathComponent
-                audioFiles[fileName] = bytes
+        // Load Audio directory if exists
+        if let audioDir = wrappers["Audio"],
+           let audioWrappers = audioDir.fileWrappers {
+
+            for (fileName, fw) in audioWrappers {
+                if let bytes = fw.regularFileContents {
+                    audioFiles[fileName] = bytes
+                }
             }
         }
     }
@@ -49,25 +53,39 @@ struct ShowMarkerDocument: FileDocument {
     // MARK: - Save as package
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        // encode project.json
+
+        // project.json
         let projectData = try JSONEncoder().encode(file)
         let projectWrapper = FileWrapper(regularFileWithContents: projectData)
 
-        var wrappers: [String: FileWrapper] = [
+        var rootWrappers: [String: FileWrapper] = [
             "project.json": projectWrapper
         ]
 
-        for (fileName, data) in audioFiles {
-            wrappers["Audio/\(fileName)"] = FileWrapper(regularFileWithContents: data)
+        // Audio directory
+        if !audioFiles.isEmpty {
+            var audioWrappers: [String: FileWrapper] = [:]
+
+            for (fileName, data) in audioFiles {
+                audioWrappers[fileName] = FileWrapper(
+                    regularFileWithContents: data
+                )
+            }
+
+            rootWrappers["Audio"] = FileWrapper(
+                directoryWithFileWrappers: audioWrappers
+            )
         }
 
-        return FileWrapper(directoryWithFileWrappers: wrappers)
+        return FileWrapper(directoryWithFileWrappers: rootWrappers)
     }
 
-    // MARK: - Timeline ops (mutating)
+    // MARK: - Timeline ops
 
     mutating func addTimeline(name: String) {
-        file.project.timelines.append(Timeline(name: name))
+        file.project.timelines.append(
+            Timeline(name: name)
+        )
     }
 
     mutating func renameTimeline(id: UUID, name: String) {
@@ -85,7 +103,12 @@ struct ShowMarkerDocument: FileDocument {
 
     // MARK: - Audio handling
 
-    mutating func addAudio(to timelineID: UUID, sourceURL: URL, duration: Double) throws {
+    mutating func addAudio(
+        to timelineID: UUID,
+        sourceURL: URL,
+        duration: Double
+    ) throws {
+
         guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -94,7 +117,7 @@ struct ShowMarkerDocument: FileDocument {
         let fileName = UUID().uuidString + "." + ext
         let data = try Data(contentsOf: sourceURL)
 
-        // store bytes in memory map (will be persisted on save)
+        // store bytes (persisted on save)
         audioFiles[fileName] = data
 
         file.project.timelines[index].audio = TimelineAudio(
