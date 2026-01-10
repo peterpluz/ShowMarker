@@ -22,10 +22,13 @@ struct TimelineScreen: View {
     var body: some View {
         VStack(spacing: 24) {
 
-            Rectangle()
-                .fill(Color.secondary.opacity(0.15))
-                .frame(height: 160)
-                .overlay(Text("Waveform").foregroundColor(.secondary))
+            TimelineBarView(
+                duration: viewModel.duration,
+                currentTime: viewModel.currentTime,
+                onSeek: { seconds in
+                    viewModel.seek(to: seconds)
+                }
+            )
 
             Text(viewModel.timecode())
                 .font(.system(.title2, design: .monospaced))
@@ -49,9 +52,6 @@ struct TimelineScreen: View {
         }
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
-        .onDisappear {
-            viewModel.onDisappear()
-        }
         .safeAreaInset(edge: .bottom) {
             Button(viewModel.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
                 isPickerPresented = true
@@ -79,7 +79,6 @@ struct TimelineScreen: View {
         Task {
             let asset = AVURLAsset(url: url)
             let duration = try? await asset.load(.duration)
-
             try? viewModel.addAudio(
                 sourceURL: url,
                 duration: duration?.seconds ?? 0

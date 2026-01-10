@@ -11,6 +11,10 @@ final class TimelineViewModel: ObservableObject {
     @Published var currentTime: Double = 0
     @Published var isPlaying: Bool = false
 
+    var duration: Double {
+        audio?.duration ?? 0
+    }
+
     private let player = AudioPlayerService()
     private var cancellables = Set<AnyCancellable>()
 
@@ -35,13 +39,21 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Lifecycle
+    // MARK: - Timeline control
 
-    func onDisappear() {
-        player.stop()
+    func seek(to seconds: Double) {
+        let delta = seconds - currentTime
+        player.seek(by: delta)
     }
 
-    // MARK: - Actions
+    func togglePlayPause() {
+        player.togglePlayPause()
+    }
+
+    func seekBackward() { player.seek(by: -5) }
+    func seekForward() { player.seek(by: 5) }
+
+    // MARK: - Audio
 
     func addAudio(sourceURL: URL, duration: Double) throws {
         var doc = document.wrappedValue
@@ -51,13 +63,6 @@ final class TimelineViewModel: ObservableObject {
 
         player.load(url: sourceURL)
     }
-
-    func togglePlayPause() {
-        player.togglePlayPause()
-    }
-
-    func seekBackward() { player.seek(by: -5) }
-    func seekForward() { player.seek(by: 5) }
 
     // MARK: - Sync
 
