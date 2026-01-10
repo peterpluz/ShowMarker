@@ -20,36 +20,44 @@ struct TimelineScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
-
-            TimelineBarView(
-                duration: viewModel.duration,
-                currentTime: viewModel.currentTime,
-                waveform: viewModel.waveform,
-                onSeek: { seconds in
-                    viewModel.seek(to: seconds)
-                }
-            )
-
-            Text(viewModel.timecode())
-                .font(.system(.title2, design: .monospaced))
-
-            HStack(spacing: 32) {
-                Button { viewModel.seekBackward() } label: {
-                    Image(systemName: "gobackward.5")
-                }
-
-                Button { viewModel.togglePlayPause() } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                }
-
-                Button { viewModel.seekForward() } label: {
-                    Image(systemName: "goforward.5")
-                }
+        GeometryReader { geo in
+            VStack {
+                Spacer()
             }
-            .font(.title2)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 18) {
 
-            Spacer()
+                    TimelineBarView(
+                        duration: viewModel.duration,
+                        currentTime: viewModel.currentTime,
+                        waveform: viewModel.waveform,
+                        onSeek: { viewModel.seek(to: $0) }
+                    )
+                    .frame(height: geo.size.height * 0.33)
+
+                    Text(viewModel.timecode())
+                        .font(.system(size: 30, weight: .bold, design: .default))
+                        .foregroundColor(.white)
+
+                    HStack(spacing: 44) {
+                        Button { viewModel.seekBackward() } label: {
+                            Image(systemName: "gobackward.5")
+                        }
+
+                        Button { viewModel.togglePlayPause() } label: {
+                            Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                        }
+
+                        Button { viewModel.seekForward() } label: {
+                            Image(systemName: "goforward.5")
+                        }
+                    }
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.white)
+                }
+                .padding()
+                .background(.ultraThinMaterial)
+            }
         }
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)

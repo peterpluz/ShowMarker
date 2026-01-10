@@ -8,7 +8,7 @@ struct TimelineBarView: View {
     let onSeek: (Double) -> Void
 
     // Timeline
-    private let barHeight: CGFloat = 60
+    private let barHeight: CGFloat = 140
     private let barWidth: CGFloat = 3
     private let spacing: CGFloat = 1
 
@@ -26,46 +26,50 @@ struct TimelineBarView: View {
     var body: some View {
         VStack(spacing: scaleSpacing) {
 
-            // TIMELINE
+            // === TIMELINE ===
             GeometryReader { geo in
                 let viewWidth = geo.size.width
                 let centerX = viewWidth / 2
                 let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
                 let secondsPerPixel = duration / Double(contentWidth)
+                let offsetX = centerX - timelineOffset(contentWidth: contentWidth)
 
                 ZStack {
 
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.secondary.opacity(0.12))
-                        .frame(height: barHeight)
+                    // 🔹 ФОН + ВЕЙВФОРМА = ЕДИНЫЙ СЛОЙ
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.secondary.opacity(0.12))
+                            .frame(
+                                width: contentWidth,
+                                height: barHeight
+                            )
 
-                    HStack(alignment: .center, spacing: spacing) {
-                        ForEach(waveform.indices, id: \.self) { i in
-                            Rectangle()
-                                .fill(Color.secondary.opacity(0.6))
-                                .frame(
-                                    width: barWidth,
-                                    height: max(4, CGFloat(waveform[i]) * barHeight)
-                                )
+                        HStack(alignment: .center, spacing: spacing) {
+                            ForEach(waveform.indices, id: \.self) { i in
+                                Rectangle()
+                                    .fill(Color.secondary.opacity(0.6))
+                                    .frame(
+                                        width: barWidth,
+                                        height: max(12, CGFloat(waveform[i]) * barHeight)
+                                    )
+                            }
                         }
+                        .frame(height: barHeight)
                     }
-                    .frame(height: barHeight)
-                    .offset(x: centerX - timelineOffset(contentWidth: contentWidth))
-                    .clipped()
+                    .offset(x: offsetX)
 
-                    // playhead line
+                    // 🔹 PLAYHEAD — ФИКСИРОВАН
                     Rectangle()
                         .fill(Color.accentColor)
                         .frame(width: playheadLineWidth, height: barHeight)
                         .position(x: centerX, y: barHeight / 2)
 
-                    // top dot
                     Circle()
                         .fill(Color.accentColor)
                         .frame(width: playheadDotSize, height: playheadDotSize)
                         .position(x: centerX, y: -playheadGap)
 
-                    // bottom dot
                     Circle()
                         .fill(Color.accentColor)
                         .frame(width: playheadDotSize, height: playheadDotSize)
@@ -89,7 +93,7 @@ struct TimelineBarView: View {
             }
             .frame(height: barHeight)
 
-            // TIME SCALE (как было до регрессий)
+            // === TIME SCALE ===
             GeometryReader { geo in
                 let viewWidth = geo.size.width
                 let centerX = viewWidth / 2
@@ -100,7 +104,10 @@ struct TimelineBarView: View {
                 let minorStep = majorStep / 4
 
                 ZStack(alignment: .leading) {
-                    ForEach(scaleMarks(majorStep: majorStep, minorStep: minorStep), id: \.time) { mark in
+                    ForEach(
+                        scaleMarks(majorStep: majorStep, minorStep: minorStep),
+                        id: \.time
+                    ) { mark in
                         VStack(spacing: 2) {
                             Rectangle()
                                 .fill(Color.secondary.opacity(mark.isMajor ? 0.8 : 0.4))
@@ -114,8 +121,8 @@ struct TimelineBarView: View {
                         }
                         .position(
                             x: centerX
-                               - timelineOffset(contentWidth: contentWidth)
-                               + CGFloat(mark.time) * pixelsPerSecond,
+                                - timelineOffset(contentWidth: contentWidth)
+                                + CGFloat(mark.time) * pixelsPerSecond,
                             y: scaleHeight / 2
                         )
                     }
