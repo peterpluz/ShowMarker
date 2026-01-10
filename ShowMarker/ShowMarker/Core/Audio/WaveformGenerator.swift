@@ -3,8 +3,7 @@ import AVFoundation
 
 enum WaveformGenerator {
 
-    /// Генерирует full-resolution пики (peak) из аудиофайла.
-    /// baseBucketSize — сколько PCM-сэмплов в одном пике (512–2048 обычно).
+    /// Apple-style RMS waveform
     static func generateFullResolutionPeaks(
         from url: URL,
         baseBucketSize: Int = 1024
@@ -31,13 +30,14 @@ enum WaveformGenerator {
         reader.add(output)
         reader.startReading()
 
-        var peaks: [Float] = []
-        var bucket: [Float] = []
-        bucket.reserveCapacity(baseBucketSize)
+        var values: [Float] = []
+        var sumSquares: Float = 0
+        var count: Int = 0
 
         while reader.status == .reading {
-            guard let sb = output.copyNextSampleBuffer(),
-                  let bb = CMSampleBufferGetDataBuffer(sb)
+            guard
+                let sb = output.copyNextSampleBuffer(),
+                let bb = CMSampleBufferGetDataBuffer(sb)
             else { break }
 
             let length = CMBlockBufferGetDataLength(bb)
@@ -53,33 +53,36 @@ enum WaveformGenerator {
             }
 
             let samples = data.withUnsafeBytes {
-                Array(
-                    UnsafeBufferPointer<Float>(
-                        start: $0.bindMemory(to: Float.self).baseAddress!,
-                        count: length / MemoryLayout<Float>.size
-                    )
+                UnsafeBufferPointer<Float>(
+                    start: $0.bindMemory(to: Float.self).baseAddress!,
+                    count: length / MemoryLayout<Float>.size
                 )
             }
 
             for s in samples {
-                bucket.append(abs(s))
-                if bucket.count >= baseBucketSize {
-                    peaks.append(bucket.max() ?? 0)
-                    bucket.removeAll(keepingCapacity: true)
+                sumSquares += s * s
+                count += 1
+
+                if count >= baseBucketSize {
+                    let rms = sqrt(sumSquares / Float(count))
+                    values.append(rms)
+                    sumSquares = 0
+                    count = 0
                 }
             }
 
             CMSampleBufferInvalidate(sb)
         }
 
-        if !bucket.isEmpty {
-            peaks.append(bucket.max() ?? 0)
+        if count > 0 {
+            let rms = sqrt(sumSquares / Float(count))
+            values.append(rms)
         }
 
-        return normalize(peaks)
+        return normalize(values)
     }
 
-    /// Строит mipmap уровни (каждый следующий — в 2 раза меньше)
+    /// Mipmaps как и раньше
     static func buildMipmaps(from base: [Float]) -> [[Float]] {
         var levels: [[Float]] = [base]
         var current = base
@@ -92,7 +95,8 @@ enum WaveformGenerator {
             while i < current.count {
                 let end = min(i + 2, current.count)
                 let slice = current[i..<end]
-                next.append(slice.max() ?? 0)
+                let rms = sqrt(slice.map { $0 * $0 }.reduce(0, +) / Float(slice.count))
+                next.append(rms)
                 i += 2
             }
 
