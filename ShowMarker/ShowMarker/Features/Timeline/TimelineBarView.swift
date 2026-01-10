@@ -9,58 +9,60 @@ struct TimelineBarView: View {
 
     private let barHeight: CGFloat = 60
     private let playheadWidth: CGFloat = 2
+    private let spacing: CGFloat = 1
 
     var body: some View {
         GeometryReader { geo in
-            let width = geo.size.width
+            let viewWidth = geo.size.width
+            let contentWidth = CGFloat(waveform.count) * (barWidth + spacing)
+            let centerX = viewWidth / 2
 
-            ZStack(alignment: .leading) {
+            ZStack {
 
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.secondary.opacity(0.12))
                     .frame(height: barHeight)
 
-                if !waveform.isEmpty {
-                    HStack(alignment: .center, spacing: 1) {
-                        ForEach(waveform.indices, id: \.self) { i in
-                            Rectangle()
-                                .fill(Color.secondary.opacity(0.6))
-                                .frame(
-                                    width: barWidth(totalWidth: width),
-                                    height: max(4, CGFloat(waveform[i]) * barHeight)
-                                )
-                        }
+                HStack(alignment: .center, spacing: spacing) {
+                    ForEach(waveform.indices, id: \.self) { i in
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.6))
+                            .frame(
+                                width: barWidth,
+                                height: max(4, CGFloat(waveform[i]) * barHeight)
+                            )
                     }
-                    .frame(height: barHeight)
                 }
+                .frame(height: barHeight)
+                .offset(x: centerX - waveformOffset(contentWidth: contentWidth))
+                .clipped()
 
                 Rectangle()
                     .fill(Color.accentColor)
                     .frame(width: playheadWidth, height: barHeight)
-                    .offset(x: playheadX(totalWidth: width))
+                    .position(x: centerX, y: barHeight / 2)
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        let x = min(max(0, value.location.x), width)
-                        let seconds = (x / width) * duration
-                        onSeek(seconds)
+                        let delta = value.translation.width
+                        let secondsPerPoint = duration / contentWidth
+                        let seekSeconds = -Double(delta) * secondsPerPoint
+                        onSeek(currentTime + seekSeconds)
                     }
             )
         }
         .frame(height: barHeight)
     }
 
-    // MARK: - Helpers
-
-    private func playheadX(totalWidth: CGFloat) -> CGFloat {
-        guard duration > 0 else { return 0 }
-        return CGFloat(currentTime / duration) * totalWidth
+    private var barWidth: CGFloat {
+        3
     }
 
-    private func barWidth(totalWidth: CGFloat) -> CGFloat {
-        guard !waveform.isEmpty else { return 1 }
-        return totalWidth / CGFloat(waveform.count)
+    private func waveformOffset(contentWidth: CGFloat) -> CGFloat {
+        guard duration > 0 else { return 0 }
+        let progress = currentTime / duration
+        return CGFloat(progress) * contentWidth
     }
 }
