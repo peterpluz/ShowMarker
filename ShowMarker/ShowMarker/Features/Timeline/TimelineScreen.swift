@@ -71,38 +71,23 @@ struct TimelineScreen: View {
         )
     }
 
-    // MARK: - Audio import (Swift 6 safe)
-
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
             case .success(let urls) = result,
-            let pickedURL = urls.first
+            let url = urls.first
         else { return }
 
-        guard pickedURL.startAccessingSecurityScopedResource() else {
-            return
-        }
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
 
-        defer {
-            pickedURL.stopAccessingSecurityScopedResource()
-        }
+        Task {
+            let asset = AVURLAsset(url: url)
+            let duration = try? await asset.load(.duration)
 
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(pickedURL.lastPathComponent)
-
-        do {
-            let data = try Data(contentsOf: pickedURL)
-            try data.write(to: tempURL, options: .atomic)
-
-            let asset = AVURLAsset(url: tempURL)
-            let duration = asset.duration.seconds   // ✅ синхронно
-
-            try viewModel.addAudio(
-                sourceURL: tempURL,
-                duration: duration
+            try? viewModel.addAudio(
+                sourceURL: url,
+                duration: duration?.seconds ?? 0
             )
-        } catch {
-            print("Audio import failed:", error)
         }
     }
 }

@@ -1,7 +1,6 @@
 import Foundation
 import AVFoundation
 import Combine
-import QuartzCore
 
 @MainActor
 final class AudioPlayerService: ObservableObject {
@@ -21,8 +20,10 @@ final class AudioPlayerService: ObservableObject {
         let item = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: item)
 
-        let seconds = item.asset.duration.seconds
-        duration = seconds.isFinite ? seconds : 0
+        Task {
+            let d = try? await item.asset.load(.duration)
+            duration = d?.seconds ?? 0
+        }
 
         addTimeObserver()
     }

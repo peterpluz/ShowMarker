@@ -2,77 +2,49 @@ import Foundation
 
 enum WaveformCache {
 
-    /// Загружает waveform из кэша или генерирует и сохраняет.
-    /// - Parameters:
-    ///   - audioURL: URL аудиофайла
-    ///   - samplesCount: количество точек waveform
-    /// - Returns: массив амплитуд 0…1
-    static func loadOrGenerate(
+    struct CachedWaveform: Codable {
+        let mipmaps: [[Float]]
+    }
+
+    static func generateAndCache(
         audioURL: URL,
-        samplesCount: Int
-    ) throws -> [Float] {
+        cacheKey: String
+    ) throws -> CachedWaveform {
 
-        let cacheURL = cacheFileURL(
-            for: audioURL,
-            samplesCount: samplesCount
-        )
+        let base = try WaveformGenerator.generateFullResolutionPeaks(from: audioURL)
+        let mipmaps = WaveformGenerator.buildMipmaps(from: base)
+        let cached = CachedWaveform(mipmaps: mipmaps)
 
-        if let cached = load(from: cacheURL) {
-            return cached
-        }
+        let url = cacheURL(for: cacheKey)
+        let data = try JSONEncoder().encode(cached)
+        try data.write(to: url, options: .atomic)
 
-        let waveform = try WaveformGenerator.generate(
-            from: audioURL,
-            samplesCount: samplesCount
-        )
-
-        save(waveform, to: cacheURL)
-        return waveform
+        return cached
     }
 
-    // MARK: - Cache file
-
-    private static func cacheFileURL(
-        for audioURL: URL,
-        samplesCount: Int
-    ) -> URL {
-
-        let base = audioURL.deletingPathExtension().lastPathComponent
-        let fileName = "\(base).waveform.\(samplesCount).bin"
-
-        return FileManager.default.temporaryDirectory
-            .appendingPathComponent(fileName)
+    static func load(
+        cacheKey: String
+    ) -> CachedWaveform? {
+        let url = cacheURL(for: cacheKey)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(CachedWaveform.self, from: data)
     }
 
-    // MARK: - IO
+    /// Выбирает лучший уровень под нужное количество точек
+    static func bestLevel(
+        from cached: CachedWaveform,
+        targetSamples: Int
+    ) -> [Float] {
 
-    private static func save(
-        _ waveform: [Float],
-        to url: URL
-    ) {
-        let data = waveform.withUnsafeBufferPointer {
-            Data(buffer: $0)
-        }
-
-        try? data.write(to: url, options: .atomic)
+        return cached.mipmaps.min {
+            abs($0.count - targetSamples) < abs($1.count - targetSamples)
+        } ?? []
     }
 
-    private static func load(
-        from url: URL
-    ) -> [Float]? {
+    // MARK: - Paths
 
-        guard let data = try? Data(contentsOf: url) else {
-            return nil
-        }
-
-        let count = data.count / MemoryLayout<Float>.size
-        return data.withUnsafeBytes {
-            Array(
-                UnsafeBufferPointer<Float>(
-                    start: $0.bindMemory(to: Float.self).baseAddress!,
-                    count: count
-                )
-            )
-        }
+    private static func cacheURL(for key: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(key).waveform.json")
     }
 }

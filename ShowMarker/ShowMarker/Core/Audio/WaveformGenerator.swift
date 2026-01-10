@@ -3,9 +3,11 @@ import AVFoundation
 
 enum WaveformGenerator {
 
-    static func generate(
+    /// Генерирует full-resolution пики (peak) из аудиофайла.
+    /// baseBucketSize — сколько PCM-сэмплов в одном пике (512–2048 обычно).
+    static func generateFullResolutionPeaks(
         from url: URL,
-        samplesCount: Int
+        baseBucketSize: Int = 1024
     ) throws -> [Float] {
 
         let asset = AVURLAsset(url: url)
@@ -14,7 +16,6 @@ enum WaveformGenerator {
         }
 
         let reader = try AVAssetReader(asset: asset)
-
         let outputSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVLinearPCMIsFloatKey: true,
@@ -27,31 +28,31 @@ enum WaveformGenerator {
             track: track,
             outputSettings: outputSettings
         )
-
         reader.add(output)
         reader.startReading()
 
-        var samples: [Float] = []
+        var peaks: [Float] = []
+        var bucket: [Float] = []
+        bucket.reserveCapacity(baseBucketSize)
 
         while reader.status == .reading {
-            guard
-                let buffer = output.copyNextSampleBuffer(),
-                let block = CMSampleBufferGetDataBuffer(buffer)
+            guard let sb = output.copyNextSampleBuffer(),
+                  let bb = CMSampleBufferGetDataBuffer(sb)
             else { break }
 
-            let length = CMBlockBufferGetDataLength(block)
+            let length = CMBlockBufferGetDataLength(bb)
             var data = Data(count: length)
 
-            data.withUnsafeMutableBytes {
+            data.withUnsafeMutableBytes { dest in
                 CMBlockBufferCopyDataBytes(
-                    block,
+                    bb,
                     atOffset: 0,
                     dataLength: length,
-                    destination: $0.baseAddress!
+                    destination: dest.baseAddress!
                 )
             }
 
-            let chunk = data.withUnsafeBytes {
+            let samples = data.withUnsafeBytes {
                 Array(
                     UnsafeBufferPointer<Float>(
                         start: $0.bindMemory(to: Float.self).baseAddress!,
@@ -60,71 +61,50 @@ enum WaveformGenerator {
                 )
             }
 
-            samples.append(contentsOf: chunk)
-            CMSampleBufferInvalidate(buffer)
+            for s in samples {
+                bucket.append(abs(s))
+                if bucket.count >= baseBucketSize {
+                    peaks.append(bucket.max() ?? 0)
+                    bucket.removeAll(keepingCapacity: true)
+                }
+            }
+
+            CMSampleBufferInvalidate(sb)
         }
 
-        guard !samples.isEmpty else { return [] }
+        if !bucket.isEmpty {
+            peaks.append(bucket.max() ?? 0)
+        }
 
-        return buildSeratoLikeWaveform(
-            samples: samples,
-            targetCount: samplesCount
-        )
+        return normalize(peaks)
     }
 
-    // MARK: - Serato-like waveform
+    /// Строит mipmap уровни (каждый следующий — в 2 раза меньше)
+    static func buildMipmaps(from base: [Float]) -> [[Float]] {
+        var levels: [[Float]] = [base]
+        var current = base
 
-    private static func buildSeratoLikeWaveform(
-        samples: [Float],
-        targetCount: Int
-    ) -> [Float] {
+        while current.count > 300 {
+            var next: [Float] = []
+            next.reserveCapacity(current.count / 2)
 
-        let bucketSize = max(1, samples.count / targetCount)
-        var peaks: [Float] = []
-        peaks.reserveCapacity(targetCount)
+            var i = 0
+            while i < current.count {
+                let end = min(i + 2, current.count)
+                let slice = current[i..<end]
+                next.append(slice.max() ?? 0)
+                i += 2
+            }
 
-        var index = 0
-        while index < samples.count {
-            let end = min(index + bucketSize, samples.count)
-            let slice = samples[index..<end]
-
-            let peak = slice.map { abs($0) }.max() ?? 0
-
-            // soft compression (читаемо, но не плоско)
-            let compressed = pow(peak, 0.5)
-
-            peaks.append(compressed)
-            index += bucketSize
+            levels.append(normalize(next))
+            current = next
         }
 
-        // median smoothing — убираем шум, сохраняем форму
-        let filtered = medianSmooth(peaks, radius: 1)
-
-        // глобальная нормализация
-        let maxVal = filtered.max() ?? 1
-        guard maxVal > 0 else { return filtered }
-
-        return filtered.map { min(1, $0 / maxVal) }
+        return levels
     }
 
-    // MARK: - Median smoothing (НЕ blur)
-
-    private static func medianSmooth(
-        _ values: [Float],
-        radius: Int
-    ) -> [Float] {
-
-        guard radius > 0 else { return values }
-
-        var result = values
-
-        for i in values.indices {
-            let start = max(0, i - radius)
-            let end = min(values.count - 1, i + radius)
-            let window = Array(values[start...end]).sorted()
-            result[i] = window[window.count / 2]
-        }
-
-        return result
+    private static func normalize(_ values: [Float]) -> [Float] {
+        guard let maxVal = values.max(), maxVal > 0 else { return values }
+        return values.map { min(1, $0 / maxVal) }
     }
 }

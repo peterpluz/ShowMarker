@@ -10,7 +10,6 @@ final class TimelineViewModel: ObservableObject {
     @Published private(set) var name: String = ""
     @Published var currentTime: Double = 0
     @Published var isPlaying: Bool = false
-
     @Published var waveform: [Float] = []
 
     var duration: Double {
@@ -23,7 +22,8 @@ final class TimelineViewModel: ObservableObject {
     private var document: Binding<ShowMarkerDocument>
     private let timelineID: UUID
 
-    private let waveformSamples = 150
+    private let baseSamples = 150
+    private var cachedWaveform: WaveformCache.CachedWaveform?
 
     init(document: Binding<ShowMarkerDocument>, timelineID: UUID) {
         self.document = document
@@ -35,46 +35,19 @@ final class TimelineViewModel: ObservableObject {
 
     private func bindPlayer() {
         player.$currentTime
+            .receive(on: DispatchQueue.main)
             .assign(to: \.currentTime, on: self)
             .store(in: &cancellables)
 
         player.$isPlaying
+            .receive(on: DispatchQueue.main)
             .assign(to: \.isPlaying, on: self)
             .store(in: &cancellables)
-    }
-
-    // MARK: - Lifecycle
-
-    func onDisappear() {
-        player.stop()
-    }
-
-    // MARK: - Timeline control
-
-    func seek(to seconds: Double) {
-        let delta = seconds - currentTime
-        player.seek(by: delta)
-    }
-
-    func togglePlayPause() {
-        player.togglePlayPause()
-    }
-
-    func seekBackward() {
-        player.seek(by: -5)
-    }
-
-    func seekForward() {
-        player.seek(by: 5)
     }
 
     // MARK: - Audio
 
     func addAudio(sourceURL: URL, duration: Double) throws {
-        // ВАЖНО:
-        // sourceURL используется ТОЛЬКО для копирования в document
-        // после этого он больше НИГДЕ не применяется
-
         var doc = document.wrappedValue
         try doc.addAudio(
             to: timelineID,
@@ -82,61 +55,62 @@ final class TimelineViewModel: ObservableObject {
             duration: duration
         )
         document.wrappedValue = doc
-
-        // вся загрузка аудио и waveform — только из sandbox (tmp)
         syncFromDocument()
-    }
-
-    // MARK: - Waveform
-
-    private func loadWaveform(from url: URL) {
-        Task.detached(priority: .userInitiated) {
-            let data = try? WaveformCache.loadOrGenerate(
-                audioURL: url,
-                samplesCount: self.waveformSamples
-            )
-
-            await MainActor.run {
-                self.waveform = data ?? []
-            }
-        }
     }
 
     // MARK: - Sync
 
     func syncFromDocument() {
-        guard let timeline = document.wrappedValue.file.project.timelines.first(
-            where: { $0.id == timelineID }
-        ) else {
-            name = ""
-            audio = nil
-            waveform = []
-            return
-        }
+        guard let timeline = document.wrappedValue
+            .file.project.timelines
+            .first(where: { $0.id == timelineID })
+        else { return }
 
         name = timeline.name
         audio = timeline.audio
+        waveform = []
 
-        guard let audio else {
-            waveform = []
-            return
-        }
+        guard let audio else { return }
 
-        let fileName = URL(fileURLWithPath: audio.relativePath)
-            .lastPathComponent
+        let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
+        guard let bytes = document.wrappedValue.audioFiles[fileName] else { return }
 
-        guard let bytes = document.wrappedValue.audioFiles[fileName] else {
-            waveform = []
-            return
-        }
-
-        let tmpURL = FileManager.default.temporaryDirectory
+        let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent(fileName)
 
-        try? bytes.write(to: tmpURL, options: .atomic)
+        try? bytes.write(to: tmp, options: .atomic)
+        player.load(url: tmp)
 
-        player.load(url: tmpURL)
-        loadWaveform(from: tmpURL)
+        if let cached = WaveformCache.load(cacheKey: fileName) {
+            cachedWaveform = cached
+        } else {
+            cachedWaveform = try? WaveformCache.generateAndCache(
+                audioURL: tmp,
+                cacheKey: fileName
+            )
+        }
+
+        waveform = WaveformCache.bestLevel(
+            from: cachedWaveform!,
+            targetSamples: baseSamples
+        )
+    }
+
+    // MARK: - Playback
+
+    func seek(to seconds: Double) {
+        player.seek(by: seconds - currentTime)
+    }
+
+    func togglePlayPause() {
+        player.togglePlayPause()
+    }
+
+    func seekBackward() { player.seek(by: -5) }
+    func seekForward() { player.seek(by: 5) }
+
+    func onDisappear() {
+        player.stop()
     }
 
     // MARK: - Timecode
@@ -150,12 +124,7 @@ final class TimelineViewModel: ObservableObject {
         let minutes = totalMinutes % 60
         let hours = totalMinutes / 60
 
-        return String(
-            format: "%02d:%02d:%02d:%02d",
-            hours,
-            minutes,
-            seconds,
-            frames
-        )
+        return String(format: "%02d:%02d:%02d:%02d",
+                      hours, minutes, seconds, frames)
     }
 }
