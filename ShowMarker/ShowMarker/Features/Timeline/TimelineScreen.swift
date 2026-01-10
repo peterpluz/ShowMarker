@@ -22,33 +22,24 @@ struct TimelineScreen: View {
     var body: some View {
         VStack(spacing: 24) {
 
-            // Placeholder for waveform
             Rectangle()
                 .fill(Color.secondary.opacity(0.15))
                 .frame(height: 160)
                 .overlay(Text("Waveform").foregroundColor(.secondary))
 
-            // Timecode
             Text(viewModel.timecode())
                 .font(.system(.title2, design: .monospaced))
 
-            // Controls
             HStack(spacing: 32) {
-                Button {
-                    viewModel.seekBackward()
-                } label: {
+                Button { viewModel.seekBackward() } label: {
                     Image(systemName: "gobackward.5")
                 }
 
-                Button {
-                    viewModel.togglePlayPause()
-                } label: {
+                Button { viewModel.togglePlayPause() } label: {
                     Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
                 }
 
-                Button {
-                    viewModel.seekForward()
-                } label: {
+                Button { viewModel.seekForward() } label: {
                     Image(systemName: "goforward.5")
                 }
             }
@@ -58,6 +49,9 @@ struct TimelineScreen: View {
         }
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            viewModel.onDisappear()
+        }
         .safeAreaInset(edge: .bottom) {
             Button(viewModel.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
                 isPickerPresented = true
@@ -86,14 +80,10 @@ struct TimelineScreen: View {
             let asset = AVURLAsset(url: url)
             let duration = try? await asset.load(.duration)
 
-            do {
-                try viewModel.addAudio(
-                    sourceURL: url,
-                    duration: duration?.seconds ?? 0
-                )
-            } catch {
-                print("Audio error:", error)
-            }
+            try? viewModel.addAudio(
+                sourceURL: url,
+                duration: duration?.seconds ?? 0
+            )
         }
     }
 }

@@ -15,14 +15,12 @@ final class AudioPlayerService: ObservableObject {
 
     // MARK: - Load
 
-    /// Загружает аудио по URL (локальный файл URL).
     func load(url: URL) {
-        cleanup()
+        stop()
 
         let item = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: item)
 
-        // duration может быть неопределённым до загрузки asset; при необходимости можно слушать статус
         let seconds = item.asset.duration.seconds
         duration = seconds.isFinite ? seconds : 0
 
@@ -41,6 +39,20 @@ final class AudioPlayerService: ObservableObject {
         isPlaying = false
     }
 
+    func stop() {
+        if let player, let obs = timeObserver {
+            player.removeTimeObserver(obs)
+        }
+
+        player?.pause()
+        player = nil
+        timeObserver = nil
+
+        currentTime = 0
+        duration = 0
+        isPlaying = false
+    }
+
     func togglePlayPause() {
         isPlaying ? pause() : play()
     }
@@ -52,40 +64,19 @@ final class AudioPlayerService: ObservableObject {
         player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
-    // MARK: - Time observer (MainActor-safe)
+    // MARK: - Time observer
 
     private func addTimeObserver() {
         guard let player else { return }
 
-        // 30 FPS interval
         let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
 
-        // remove previous if present
-        if let obs = timeObserver {
-            player.removeTimeObserver(obs)
-            timeObserver = nil
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: interval,
+            queue: .main
+        ) { [weak self] time in
+            guard let self else { return }
+            self.currentTime = time.seconds
         }
-
-        // The closure provided to AVPlayer is @Sendable; it must not directly mutate MainActor-isolated properties.
-        // Therefore, update MainActor state inside Task { @MainActor in ... }.
-        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            guard let self = self else { return }
-            Task { @MainActor in
-                self.currentTime = time.seconds
-            }
-        }
-    }
-
-    // MARK: - Cleanup
-
-    private func cleanup() {
-        if let player = player, let obs = timeObserver {
-            player.removeTimeObserver(obs)
-        }
-        timeObserver = nil
-        player = nil
-        currentTime = 0
-        duration = 0
-        isPlaying = false
     }
 }

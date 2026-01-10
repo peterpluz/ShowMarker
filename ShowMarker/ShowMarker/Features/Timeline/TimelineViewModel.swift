@@ -27,14 +27,18 @@ final class TimelineViewModel: ObservableObject {
 
     private func bindPlayer() {
         player.$currentTime
-            .receive(on: DispatchQueue.main)
             .assign(to: \.currentTime, on: self)
             .store(in: &cancellables)
 
         player.$isPlaying
-            .receive(on: DispatchQueue.main)
             .assign(to: \.isPlaying, on: self)
             .store(in: &cancellables)
+    }
+
+    // MARK: - Lifecycle
+
+    func onDisappear() {
+        player.stop()
     }
 
     // MARK: - Actions
@@ -45,7 +49,6 @@ final class TimelineViewModel: ObservableObject {
         document.wrappedValue = doc
         syncFromDocument()
 
-        // load directly from the source URL to player for immediate playback
         player.load(url: sourceURL)
     }
 
@@ -56,36 +59,24 @@ final class TimelineViewModel: ObservableObject {
     func seekBackward() { player.seek(by: -5) }
     func seekForward() { player.seek(by: 5) }
 
-    func renameTimeline(name: String) {
-        var doc = document.wrappedValue
-        doc.renameTimeline(id: timelineID, name: name)
-        document.wrappedValue = doc
-        syncFromDocument()
-    }
-
     // MARK: - Sync
 
     func syncFromDocument() {
         guard let timeline = document.wrappedValue.file.project.timelines.first(where: { $0.id == timelineID }) else {
-            self.name = ""
-            self.audio = nil
+            name = ""
+            audio = nil
             return
         }
 
-        self.name = timeline.name
-        self.audio = timeline.audio
+        name = timeline.name
+        audio = timeline.audio
 
-        // If we have audio and audio bytes stored in document.audioFiles, write a temp file and load it.
-        if let audio = self.audio {
+        if let audio {
             let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
-
             if let bytes = document.wrappedValue.audioFiles[fileName] {
-                // write to temporary file and load (safe, short-lived)
                 let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
                 try? bytes.write(to: tmp, options: .atomic)
                 player.load(url: tmp)
-            } else {
-                // No bytes in memory — maybe user loaded audio but not saved; skip
             }
         }
     }
