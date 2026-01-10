@@ -13,7 +13,7 @@ struct MarkerCard: View {
                 .frame(width: 4)
                 .cornerRadius(2)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(marker.name)
                     .font(.headline)
                     .foregroundColor(.primary)
@@ -25,10 +25,9 @@ struct MarkerCard: View {
 
             Spacer()
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding()
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color.secondary.opacity(0.12))
         )
     }

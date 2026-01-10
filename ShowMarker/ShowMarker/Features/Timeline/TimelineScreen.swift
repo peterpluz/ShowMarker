@@ -24,19 +24,16 @@ struct TimelineScreen: View {
 
             // MARK: - MARKER LIST (TOP)
             ScrollView {
-                LazyVStack(spacing: 0) {   // ⬅️ НЕТ расстояния между карточками
+                LazyVStack(spacing: 12) {
                     ForEach(viewModel.markers) { marker in
                         Button {
                             viewModel.seek(to: marker.timeSeconds)
                         } label: {
                             MarkerCard(marker: marker, fps: viewModel.fps)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
+                .padding()
             }
 
             Spacer(minLength: 0)
