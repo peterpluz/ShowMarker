@@ -10,12 +10,15 @@ struct TimelineBarView: View {
     private let barHeight: CGFloat = 60
     private let playheadWidth: CGFloat = 2
     private let spacing: CGFloat = 1
+    private let barWidth: CGFloat = 3
+
+    @State private var dragStartTime: Double?
 
     var body: some View {
         GeometryReader { geo in
             let viewWidth = geo.size.width
-            let contentWidth = CGFloat(waveform.count) * (barWidth + spacing)
             let centerX = viewWidth / 2
+            let contentWidth = CGFloat(waveform.count) * (barWidth + spacing)
 
             ZStack {
 
@@ -46,19 +49,31 @@ struct TimelineBarView: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        let delta = value.translation.width
+                        if dragStartTime == nil {
+                            dragStartTime = currentTime
+                        }
+
+                        guard
+                            let startTime = dragStartTime,
+                            duration > 0,
+                            contentWidth > 0
+                        else { return }
+
+                        let deltaX = value.translation.width
                         let secondsPerPoint = duration / contentWidth
-                        let seekSeconds = -Double(delta) * secondsPerPoint
-                        onSeek(currentTime + seekSeconds)
+                        let newTime = startTime - Double(deltaX) * secondsPerPoint
+
+                        onSeek(min(max(newTime, 0), duration))
+                    }
+                    .onEnded { _ in
+                        dragStartTime = nil
                     }
             )
         }
         .frame(height: barHeight)
     }
 
-    private var barWidth: CGFloat {
-        3
-    }
+    // MARK: - Helpers
 
     private func waveformOffset(contentWidth: CGFloat) -> CGFloat {
         guard duration > 0 else { return 0 }
