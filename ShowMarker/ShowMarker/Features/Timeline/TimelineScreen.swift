@@ -52,6 +52,9 @@ struct TimelineScreen: View {
         }
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            viewModel.onDisappear()
+        }
         .safeAreaInset(edge: .bottom) {
             Button(viewModel.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
                 isPickerPresented = true

@@ -39,6 +39,12 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    // MARK: - Lifecycle
+
+    func onDisappear() {
+        player.stop()
+    }
+
     // MARK: - Timeline control
 
     func seek(to seconds: Double) {
