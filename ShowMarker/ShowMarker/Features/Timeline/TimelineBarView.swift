@@ -7,19 +7,20 @@ struct TimelineBarView: View {
     let waveform: [Float]
     let onSeek: (Double) -> Void
 
-    // Timeline
+    // MARK: - Layout
+
     private let barHeight: CGFloat = 140
     private let barWidth: CGFloat = 3
     private let spacing: CGFloat = 1
 
-    // Playhead
     private let playheadLineWidth: CGFloat = 2
     private let playheadDotSize: CGFloat = 10
     private let playheadGap: CGFloat = 4
 
-    // Time scale
     private let scaleHeight: CGFloat = 18
     private let scaleSpacing: CGFloat = 6
+
+    // MARK: - Drag state
 
     @State private var dragStartTime: Double?
 
@@ -31,21 +32,18 @@ struct TimelineBarView: View {
                 let viewWidth = geo.size.width
                 let centerX = viewWidth / 2
                 let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
-                let secondsPerPixel = duration / Double(contentWidth)
+                let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
                 let offsetX = centerX - timelineOffset(contentWidth: contentWidth)
 
                 ZStack {
 
-                    // 🔹 ФОН + ВЕЙВФОРМА = ЕДИНЫЙ СЛОЙ
+                    // Background + waveform
                     ZStack {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color.secondary.opacity(0.12))
-                            .frame(
-                                width: contentWidth,
-                                height: barHeight
-                            )
+                            .frame(width: contentWidth, height: barHeight)
 
-                        HStack(alignment: .center, spacing: spacing) {
+                        HStack(spacing: spacing) {
                             ForEach(waveform.indices, id: \.self) { i in
                                 Rectangle()
                                     .fill(Color.secondary.opacity(0.6))
@@ -59,7 +57,7 @@ struct TimelineBarView: View {
                     }
                     .offset(x: offsetX)
 
-                    // 🔹 PLAYHEAD — ФИКСИРОВАН
+                    // Playhead (fixed)
                     Rectangle()
                         .fill(Color.accentColor)
                         .frame(width: playheadLineWidth, height: barHeight)
@@ -77,17 +75,34 @@ struct TimelineBarView: View {
                 }
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 0)
+                    DragGesture()
                         .onChanged { value in
                             if dragStartTime == nil {
                                 dragStartTime = currentTime
                             }
+
                             guard let start = dragStartTime else { return }
-                            let newTime = start - Double(value.translation.width) * secondsPerPixel
-                            onSeek(min(max(newTime, 0), duration))
+
+                            let deltaSeconds =
+                                Double(value.translation.width) * secondsPerPixel * -1
+
+                            onSeek(clamp(start + deltaSeconds))
                         }
-                        .onEnded { _ in
+                        .onEnded { value in
+                            guard let start = dragStartTime else { return }
                             dragStartTime = nil
+
+                            // --- Apple-style inertia ---
+                            let predictedSeconds =
+                                Double(value.predictedEndTranslation.width)
+                                * secondsPerPixel
+                                * -1
+
+                            let target = clamp(start + predictedSeconds)
+
+                            withAnimation(.easeOut(duration: 0.6)) {
+                                onSeek(target)
+                            }
                         }
                 )
             }
@@ -133,6 +148,10 @@ struct TimelineBarView: View {
     }
 
     // MARK: - Helpers
+
+    private func clamp(_ time: Double) -> Double {
+        min(max(time, 0), duration)
+    }
 
     private func timelineOffset(contentWidth: CGFloat) -> CGFloat {
         guard duration > 0 else { return 0 }

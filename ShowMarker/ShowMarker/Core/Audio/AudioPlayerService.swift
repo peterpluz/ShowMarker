@@ -16,6 +16,7 @@ final class AudioPlayerService: ObservableObject {
 
     func load(url: URL) {
         stop()
+        configureAudioSession()
 
         let item = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: item)
@@ -31,6 +32,7 @@ final class AudioPlayerService: ObservableObject {
     // MARK: - Playback
 
     func play() {
+        configureAudioSession()
         player?.play()
         isPlaying = true
     }
@@ -65,6 +67,27 @@ final class AudioPlayerService: ObservableObject {
         player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
+    // MARK: - Audio Session
+
+    private func configureAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+
+        do {
+            try session.setCategory(
+                .playback,
+                mode: .default,
+                options: [
+                    .defaultToSpeaker,   // ⬅️ ВАЖНО
+                    .allowBluetooth,
+                    .allowAirPlay
+                ]
+            )
+            try session.setActive(true)
+        } catch {
+            print("AudioSession error:", error)
+        }
+    }
+
     // MARK: - Time observer
 
     private func addTimeObserver() {
@@ -76,8 +99,7 @@ final class AudioPlayerService: ObservableObject {
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
-            guard let self else { return }
-            self.currentTime = time.seconds
+            self?.currentTime = time.seconds
         }
     }
 }

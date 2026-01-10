@@ -6,6 +6,7 @@ struct TimelineScreen: View {
 
     @StateObject private var viewModel: TimelineViewModel
     @State private var isPickerPresented = false
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         document: Binding<ShowMarkerDocument>,
@@ -35,11 +36,14 @@ struct TimelineScreen: View {
                     )
                     .frame(height: geo.size.height * 0.33)
 
+                    // TIME CODE
                     Text(viewModel.timecode())
-                        .font(.system(size: 30, weight: .bold, design: .default))
-                        .foregroundColor(.white)
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundColor(.primary)
 
+                    // CONTROLS
                     HStack(spacing: 44) {
+
                         Button { viewModel.seekBackward() } label: {
                             Image(systemName: "gobackward.5")
                         }
@@ -53,10 +57,13 @@ struct TimelineScreen: View {
                         }
                     }
                     .font(.system(size: 28, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 }
                 .padding()
-                .background(.ultraThinMaterial)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.regularMaterial)
+                )
             }
         }
         .navigationTitle(viewModel.name)
@@ -69,6 +76,7 @@ struct TimelineScreen: View {
                 isPickerPresented = true
             }
             .buttonStyle(.borderedProminent)
+            .tint(.accentColor)
             .padding()
         }
         .fileImporter(
