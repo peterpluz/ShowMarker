@@ -3,19 +3,15 @@ import AVFoundation
 
 enum WaveformGenerator {
 
-    /// Генерирует waveform из аудиофайла.
-    /// - Parameters:
-    ///   - url: URL аудиофайла
-    ///   - samplesCount: сколько точек waveform нужно (например 100–300)
-    /// - Returns: массив амплитуд 0…1
     static func generate(
         from url: URL,
         samplesCount: Int
     ) throws -> [Float] {
 
         let asset = AVURLAsset(url: url)
-        let track = asset.tracks(withMediaType: .audio).first
-        guard let track else { return [] }
+        guard let track = asset.tracks(withMediaType: .audio).first else {
+            return []
+        }
 
         let reader = try AVAssetReader(asset: asset)
 
@@ -31,31 +27,31 @@ enum WaveformGenerator {
             track: track,
             outputSettings: outputSettings
         )
+
         reader.add(output)
         reader.startReading()
 
-        var allSamples: [Float] = []
+        var samples: [Float] = []
 
         while reader.status == .reading {
-            guard let sampleBuffer = output.copyNextSampleBuffer(),
-                  let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer)
-            else {
-                break
-            }
+            guard
+                let buffer = output.copyNextSampleBuffer(),
+                let block = CMSampleBufferGetDataBuffer(buffer)
+            else { break }
 
-            let length = CMBlockBufferGetDataLength(blockBuffer)
+            let length = CMBlockBufferGetDataLength(block)
             var data = Data(count: length)
 
-            data.withUnsafeMutableBytes { dest in
+            data.withUnsafeMutableBytes {
                 CMBlockBufferCopyDataBytes(
-                    blockBuffer,
+                    block,
                     atOffset: 0,
                     dataLength: length,
-                    destination: dest.baseAddress!
+                    destination: $0.baseAddress!
                 )
             }
 
-            let samples = data.withUnsafeBytes {
+            let chunk = data.withUnsafeBytes {
                 Array(
                     UnsafeBufferPointer<Float>(
                         start: $0.bindMemory(to: Float.self).baseAddress!,
@@ -64,46 +60,69 @@ enum WaveformGenerator {
                 )
             }
 
-            allSamples.append(contentsOf: samples)
-            CMSampleBufferInvalidate(sampleBuffer)
+            samples.append(contentsOf: chunk)
+            CMSampleBufferInvalidate(buffer)
         }
 
-        if allSamples.isEmpty {
-            return []
-        }
+        guard !samples.isEmpty else { return [] }
 
-        return downsample(samples: allSamples, to: samplesCount)
+        return buildSeratoLikeWaveform(
+            samples: samples,
+            targetCount: samplesCount
+        )
     }
 
-    // MARK: - Downsampling
+    // MARK: - Serato-like waveform
 
-    private static func downsample(
+    private static func buildSeratoLikeWaveform(
         samples: [Float],
-        to count: Int
+        targetCount: Int
     ) -> [Float] {
 
-        guard count > 0 else { return [] }
-
-        let samplesPerBucket = max(1, samples.count / count)
-        var result: [Float] = []
-        result.reserveCapacity(count)
+        let bucketSize = max(1, samples.count / targetCount)
+        var peaks: [Float] = []
+        peaks.reserveCapacity(targetCount)
 
         var index = 0
         while index < samples.count {
-            let end = min(index + samplesPerBucket, samples.count)
+            let end = min(index + bucketSize, samples.count)
             let slice = samples[index..<end]
 
             let peak = slice.map { abs($0) }.max() ?? 0
-            result.append(min(1, peak))
 
-            index += samplesPerBucket
+            // soft compression (читаемо, но не плоско)
+            let compressed = pow(peak, 0.5)
+
+            peaks.append(compressed)
+            index += bucketSize
         }
 
-        // нормализуем до ровного count
-        if result.count > count {
-            return Array(result.prefix(count))
-        } else if result.count < count {
-            return result + Array(repeating: 0, count: count - result.count)
+        // median smoothing — убираем шум, сохраняем форму
+        let filtered = medianSmooth(peaks, radius: 1)
+
+        // глобальная нормализация
+        let maxVal = filtered.max() ?? 1
+        guard maxVal > 0 else { return filtered }
+
+        return filtered.map { min(1, $0 / maxVal) }
+    }
+
+    // MARK: - Median smoothing (НЕ blur)
+
+    private static func medianSmooth(
+        _ values: [Float],
+        radius: Int
+    ) -> [Float] {
+
+        guard radius > 0 else { return values }
+
+        var result = values
+
+        for i in values.indices {
+            let start = max(0, i - radius)
+            let end = min(values.count - 1, i + radius)
+            let window = Array(values[start...end]).sorted()
+            result[i] = window[window.count / 2]
         }
 
         return result

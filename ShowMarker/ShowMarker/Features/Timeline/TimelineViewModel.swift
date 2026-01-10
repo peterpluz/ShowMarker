@@ -60,19 +60,31 @@ final class TimelineViewModel: ObservableObject {
         player.togglePlayPause()
     }
 
-    func seekBackward() { player.seek(by: -5) }
-    func seekForward() { player.seek(by: 5) }
+    func seekBackward() {
+        player.seek(by: -5)
+    }
+
+    func seekForward() {
+        player.seek(by: 5)
+    }
 
     // MARK: - Audio
 
     func addAudio(sourceURL: URL, duration: Double) throws {
-        var doc = document.wrappedValue
-        try doc.addAudio(to: timelineID, sourceURL: sourceURL, duration: duration)
-        document.wrappedValue = doc
-        syncFromDocument()
+        // ВАЖНО:
+        // sourceURL используется ТОЛЬКО для копирования в document
+        // после этого он больше НИГДЕ не применяется
 
-        player.load(url: sourceURL)
-        loadWaveform(from: sourceURL)
+        var doc = document.wrappedValue
+        try doc.addAudio(
+            to: timelineID,
+            sourceURL: sourceURL,
+            duration: duration
+        )
+        document.wrappedValue = doc
+
+        // вся загрузка аудио и waveform — только из sandbox (tmp)
+        syncFromDocument()
     }
 
     // MARK: - Waveform
@@ -93,7 +105,9 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Sync
 
     func syncFromDocument() {
-        guard let timeline = document.wrappedValue.file.project.timelines.first(where: { $0.id == timelineID }) else {
+        guard let timeline = document.wrappedValue.file.project.timelines.first(
+            where: { $0.id == timelineID }
+        ) else {
             name = ""
             audio = nil
             waveform = []
@@ -103,17 +117,26 @@ final class TimelineViewModel: ObservableObject {
         name = timeline.name
         audio = timeline.audio
 
-        guard let audio else { return }
-
-        let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
-
-        if let bytes = document.wrappedValue.audioFiles[fileName] {
-            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-            try? bytes.write(to: tmp, options: .atomic)
-
-            player.load(url: tmp)
-            loadWaveform(from: tmp)
+        guard let audio else {
+            waveform = []
+            return
         }
+
+        let fileName = URL(fileURLWithPath: audio.relativePath)
+            .lastPathComponent
+
+        guard let bytes = document.wrappedValue.audioFiles[fileName] else {
+            waveform = []
+            return
+        }
+
+        let tmpURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(fileName)
+
+        try? bytes.write(to: tmpURL, options: .atomic)
+
+        player.load(url: tmpURL)
+        loadWaveform(from: tmpURL)
     }
 
     // MARK: - Timecode
@@ -127,6 +150,12 @@ final class TimelineViewModel: ObservableObject {
         let minutes = totalMinutes % 60
         let hours = totalMinutes / 60
 
-        return String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
+        return String(
+            format: "%02d:%02d:%02d:%02d",
+            hours,
+            minutes,
+            seconds,
+            frames
+        )
     }
 }
