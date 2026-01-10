@@ -6,6 +6,8 @@ struct TimelineBarView: View {
     let currentTime: Double
     let waveform: [Float]
     let markers: [TimelineMarker]
+    let hasAudio: Bool
+    let onAddAudio: () -> Void
     let onSeek: (Double) -> Void
 
     private let barHeight: CGFloat = 140
@@ -24,97 +26,112 @@ struct TimelineBarView: View {
         VStack(spacing: scaleSpacing) {
 
             GeometryReader { geo in
-                let centerX = geo.size.width / 2
-                let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
-                let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
-                let offsetX = centerX - timelineOffset(contentWidth: contentWidth)
 
-                ZStack {
+                if !hasAudio {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.secondary.opacity(0.12))
+                        .overlay {
+                            Button {
+                                onAddAudio()
+                            } label: {
+                                Label("Добавить аудиофайл", systemImage: "plus")
+                            }
+                        }
+                } else {
 
-                    // Waveform background
+                    let centerX = geo.size.width / 2
+                    let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
+                    let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
+                    let offsetX = centerX - timelineOffset(contentWidth: contentWidth)
+
                     ZStack {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.secondary.opacity(0.12))
-                            .frame(width: contentWidth, height: barHeight)
 
-                        HStack(spacing: spacing) {
-                            ForEach(waveform.indices, id: \.self) { i in
-                                Rectangle()
-                                    .fill(Color.secondary.opacity(0.6))
-                                    .frame(
-                                        width: barWidth,
-                                        height: max(12, CGFloat(waveform[i]) * barHeight)
-                                    )
+                        // Waveform background
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.secondary.opacity(0.12))
+                                .frame(width: contentWidth, height: barHeight)
+
+                            HStack(spacing: spacing) {
+                                ForEach(waveform.indices, id: \.self) { i in
+                                    Rectangle()
+                                        .fill(Color.secondary.opacity(0.6))
+                                        .frame(
+                                            width: barWidth,
+                                            height: max(12, CGFloat(waveform[i]) * barHeight)
+                                        )
+                                }
                             }
                         }
-                    }
-                    .offset(x: offsetX)
+                        .offset(x: offsetX)
 
-                    // MARKERS
-                    ForEach(markers) { marker in
+                        // Markers
+                        ForEach(markers) { marker in
+                            Rectangle()
+                                .fill(Color.orange)
+                                .frame(width: markerLineWidth, height: barHeight)
+                                .position(
+                                    x: centerX
+                                        - timelineOffset(contentWidth: contentWidth)
+                                        + CGFloat(marker.timeSeconds / max(duration, 0.001)) * contentWidth,
+                                    y: barHeight / 2
+                                )
+                        }
+
+                        // Playhead
                         Rectangle()
-                            .fill(Color.orange)
-                            .frame(width: markerLineWidth, height: barHeight)
-                            .position(
-                                x: centerX
-                                    - timelineOffset(contentWidth: contentWidth)
-                                    + CGFloat(marker.timeSeconds / max(duration, 0.001)) * contentWidth,
-                                y: barHeight / 2
-                            )
+                            .fill(Color.accentColor)
+                            .frame(width: playheadLineWidth, height: barHeight)
+                            .position(x: centerX, y: barHeight / 2)
                     }
-
-                    // Playhead
-                    Rectangle()
-                        .fill(Color.accentColor)
-                        .frame(width: playheadLineWidth, height: barHeight)
-                        .position(x: centerX, y: barHeight / 2)
-                }
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            if dragStartTime == nil {
-                                dragStartTime = currentTime
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                if dragStartTime == nil {
+                                    dragStartTime = currentTime
+                                }
+                                guard let start = dragStartTime else { return }
+                                let delta = Double(value.translation.width) * secondsPerPixel * -1
+                                onSeek(clamp(start + delta))
                             }
-                            guard let start = dragStartTime else { return }
-                            let delta = Double(value.translation.width) * secondsPerPixel * -1
-                            onSeek(clamp(start + delta))
-                        }
-                        .onEnded { _ in
-                            dragStartTime = nil
-                        }
-                )
+                            .onEnded { _ in
+                                dragStartTime = nil
+                            }
+                    )
+                }
             }
             .frame(height: barHeight)
 
-            // Scale (без изменений)
-            GeometryReader { geo in
-                let centerX = geo.size.width / 2
-                let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
-                let pixelsPerSecond = contentWidth / CGFloat(max(duration, 1))
+            if hasAudio {
+                GeometryReader { geo in
+                    let centerX = geo.size.width / 2
+                    let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
+                    let pixelsPerSecond = contentWidth / CGFloat(max(duration, 1))
 
-                let major = majorStepSeconds(pixelsPerSecond: pixelsPerSecond)
-                let minor = major / 4
+                    let major = majorStepSeconds(pixelsPerSecond: pixelsPerSecond)
+                    let minor = major / 4
 
-                ZStack {
-                    ForEach(scaleMarks(majorStep: major, minorStep: minor), id: \.time) { mark in
-                        VStack(spacing: 2) {
-                            Rectangle()
-                                .frame(width: 1, height: mark.isMajor ? 8 : 4)
-                            if mark.isMajor {
-                                Text(mark.label)
-                                    .font(.caption2)
+                    ZStack {
+                        ForEach(scaleMarks(majorStep: major, minorStep: minor), id: \.time) { mark in
+                            VStack(spacing: 2) {
+                                Rectangle()
+                                    .frame(width: 1, height: mark.isMajor ? 8 : 4)
+                                if mark.isMajor {
+                                    Text(mark.label)
+                                        .font(.caption2)
+                                }
                             }
+                            .position(
+                                x: centerX
+                                    - timelineOffset(contentWidth: contentWidth)
+                                    + CGFloat(mark.time) * pixelsPerSecond,
+                                y: scaleHeight / 2
+                            )
                         }
-                        .position(
-                            x: centerX
-                                - timelineOffset(contentWidth: contentWidth)
-                                + CGFloat(mark.time) * pixelsPerSecond,
-                            y: scaleHeight / 2
-                        )
                     }
                 }
+                .frame(height: scaleHeight)
             }
-            .frame(height: scaleHeight)
         }
     }
 

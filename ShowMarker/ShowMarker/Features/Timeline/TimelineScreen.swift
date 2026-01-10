@@ -40,6 +40,19 @@ struct TimelineScreen: View {
         }
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if viewModel.audio != nil {
+                    Menu {
+                        Button("Заменить аудиофайл") {
+                            isPickerPresented = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+        }
         .safeAreaInset(edge: .bottom) {
 
             // MARK: - TIMELINE PANEL (BOTTOM)
@@ -50,6 +63,10 @@ struct TimelineScreen: View {
                     currentTime: viewModel.currentTime,
                     waveform: viewModel.waveform,
                     markers: viewModel.markers,
+                    hasAudio: viewModel.audio != nil,
+                    onAddAudio: {
+                        isPickerPresented = true
+                    },
                     onSeek: { viewModel.seek(to: $0) }
                 )
                 .frame(height: 180)
@@ -78,11 +95,6 @@ struct TimelineScreen: View {
                     Label("Добавить маркер", systemImage: "bookmark.fill")
                 }
                 .buttonStyle(.bordered)
-
-                Button(viewModel.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
-                    isPickerPresented = true
-                }
-                .buttonStyle(.borderedProminent)
             }
             .padding()
             .background(
