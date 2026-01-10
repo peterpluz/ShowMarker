@@ -59,8 +59,9 @@ final class TimelineViewModel: ObservableObject {
 
         name = timeline.name
         audio = timeline.audio
-        markers = timeline.markers
         fps = timeline.fps
+
+        markers = sortMarkers(timeline.markers)
 
         syncAudioIfNeeded()
     }
@@ -107,9 +108,15 @@ final class TimelineViewModel: ObservableObject {
 
         var doc = document.wrappedValue
         doc.addMarker(timelineID: timelineID, marker: marker)
-        document.wrappedValue = doc
 
-        markers.append(marker)
+        // сортируем и сохраняем
+        if let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) {
+            doc.file.project.timelines[index].markers =
+                sortMarkers(doc.file.project.timelines[index].markers)
+        }
+
+        document.wrappedValue = doc
+        markers = sortMarkers(markers + [marker])
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
@@ -121,18 +128,26 @@ final class TimelineViewModel: ObservableObject {
 
         var doc = document.wrappedValue
         doc.updateMarker(timelineID: timelineID, marker: updated)
-        document.wrappedValue = doc
 
-        if let i = markers.firstIndex(where: { $0.id == marker.id }) {
-            markers[i] = updated
+        if let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) {
+            doc.file.project.timelines[index].markers =
+                sortMarkers(doc.file.project.timelines[index].markers)
         }
+
+        document.wrappedValue = doc
+        markers = sortMarkers(markers.map { $0.id == updated.id ? updated : $0 })
     }
 
     func deleteMarker(_ marker: TimelineMarker) {
         var doc = document.wrappedValue
         doc.removeMarker(timelineID: timelineID, markerID: marker.id)
-        document.wrappedValue = doc
 
+        if let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) {
+            doc.file.project.timelines[index].markers =
+                sortMarkers(doc.file.project.timelines[index].markers)
+        }
+
+        document.wrappedValue = doc
         markers.removeAll { $0.id == marker.id }
     }
 
@@ -209,6 +224,17 @@ final class TimelineViewModel: ObservableObject {
         self.cachedWaveform = nil
         self.currentTime = 0
         self.isPlaying = false
+    }
+
+    // MARK: - Sorting
+
+    private func sortMarkers(_ markers: [TimelineMarker]) -> [TimelineMarker] {
+        markers.sorted {
+            if $0.timeSeconds == $1.timeSeconds {
+                return $0.createdAt < $1.createdAt
+            }
+            return $0.timeSeconds < $1.timeSeconds
+        }
     }
 
     // MARK: - Timecode
