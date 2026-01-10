@@ -25,6 +25,8 @@ final class TimelineViewModel: ObservableObject {
     private let baseSamples = 150
     private var cachedWaveform: WaveformCache.CachedWaveform?
 
+    // MARK: - Init
+
     init(document: Binding<ShowMarkerDocument>, timelineID: UUID) {
         self.document = document
         self.timelineID = timelineID
@@ -32,6 +34,8 @@ final class TimelineViewModel: ObservableObject {
         bindPlayer()
         syncFromDocument()
     }
+
+    // MARK: - Player bindings
 
     private func bindPlayer() {
         player.$currentTime
@@ -45,20 +49,37 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Audio
+    // MARK: - Audio (NEW, sandbox-safe)
 
-    func addAudio(sourceURL: URL, duration: Double) throws {
+    func addAudio(
+        sourceData: Data,
+        originalFileName: String,
+        fileExtension: String,
+        duration: Double
+    ) throws {
         var doc = document.wrappedValue
-        try doc.addAudio(
-            to: timelineID,
-            sourceURL: sourceURL,
+
+        guard let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let fileName = UUID().uuidString + "." + fileExtension
+
+        // Байты сохраняем в документ (будут упакованы в .smark)
+        doc.audioFiles[fileName] = sourceData
+
+        // Обновляем модель таймлайна
+        doc.file.project.timelines[index].audio = TimelineAudio(
+            relativePath: "Audio/\(fileName)",
+            originalFileName: originalFileName,
             duration: duration
         )
+
         document.wrappedValue = doc
         syncFromDocument()
     }
 
-    // MARK: - Sync
+    // MARK: - Sync from document
 
     func syncFromDocument() {
         guard let timeline = document.wrappedValue
@@ -75,25 +96,28 @@ final class TimelineViewModel: ObservableObject {
         let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
         guard let bytes = document.wrappedValue.audioFiles[fileName] else { return }
 
-        let tmp = FileManager.default.temporaryDirectory
+        let tmpURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(fileName)
 
-        try? bytes.write(to: tmp, options: .atomic)
-        player.load(url: tmp)
+        try? bytes.write(to: tmpURL, options: .atomic)
+
+        player.load(url: tmpURL)
 
         if let cached = WaveformCache.load(cacheKey: fileName) {
             cachedWaveform = cached
         } else {
             cachedWaveform = try? WaveformCache.generateAndCache(
-                audioURL: tmp,
+                audioURL: tmpURL,
                 cacheKey: fileName
             )
         }
 
-        waveform = WaveformCache.bestLevel(
-            from: cachedWaveform!,
-            targetSamples: baseSamples
-        )
+        if let cachedWaveform {
+            waveform = WaveformCache.bestLevel(
+                from: cachedWaveform,
+                targetSamples: baseSamples
+            )
+        }
     }
 
     // MARK: - Playback
@@ -106,8 +130,13 @@ final class TimelineViewModel: ObservableObject {
         player.togglePlayPause()
     }
 
-    func seekBackward() { player.seek(by: -5) }
-    func seekForward() { player.seek(by: 5) }
+    func seekBackward() {
+        player.seek(by: -5)
+    }
+
+    func seekForward() {
+        player.seek(by: 5)
+    }
 
     func onDisappear() {
         player.stop()
@@ -124,7 +153,9 @@ final class TimelineViewModel: ObservableObject {
         let minutes = totalMinutes % 60
         let hours = totalMinutes / 60
 
-        return String(format: "%02d:%02d:%02d:%02d",
-                      hours, minutes, seconds, frames)
+        return String(
+            format: "%02d:%02d:%02d:%02d",
+            hours, minutes, seconds, frames
+        )
     }
 }
