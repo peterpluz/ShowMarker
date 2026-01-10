@@ -19,6 +19,7 @@ struct ShowMarkerDocument: FileDocument {
 
     // MARK: - Open
 
+    nonisolated
     init(configuration: ReadConfiguration) throws {
         let wrapper = configuration.file
 
@@ -46,6 +47,7 @@ struct ShowMarkerDocument: FileDocument {
 
     // MARK: - Save
 
+    nonisolated
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
 
         let projectData = try JSONEncoder().encode(file)

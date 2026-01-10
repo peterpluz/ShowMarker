@@ -1,24 +1,18 @@
 import Foundation
 import SwiftUI
 import Combine
-import AVFoundation
 
 @MainActor
 final class TimelineViewModel: ObservableObject {
 
     @Published private(set) var audio: TimelineAudio?
     @Published private(set) var name: String = ""
+    @Published private(set) var markers: [TimelineMarker] = []
+    @Published private(set) var fps: Int = 30
 
     @Published var currentTime: Double = 0
     @Published var isPlaying: Bool = false
-
     @Published var waveform: [Float] = []
-
-    // MARK: - Markers & timing
-
-    @Published private(set) var markers: [TimelineMarker] = []
-    @Published private(set) var fps: Int = 30
-    @Published var selectedMarkerID: UUID?
 
     var duration: Double {
         audio?.duration ?? 0
@@ -40,21 +34,102 @@ final class TimelineViewModel: ObservableObject {
         self.timelineID = timelineID
 
         bindPlayer()
-        syncFromDocument()
+        syncAll()
     }
 
-    // MARK: - Player bindings
+    // MARK: - Bindings
 
     private func bindPlayer() {
         player.$currentTime
-            .receive(on: DispatchQueue.main)
             .assign(to: \.currentTime, on: self)
             .store(in: &cancellables)
 
         player.$isPlaying
-            .receive(on: DispatchQueue.main)
             .assign(to: \.isPlaying, on: self)
             .store(in: &cancellables)
+    }
+
+    // MARK: - Sync
+
+    private func syncAll() {
+        guard let timeline = document.wrappedValue
+            .file.project.timelines
+            .first(where: { $0.id == timelineID })
+        else { return }
+
+        name = timeline.name
+        audio = timeline.audio
+        markers = timeline.markers
+        fps = timeline.fps
+
+        syncAudioIfNeeded()
+    }
+
+    private func syncAudioIfNeeded() {
+        guard let audio else { return }
+
+        let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
+        guard let bytes = document.wrappedValue.audioFiles[fileName] else { return }
+
+        let tmpURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(fileName)
+
+        try? bytes.write(to: tmpURL, options: .atomic)
+
+        player.load(url: tmpURL)
+
+        if let cached = WaveformCache.load(cacheKey: fileName) {
+            cachedWaveform = cached
+        } else {
+            cachedWaveform = try? WaveformCache.generateAndCache(
+                audioURL: tmpURL,
+                cacheKey: fileName
+            )
+        }
+
+        if let cachedWaveform {
+            waveform = WaveformCache.bestLevel(
+                from: cachedWaveform,
+                targetSamples: baseSamples
+            )
+        }
+    }
+
+    // MARK: - Marker ops (NO AUDIO TOUCH)
+
+    func addMarkerAtCurrentTime() {
+        let marker = TimelineMarker(
+            timeSeconds: currentTime,
+            name: "Маркер \(markers.count + 1)"
+        )
+
+        var doc = document.wrappedValue
+        doc.addMarker(timelineID: timelineID, marker: marker)
+        document.wrappedValue = doc
+
+        markers.append(marker)
+    }
+
+    // MARK: - Playback
+
+    func seek(to seconds: Double) {
+        player.seek(by: seconds - currentTime)
+    }
+
+    func togglePlayPause() {
+        player.togglePlayPause()
+    }
+
+    func seekBackward() {
+        player.seek(by: -5)
+    }
+
+    func seekForward() {
+        player.seek(by: 5)
+    }
+
+    func onDisappear() {
+        player.stop()
     }
 
     // MARK: - Audio
@@ -81,104 +156,7 @@ final class TimelineViewModel: ObservableObject {
         )
 
         document.wrappedValue = doc
-        syncFromDocument()
-    }
-
-    // MARK: - Sync
-
-    func syncFromDocument() {
-        guard let timeline = document.wrappedValue
-            .file.project.timelines
-            .first(where: { $0.id == timelineID })
-        else { return }
-
-        name = timeline.name
-        audio = timeline.audio
-        markers = timeline.markers
-        fps = timeline.fps
-        waveform = []
-
-        guard let audio else { return }
-
-        let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
-        guard let bytes = document.wrappedValue.audioFiles[fileName] else { return }
-
-        let tmpURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(fileName)
-
-        try? bytes.write(to: tmpURL, options: .atomic)
-        player.load(url: tmpURL)
-
-        if let cached = WaveformCache.load(cacheKey: fileName) {
-            cachedWaveform = cached
-        } else {
-            cachedWaveform = try? WaveformCache.generateAndCache(
-                audioURL: tmpURL,
-                cacheKey: fileName
-            )
-        }
-
-        if let cachedWaveform {
-            waveform = WaveformCache.bestLevel(
-                from: cachedWaveform,
-                targetSamples: baseSamples
-            )
-        }
-    }
-
-    // MARK: - Markers
-
-    func addMarkerAtCurrentTime() {
-        let marker = TimelineMarker(
-            timeSeconds: currentTime,
-            name: "Маркер \(markers.count + 1)"
-        )
-
-        var doc = document.wrappedValue
-        doc.addMarker(timelineID: timelineID, marker: marker)
-        document.wrappedValue = doc
-        syncFromDocument()
-    }
-
-    func selectMarker(_ marker: TimelineMarker) {
-        selectedMarkerID = marker.id
-        seek(to: marker.timeSeconds)
-    }
-
-    func updateMarker(_ marker: TimelineMarker) {
-        var doc = document.wrappedValue
-        doc.updateMarker(timelineID: timelineID, marker: marker)
-        document.wrappedValue = doc
-        syncFromDocument()
-    }
-
-    func deleteMarker(id: UUID) {
-        var doc = document.wrappedValue
-        doc.removeMarker(timelineID: timelineID, markerID: id)
-        document.wrappedValue = doc
-        syncFromDocument()
-    }
-
-    // MARK: - Playback
-
-    func seek(to seconds: Double) {
-        player.seek(by: seconds - currentTime)
-    }
-
-    func togglePlayPause() {
-        player.togglePlayPause()
-    }
-
-    func seekBackward() {
-        player.seek(by: -5)
-    }
-
-    func seekForward() {
-        player.seek(by: 5)
-    }
-
-    func onDisappear() {
-        player.stop()
+        syncAll()
     }
 
     // MARK: - Timecode

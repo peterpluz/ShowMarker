@@ -6,7 +6,6 @@ struct TimelineScreen: View {
 
     @StateObject private var viewModel: TimelineViewModel
     @State private var isPickerPresented = false
-    @Environment(\.colorScheme) private var colorScheme
 
     init(
         document: Binding<ShowMarkerDocument>,
@@ -21,93 +20,75 @@ struct TimelineScreen: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            VStack {
-                Spacer()
-            }
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 18) {
+        VStack(spacing: 0) {
 
-                    // TIMELINE BAR
-                    TimelineBarView(
-                        duration: viewModel.duration,
-                        currentTime: viewModel.currentTime,
-                        waveform: viewModel.waveform,
-                        markers: viewModel.markers,
-                        onSeek: { viewModel.seek(to: $0) }
-                    )
-                    .frame(height: geo.size.height * 0.33)
-
-                    // TIMECODE
-                    Text(viewModel.timecode())
-                        .font(.system(size: 30, weight: .bold))
-                        .foregroundColor(.primary)
-
-                    // PLAYBACK CONTROLS
-                    HStack(spacing: 44) {
-
-                        Button { viewModel.seekBackward() } label: {
-                            Image(systemName: "gobackward.5")
+            // MARK: - MARKER LIST (TOP)
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(viewModel.markers) { marker in
+                        Button {
+                            viewModel.seek(to: marker.timeSeconds)
+                        } label: {
+                            MarkerCard(marker: marker, fps: viewModel.fps)
                         }
-
-                        Button { viewModel.togglePlayPause() } label: {
-                            Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                        }
-
-                        Button { viewModel.seekForward() } label: {
-                            Image(systemName: "goforward.5")
-                        }
-                    }
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundColor(.primary)
-
-                    // ADD MARKER
-                    Button {
-                        viewModel.addMarkerAtCurrentTime()
-                    } label: {
-                        Label("Добавить маркер", systemImage: "bookmark.fill")
-                    }
-                    .buttonStyle(.bordered)
-
-                    // MARKER LIST
-                    if !viewModel.markers.isEmpty {
-                        ScrollView {
-                            VStack(spacing: 10) {
-                                ForEach(viewModel.markers) { marker in
-                                    TimelineMarkerRow(
-                                        marker: marker,
-                                        fps: viewModel.fps,
-                                        isSelected: viewModel.selectedMarkerID == marker.id,
-                                        onSelect: {
-                                            viewModel.selectMarker(marker)
-                                        }
-                                    )
-                                }
-                            }
-                            .padding(.top, 8)
-                        }
-                        .frame(maxHeight: 240)
                     }
                 }
                 .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(.regularMaterial)
-                )
             }
+
+            Spacer(minLength: 0)
         }
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
-        .onDisappear {
-            viewModel.onDisappear()
-        }
         .safeAreaInset(edge: .bottom) {
-            Button(viewModel.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
-                isPickerPresented = true
+
+            // MARK: - TIMELINE PANEL (BOTTOM)
+            VStack(spacing: 18) {
+
+                TimelineBarView(
+                    duration: viewModel.duration,
+                    currentTime: viewModel.currentTime,
+                    waveform: viewModel.waveform,
+                    markers: viewModel.markers,
+                    onSeek: { viewModel.seek(to: $0) }
+                )
+                .frame(height: 180)
+
+                Text(viewModel.timecode())
+                    .font(.system(size: 30, weight: .bold))
+
+                HStack(spacing: 44) {
+                    Button { viewModel.seekBackward() } label: {
+                        Image(systemName: "gobackward.5")
+                    }
+
+                    Button { viewModel.togglePlayPause() } label: {
+                        Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                    }
+
+                    Button { viewModel.seekForward() } label: {
+                        Image(systemName: "goforward.5")
+                    }
+                }
+                .font(.system(size: 28, weight: .semibold))
+
+                Button {
+                    viewModel.addMarkerAtCurrentTime()
+                } label: {
+                    Label("Добавить маркер", systemImage: "bookmark.fill")
+                }
+                .buttonStyle(.bordered)
+
+                Button(viewModel.audio == nil ? "Добавить аудиофайл" : "Заменить аудиофайл") {
+                    isPickerPresented = true
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.accentColor)
             .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.regularMaterial)
+            )
         }
         .fileImporter(
             isPresented: $isPickerPresented,
@@ -115,9 +96,12 @@ struct TimelineScreen: View {
             allowsMultipleSelection: false,
             onCompletion: handleAudio
         )
+        .onDisappear {
+            viewModel.onDisappear()
+        }
     }
 
-    // MARK: - Audio import (sandbox-safe)
+    // MARK: - Audio import
 
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
@@ -142,16 +126,12 @@ struct TimelineScreen: View {
                 let d = try? await asset.load(.duration)
                 let durationSeconds = d?.seconds ?? 0
 
-                do {
-                    try viewModel.addAudio(
-                        sourceData: data,
-                        originalFileName: url.lastPathComponent,
-                        fileExtension: url.pathExtension,
-                        duration: durationSeconds
-                    )
-                } catch {
-                    print("Failed to add audio:", error)
-                }
+                try? viewModel.addAudio(
+                    sourceData: data,
+                    originalFileName: url.lastPathComponent,
+                    fileExtension: url.pathExtension,
+                    duration: durationSeconds
+                )
 
                 try? FileManager.default.removeItem(at: tmpURL)
             }
