@@ -112,6 +112,30 @@ final class TimelineViewModel: ObservableObject {
         markers.append(marker)
     }
 
+    func renameMarker(_ marker: TimelineMarker, to newName: String) {
+        let name = newName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+
+        var updated = marker
+        updated.name = name
+
+        var doc = document.wrappedValue
+        doc.updateMarker(timelineID: timelineID, marker: updated)
+        document.wrappedValue = doc
+
+        if let i = markers.firstIndex(where: { $0.id == marker.id }) {
+            markers[i] = updated
+        }
+    }
+
+    func deleteMarker(_ marker: TimelineMarker) {
+        var doc = document.wrappedValue
+        doc.removeMarker(timelineID: timelineID, markerID: marker.id)
+        document.wrappedValue = doc
+
+        markers.removeAll { $0.id == marker.id }
+    }
+
     // MARK: - Playback
 
     func seek(to seconds: Double) {
@@ -163,6 +187,28 @@ final class TimelineViewModel: ObservableObject {
 
         document.wrappedValue = doc
         syncAll()
+    }
+
+    func removeAudio() {
+        guard let audio else { return }
+
+        player.stop()
+
+        var doc = document.wrappedValue
+        guard let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            return
+        }
+
+        let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
+        doc.audioFiles.removeValue(forKey: fileName)
+        doc.file.project.timelines[index].audio = nil
+        document.wrappedValue = doc
+
+        self.audio = nil
+        self.waveform = []
+        self.cachedWaveform = nil
+        self.currentTime = 0
+        self.isPlaying = false
     }
 
     // MARK: - Timecode

@@ -28,15 +28,22 @@ struct TimelineBarView: View {
             GeometryReader { geo in
 
                 if !hasAudio {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.secondary.opacity(0.12))
-                        .overlay {
-                            Button {
-                                onAddAudio()
-                            } label: {
-                                Label("Добавить аудиофайл", systemImage: "plus")
+
+                    Button(action: onAddAudio) {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.secondary.opacity(0.12)) // ← КАК БЫЛО
+                            .overlay {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "plus")
+                                    Text("Добавить аудиофайл")
+                                }
+                                .font(.headline)
+                                .foregroundColor(.accentColor) // ← АКЦЕНТ ТОЛЬКО ТУТ
                             }
-                        }
+                            .contentShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+
                 } else {
 
                     let centerX = geo.size.width / 2

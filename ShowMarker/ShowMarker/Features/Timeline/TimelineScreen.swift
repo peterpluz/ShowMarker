@@ -7,6 +7,9 @@ struct TimelineScreen: View {
     @StateObject private var viewModel: TimelineViewModel
     @State private var isPickerPresented = false
 
+    @State private var renamingMarker: TimelineMarker?
+    @State private var renameText: String = ""
+
     init(
         document: Binding<ShowMarkerDocument>,
         timelineID: UUID
@@ -22,7 +25,6 @@ struct TimelineScreen: View {
     var body: some View {
         VStack(spacing: 0) {
 
-            // MARK: - MARKER LIST (TOP)
             ScrollView {
                 LazyVStack(spacing: 12) {
                     ForEach(viewModel.markers) { marker in
@@ -30,6 +32,20 @@ struct TimelineScreen: View {
                             viewModel.seek(to: marker.timeSeconds)
                         } label: {
                             MarkerCard(marker: marker, fps: viewModel.fps)
+                        }
+                        .contextMenu {
+                            Button {
+                                renamingMarker = marker
+                                renameText = marker.name
+                            } label: {
+                                Label("Переименовать", systemImage: "pencil")
+                            }
+
+                            Button(role: .destructive) {
+                                viewModel.deleteMarker(marker)
+                            } label: {
+                                Label("Удалить", systemImage: "trash")
+                            }
                         }
                     }
                 }
@@ -44,8 +60,22 @@ struct TimelineScreen: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if viewModel.audio != nil {
                     Menu {
-                        Button("Заменить аудиофайл") {
+                        Button {
                             isPickerPresented = true
+                        } label: {
+                            Label(
+                                "Заменить аудиофайл",
+                                systemImage: "arrow.triangle.2.circlepath"
+                            )
+                        }
+
+                        Button(role: .destructive) {
+                            viewModel.removeAudio()
+                        } label: {
+                            Label(
+                                "Удалить аудиофайл",
+                                systemImage: "trash"
+                            )
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -55,7 +85,6 @@ struct TimelineScreen: View {
         }
         .safeAreaInset(edge: .bottom) {
 
-            // MARK: - TIMELINE PANEL (BOTTOM)
             VStack(spacing: 18) {
 
                 TimelineBarView(
@@ -78,11 +107,9 @@ struct TimelineScreen: View {
                     Button { viewModel.seekBackward() } label: {
                         Image(systemName: "gobackward.5")
                     }
-
                     Button { viewModel.togglePlayPause() } label: {
                         Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
                     }
-
                     Button { viewModel.seekForward() } label: {
                         Image(systemName: "goforward.5")
                     }
@@ -105,6 +132,18 @@ struct TimelineScreen: View {
                     .fill(.regularMaterial)
             )
         }
+        .alert("Переименовать маркер", isPresented: .constant(renamingMarker != nil)) {
+            TextField("Название", text: $renameText)
+            Button("Готово") {
+                if let marker = renamingMarker {
+                    viewModel.renameMarker(marker, to: renameText)
+                }
+                renamingMarker = nil
+            }
+            Button("Отмена", role: .cancel) {
+                renamingMarker = nil
+            }
+        }
         .fileImporter(
             isPresented: $isPickerPresented,
             allowedContentTypes: [.audio],
@@ -115,8 +154,6 @@ struct TimelineScreen: View {
             viewModel.onDisappear()
         }
     }
-
-    // MARK: - Audio import
 
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
