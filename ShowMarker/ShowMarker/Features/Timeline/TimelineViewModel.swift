@@ -8,9 +8,16 @@ final class TimelineViewModel: ObservableObject {
 
     @Published private(set) var audio: TimelineAudio?
     @Published private(set) var name: String = ""
+
     @Published var currentTime: Double = 0
     @Published var isPlaying: Bool = false
+
     @Published var waveform: [Float] = []
+
+    // MARK: - Markers & timing
+
+    @Published private(set) var markers: [TimelineMarker] = []
+    @Published private(set) var fps: Int = 30
 
     var duration: Double {
         audio?.duration ?? 0
@@ -79,7 +86,7 @@ final class TimelineViewModel: ObservableObject {
         syncFromDocument()
     }
 
-    // MARK: - Sync from document
+    // MARK: - Sync
 
     func syncFromDocument() {
         guard let timeline = document.wrappedValue
@@ -89,6 +96,8 @@ final class TimelineViewModel: ObservableObject {
 
         name = timeline.name
         audio = timeline.audio
+        markers = timeline.markers
+        fps = timeline.fps
         waveform = []
 
         guard let audio else { return }
@@ -120,6 +129,34 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Markers
+
+    func addMarkerAtCurrentTime() {
+        let marker = TimelineMarker(
+            timeSeconds: currentTime,
+            name: "Маркер \(markers.count + 1)"
+        )
+
+        var doc = document.wrappedValue
+        doc.addMarker(timelineID: timelineID, marker: marker)
+        document.wrappedValue = doc
+        syncFromDocument()
+    }
+
+    func updateMarker(_ marker: TimelineMarker) {
+        var doc = document.wrappedValue
+        doc.updateMarker(timelineID: timelineID, marker: marker)
+        document.wrappedValue = doc
+        syncFromDocument()
+    }
+
+    func deleteMarker(id: UUID) {
+        var doc = document.wrappedValue
+        doc.removeMarker(timelineID: timelineID, markerID: id)
+        document.wrappedValue = doc
+        syncFromDocument()
+    }
+
     // MARK: - Playback
 
     func seek(to seconds: Double) {
@@ -144,7 +181,7 @@ final class TimelineViewModel: ObservableObject {
 
     // MARK: - Timecode
 
-    func timecode(fps: Int = 30) -> String {
+    func timecode() -> String {
         let totalFrames = Int(currentTime * Double(fps))
         let frames = totalFrames % fps
         let totalSeconds = totalFrames / fps

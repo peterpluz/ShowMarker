@@ -77,8 +77,8 @@ final class AudioPlayerService: ObservableObject {
                 .playback,
                 mode: .default,
                 options: [
-                    .defaultToSpeaker,   // ⬅️ ВАЖНО
-                    .allowBluetooth,
+                    .defaultToSpeaker,
+                    .allowBluetoothHFP,
                     .allowAirPlay
                 ]
             )
@@ -95,11 +95,15 @@ final class AudioPlayerService: ObservableObject {
 
         let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
 
+        // AVPlayer may call the block on a non-actor queue — use GCD to update MainActor safely
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
-            self?.currentTime = time.seconds
+            // Use DispatchQueue.main.async with weak capture to avoid Sendable/self-capture issues in Swift 6
+            DispatchQueue.main.async { [weak self] in
+                self?.currentTime = time.seconds
+            }
         }
     }
 }

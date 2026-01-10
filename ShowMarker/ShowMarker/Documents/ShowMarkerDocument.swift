@@ -2,7 +2,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
 
-// FileDocument must remain non-actor / non-isolated.
 struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.smark] }
@@ -10,8 +9,7 @@ struct ShowMarkerDocument: FileDocument {
 
     var file: ProjectFile
 
-    /// Map filename -> bytes for audio files included in the package.
-    /// filename = UUID.ext (без путей)
+    /// Audio bytes stored inside package
     var audioFiles: [String: Data] = [:]
 
     // MARK: - New document
@@ -23,6 +21,7 @@ struct ShowMarkerDocument: FileDocument {
 
     // MARK: - Open existing package
 
+    @MainActor
     init(configuration: ReadConfiguration) throws {
         let wrapper = configuration.file
 
@@ -35,10 +34,10 @@ struct ShowMarkerDocument: FileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
 
+        // Decoding occurs on main actor to match potential main-actor isolated model conformances
         self.file = try JSONDecoder().decode(ProjectFile.self, from: data)
         self.audioFiles = [:]
 
-        // Load Audio directory if exists
         if let audioDir = wrappers["Audio"],
            let audioWrappers = audioDir.fileWrappers {
 
@@ -50,19 +49,19 @@ struct ShowMarkerDocument: FileDocument {
         }
     }
 
-    // MARK: - Save as package
+    // MARK: - Save
 
+    @MainActor
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
 
-        // project.json
+        // Encoding occurs on main actor to match potential main-actor isolated model conformances
         let projectData = try JSONEncoder().encode(file)
         let projectWrapper = FileWrapper(regularFileWithContents: projectData)
 
-        var rootWrappers: [String: FileWrapper] = [
+        var root: [String: FileWrapper] = [
             "project.json": projectWrapper
         ]
 
-        // Audio directory
         if !audioFiles.isEmpty {
             var audioWrappers: [String: FileWrapper] = [:]
 
@@ -72,12 +71,12 @@ struct ShowMarkerDocument: FileDocument {
                 )
             }
 
-            rootWrappers["Audio"] = FileWrapper(
+            root["Audio"] = FileWrapper(
                 directoryWithFileWrappers: audioWrappers
             )
         }
 
-        return FileWrapper(directoryWithFileWrappers: rootWrappers)
+        return FileWrapper(directoryWithFileWrappers: root)
     }
 
     // MARK: - Timeline ops
@@ -99,6 +98,45 @@ struct ShowMarkerDocument: FileDocument {
 
     mutating func moveTimelines(from source: IndexSet, to destination: Int) {
         file.project.timelines.move(fromOffsets: source, toOffset: destination)
+    }
+
+    // MARK: - Marker ops
+
+    mutating func addMarker(
+        timelineID: UUID,
+        marker: TimelineMarker
+    ) {
+        guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            return
+        }
+        file.project.timelines[index].markers.append(marker)
+    }
+
+    mutating func updateMarker(
+        timelineID: UUID,
+        marker: TimelineMarker
+    ) {
+        guard
+            let timelineIndex = file.project.timelines.firstIndex(where: { $0.id == timelineID }),
+            let markerIndex = file.project.timelines[timelineIndex]
+                .markers
+                .firstIndex(where: { $0.id == marker.id })
+        else { return }
+
+        file.project.timelines[timelineIndex].markers[markerIndex] = marker
+    }
+
+    mutating func removeMarker(
+        timelineID: UUID,
+        markerID: UUID
+    ) {
+        guard let timelineIndex = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            return
+        }
+
+        file.project.timelines[timelineIndex]
+            .markers
+            .removeAll { $0.id == markerID }
     }
 
     // MARK: - Audio handling
