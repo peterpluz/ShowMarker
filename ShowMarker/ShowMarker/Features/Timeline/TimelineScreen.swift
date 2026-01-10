@@ -32,6 +32,7 @@ struct TimelineScreen: View {
                         duration: viewModel.duration,
                         currentTime: viewModel.currentTime,
                         waveform: viewModel.waveform,
+                        markers: viewModel.markers,
                         onSeek: { viewModel.seek(to: $0) }
                     )
                     .frame(height: geo.size.height * 0.33)
@@ -58,6 +59,14 @@ struct TimelineScreen: View {
                     }
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundColor(.primary)
+
+                    // ADD MARKER
+                    Button {
+                        viewModel.addMarkerAtCurrentTime()
+                    } label: {
+                        Label("Добавить маркер", systemImage: "bookmark.fill")
+                    }
+                    .buttonStyle(.bordered)
                 }
                 .padding()
                 .background(

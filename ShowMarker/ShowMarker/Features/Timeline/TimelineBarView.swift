@@ -5,6 +5,7 @@ struct TimelineBarView: View {
     let duration: Double
     let currentTime: Double
     let waveform: [Float]
+    let markers: [TimelineMarker]
     let onSeek: (Double) -> Void
 
     private let barHeight: CGFloat = 140
@@ -12,8 +13,7 @@ struct TimelineBarView: View {
     private let spacing: CGFloat = 1
 
     private let playheadLineWidth: CGFloat = 2
-    private let playheadDotSize: CGFloat = 10
-    private let playheadGap: CGFloat = 4
+    private let markerLineWidth: CGFloat = 2
 
     private let scaleHeight: CGFloat = 18
     private let scaleSpacing: CGFloat = 6
@@ -30,6 +30,8 @@ struct TimelineBarView: View {
                 let offsetX = centerX - timelineOffset(contentWidth: contentWidth)
 
                 ZStack {
+
+                    // Waveform background
                     ZStack {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color.secondary.opacity(0.12))
@@ -48,6 +50,20 @@ struct TimelineBarView: View {
                     }
                     .offset(x: offsetX)
 
+                    // MARKERS
+                    ForEach(markers) { marker in
+                        Rectangle()
+                            .fill(Color.orange)
+                            .frame(width: markerLineWidth, height: barHeight)
+                            .position(
+                                x: centerX
+                                    - timelineOffset(contentWidth: contentWidth)
+                                    + CGFloat(marker.timeSeconds / max(duration, 0.001)) * contentWidth,
+                                y: barHeight / 2
+                            )
+                    }
+
+                    // Playhead
                     Rectangle()
                         .fill(Color.accentColor)
                         .frame(width: playheadLineWidth, height: barHeight)
@@ -70,6 +86,7 @@ struct TimelineBarView: View {
             }
             .frame(height: barHeight)
 
+            // Scale (без изменений)
             GeometryReader { geo in
                 let centerX = geo.size.width / 2
                 let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
