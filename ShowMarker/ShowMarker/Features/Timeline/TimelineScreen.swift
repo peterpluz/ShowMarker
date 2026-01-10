@@ -25,6 +25,7 @@ struct TimelineScreen: View {
             TimelineBarView(
                 duration: viewModel.duration,
                 currentTime: viewModel.currentTime,
+                waveform: viewModel.waveform,
                 onSeek: { seconds in
                     viewModel.seek(to: seconds)
                 }

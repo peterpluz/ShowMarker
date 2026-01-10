@@ -11,6 +11,8 @@ final class TimelineViewModel: ObservableObject {
     @Published var currentTime: Double = 0
     @Published var isPlaying: Bool = false
 
+    @Published var waveform: [Float] = []
+
     var duration: Double {
         audio?.duration ?? 0
     }
@@ -20,6 +22,8 @@ final class TimelineViewModel: ObservableObject {
 
     private var document: Binding<ShowMarkerDocument>
     private let timelineID: UUID
+
+    private let waveformSamples = 150
 
     init(document: Binding<ShowMarkerDocument>, timelineID: UUID) {
         self.document = document
@@ -68,6 +72,22 @@ final class TimelineViewModel: ObservableObject {
         syncFromDocument()
 
         player.load(url: sourceURL)
+        loadWaveform(from: sourceURL)
+    }
+
+    // MARK: - Waveform
+
+    private func loadWaveform(from url: URL) {
+        Task.detached(priority: .userInitiated) {
+            let data = try? WaveformCache.loadOrGenerate(
+                audioURL: url,
+                samplesCount: self.waveformSamples
+            )
+
+            await MainActor.run {
+                self.waveform = data ?? []
+            }
+        }
     }
 
     // MARK: - Sync
@@ -76,19 +96,23 @@ final class TimelineViewModel: ObservableObject {
         guard let timeline = document.wrappedValue.file.project.timelines.first(where: { $0.id == timelineID }) else {
             name = ""
             audio = nil
+            waveform = []
             return
         }
 
         name = timeline.name
         audio = timeline.audio
 
-        if let audio {
-            let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
-            if let bytes = document.wrappedValue.audioFiles[fileName] {
-                let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-                try? bytes.write(to: tmp, options: .atomic)
-                player.load(url: tmp)
-            }
+        guard let audio else { return }
+
+        let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
+
+        if let bytes = document.wrappedValue.audioFiles[fileName] {
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            try? bytes.write(to: tmp, options: .atomic)
+
+            player.load(url: tmp)
+            loadWaveform(from: tmp)
         }
     }
 

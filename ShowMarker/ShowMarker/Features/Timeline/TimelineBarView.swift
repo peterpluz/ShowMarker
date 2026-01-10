@@ -4,6 +4,7 @@ struct TimelineBarView: View {
 
     let duration: Double
     let currentTime: Double
+    let waveform: [Float]
     let onSeek: (Double) -> Void
 
     private let barHeight: CGFloat = 60
@@ -15,12 +16,24 @@ struct TimelineBarView: View {
 
             ZStack(alignment: .leading) {
 
-                // Timeline background
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.secondary.opacity(0.15))
+                    .fill(Color.secondary.opacity(0.12))
                     .frame(height: barHeight)
 
-                // Playhead
+                if !waveform.isEmpty {
+                    HStack(alignment: .center, spacing: 1) {
+                        ForEach(waveform.indices, id: \.self) { i in
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.6))
+                                .frame(
+                                    width: barWidth(totalWidth: width),
+                                    height: max(4, CGFloat(waveform[i]) * barHeight)
+                                )
+                        }
+                    }
+                    .frame(height: barHeight)
+                }
+
                 Rectangle()
                     .fill(Color.accentColor)
                     .frame(width: playheadWidth, height: barHeight)
@@ -39,8 +52,15 @@ struct TimelineBarView: View {
         .frame(height: barHeight)
     }
 
+    // MARK: - Helpers
+
     private func playheadX(totalWidth: CGFloat) -> CGFloat {
         guard duration > 0 else { return 0 }
         return CGFloat(currentTime / duration) * totalWidth
+    }
+
+    private func barWidth(totalWidth: CGFloat) -> CGFloat {
+        guard !waveform.isEmpty else { return 1 }
+        return totalWidth / CGFloat(waveform.count)
     }
 }
