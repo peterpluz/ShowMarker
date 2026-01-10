@@ -95,9 +95,11 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Marker ops (NO AUDIO TOUCH)
+    // MARK: - Marker ops
 
     func addMarkerAtCurrentTime() {
+        guard audio != nil else { return }
+
         let marker = TimelineMarker(
             timeSeconds: currentTime,
             name: "Маркер \(markers.count + 1)"
@@ -113,18 +115,22 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Playback
 
     func seek(to seconds: Double) {
+        guard audio != nil else { return }
         player.seek(by: seconds - currentTime)
     }
 
     func togglePlayPause() {
+        guard audio != nil else { return }
         player.togglePlayPause()
     }
 
     func seekBackward() {
+        guard audio != nil else { return }
         player.seek(by: -5)
     }
 
     func seekForward() {
+        guard audio != nil else { return }
         player.seek(by: 5)
     }
 

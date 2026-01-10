@@ -88,6 +88,8 @@ struct TimelineScreen: View {
                     }
                 }
                 .font(.system(size: 28, weight: .semibold))
+                .disabled(viewModel.audio == nil)
+                .opacity(viewModel.audio == nil ? 0.4 : 1)
 
                 Button {
                     viewModel.addMarkerAtCurrentTime()
@@ -95,6 +97,7 @@ struct TimelineScreen: View {
                     Label("Добавить маркер", systemImage: "bookmark.fill")
                 }
                 .buttonStyle(.bordered)
+                .disabled(viewModel.audio == nil)
             }
             .padding()
             .background(
