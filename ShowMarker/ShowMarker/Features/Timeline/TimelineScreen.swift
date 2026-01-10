@@ -28,6 +28,7 @@ struct TimelineScreen: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 18) {
 
+                    // TIMELINE BAR
                     TimelineBarView(
                         duration: viewModel.duration,
                         currentTime: viewModel.currentTime,
@@ -42,7 +43,7 @@ struct TimelineScreen: View {
                         .font(.system(size: 30, weight: .bold))
                         .foregroundColor(.primary)
 
-                    // CONTROLS
+                    // PLAYBACK CONTROLS
                     HStack(spacing: 44) {
 
                         Button { viewModel.seekBackward() } label: {
@@ -67,6 +68,26 @@ struct TimelineScreen: View {
                         Label("Добавить маркер", systemImage: "bookmark.fill")
                     }
                     .buttonStyle(.bordered)
+
+                    // MARKER LIST
+                    if !viewModel.markers.isEmpty {
+                        ScrollView {
+                            VStack(spacing: 10) {
+                                ForEach(viewModel.markers) { marker in
+                                    TimelineMarkerRow(
+                                        marker: marker,
+                                        fps: viewModel.fps,
+                                        isSelected: viewModel.selectedMarkerID == marker.id,
+                                        onSelect: {
+                                            viewModel.selectMarker(marker)
+                                        }
+                                    )
+                                }
+                            }
+                            .padding(.top, 8)
+                        }
+                        .frame(maxHeight: 240)
+                    }
                 }
                 .padding()
                 .background(

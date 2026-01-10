@@ -8,8 +8,6 @@ struct ShowMarkerDocument: FileDocument {
     static var writableContentTypes: [UTType] { [.smark] }
 
     var file: ProjectFile
-
-    /// Audio bytes stored inside package
     var audioFiles: [String: Data] = [:]
 
     // MARK: - New document
@@ -19,9 +17,8 @@ struct ShowMarkerDocument: FileDocument {
         self.audioFiles = [:]
     }
 
-    // MARK: - Open existing package
+    // MARK: - Open
 
-    @MainActor
     init(configuration: ReadConfiguration) throws {
         let wrapper = configuration.file
 
@@ -34,13 +31,11 @@ struct ShowMarkerDocument: FileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        // Decoding occurs on main actor to match potential main-actor isolated model conformances
         self.file = try JSONDecoder().decode(ProjectFile.self, from: data)
         self.audioFiles = [:]
 
         if let audioDir = wrappers["Audio"],
            let audioWrappers = audioDir.fileWrappers {
-
             for (fileName, fw) in audioWrappers {
                 if let bytes = fw.regularFileContents {
                     audioFiles[fileName] = bytes
@@ -51,10 +46,8 @@ struct ShowMarkerDocument: FileDocument {
 
     // MARK: - Save
 
-    @MainActor
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
 
-        // Encoding occurs on main actor to match potential main-actor isolated model conformances
         let projectData = try JSONEncoder().encode(file)
         let projectWrapper = FileWrapper(regularFileWithContents: projectData)
 
@@ -64,13 +57,11 @@ struct ShowMarkerDocument: FileDocument {
 
         if !audioFiles.isEmpty {
             var audioWrappers: [String: FileWrapper] = [:]
-
             for (fileName, data) in audioFiles {
                 audioWrappers[fileName] = FileWrapper(
                     regularFileWithContents: data
                 )
             }
-
             root["Audio"] = FileWrapper(
                 directoryWithFileWrappers: audioWrappers
             )
@@ -82,14 +73,7 @@ struct ShowMarkerDocument: FileDocument {
     // MARK: - Timeline ops
 
     mutating func addTimeline(name: String) {
-        file.project.timelines.append(
-            Timeline(name: name)
-        )
-    }
-
-    mutating func renameTimeline(id: UUID, name: String) {
-        guard let index = file.project.timelines.firstIndex(where: { $0.id == id }) else { return }
-        file.project.timelines[index].name = name
+        file.project.timelines.append(Timeline(name: name))
     }
 
     mutating func removeTimelines(at offsets: IndexSet) {
@@ -102,66 +86,24 @@ struct ShowMarkerDocument: FileDocument {
 
     // MARK: - Marker ops
 
-    mutating func addMarker(
-        timelineID: UUID,
-        marker: TimelineMarker
-    ) {
-        guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
-            return
-        }
+    mutating func addMarker(timelineID: UUID, marker: TimelineMarker) {
+        guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         file.project.timelines[index].markers.append(marker)
     }
 
-    mutating func updateMarker(
-        timelineID: UUID,
-        marker: TimelineMarker
-    ) {
+    mutating func updateMarker(timelineID: UUID, marker: TimelineMarker) {
         guard
-            let timelineIndex = file.project.timelines.firstIndex(where: { $0.id == timelineID }),
-            let markerIndex = file.project.timelines[timelineIndex]
+            let tIndex = file.project.timelines.firstIndex(where: { $0.id == timelineID }),
+            let mIndex = file.project.timelines[tIndex]
                 .markers
                 .firstIndex(where: { $0.id == marker.id })
         else { return }
 
-        file.project.timelines[timelineIndex].markers[markerIndex] = marker
+        file.project.timelines[tIndex].markers[mIndex] = marker
     }
 
-    mutating func removeMarker(
-        timelineID: UUID,
-        markerID: UUID
-    ) {
-        guard let timelineIndex = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
-            return
-        }
-
-        file.project.timelines[timelineIndex]
-            .markers
-            .removeAll { $0.id == markerID }
-    }
-
-    // MARK: - Audio handling
-
-    mutating func addAudio(
-        to timelineID: UUID,
-        sourceURL: URL,
-        duration: Double
-    ) throws {
-
-        guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
-            throw CocoaError(.fileNoSuchFile)
-        }
-
-        let ext = sourceURL.pathExtension
-        let fileName = UUID().uuidString + "." + ext
-        let data = try Data(contentsOf: sourceURL)
-
-        // store bytes (persisted on save)
-        audioFiles[fileName] = data
-
-        file.project.timelines[index].audio = TimelineAudio(
-            relativePath: "Audio/\(fileName)",
-            originalFileName: sourceURL.lastPathComponent,
-            duration: duration
-        )
+    mutating func removeMarker(timelineID: UUID, markerID: UUID) {
+        guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        file.project.timelines[index].markers.removeAll { $0.id == markerID }
     }
 }

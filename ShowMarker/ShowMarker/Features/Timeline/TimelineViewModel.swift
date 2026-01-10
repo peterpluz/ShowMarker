@@ -18,6 +18,7 @@ final class TimelineViewModel: ObservableObject {
 
     @Published private(set) var markers: [TimelineMarker] = []
     @Published private(set) var fps: Int = 30
+    @Published var selectedMarkerID: UUID?
 
     var duration: Double {
         audio?.duration ?? 0
@@ -56,7 +57,7 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Audio (NEW, sandbox-safe)
+    // MARK: - Audio
 
     func addAudio(
         sourceData: Data,
@@ -71,11 +72,8 @@ final class TimelineViewModel: ObservableObject {
         }
 
         let fileName = UUID().uuidString + "." + fileExtension
-
-        // Байты сохраняем в документ (будут упакованы в .smark)
         doc.audioFiles[fileName] = sourceData
 
-        // Обновляем модель таймлайна
         doc.file.project.timelines[index].audio = TimelineAudio(
             relativePath: "Audio/\(fileName)",
             originalFileName: originalFileName,
@@ -109,7 +107,6 @@ final class TimelineViewModel: ObservableObject {
             .appendingPathComponent(fileName)
 
         try? bytes.write(to: tmpURL, options: .atomic)
-
         player.load(url: tmpURL)
 
         if let cached = WaveformCache.load(cacheKey: fileName) {
@@ -141,6 +138,11 @@ final class TimelineViewModel: ObservableObject {
         doc.addMarker(timelineID: timelineID, marker: marker)
         document.wrappedValue = doc
         syncFromDocument()
+    }
+
+    func selectMarker(_ marker: TimelineMarker) {
+        selectedMarkerID = marker.id
+        seek(to: marker.timeSeconds)
     }
 
     func updateMarker(_ marker: TimelineMarker) {

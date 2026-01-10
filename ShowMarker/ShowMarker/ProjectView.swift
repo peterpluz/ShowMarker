@@ -41,8 +41,10 @@ struct ProjectView: View {
         }
         .toolbar { EditButton() }
         .safeAreaInset(edge: .bottom) {
-            Button("Создать таймлайн") {
+            Button(action: {
                 isAddTimelinePresented = true
+            }) {
+                Text("Создать таймлайн")
             }
             .buttonStyle(.borderedProminent)
             .padding()
