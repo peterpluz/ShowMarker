@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ProjectView: View {
 
-    @ObservedObject var document: ShowMarkerDocument
+    @Binding var document: ShowMarkerDocument
 
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
@@ -24,15 +24,19 @@ struct ProjectView: View {
                 ForEach(document.file.project.timelines) { timeline in
                     NavigationLink {
                         TimelineScreen(
-                            document: document,
+                            document: $document,
                             timelineID: timeline.id
                         )
                     } label: {
                         TimelineRow(title: timeline.name)
                     }
                 }
-                .onDelete(perform: document.removeTimelines)
-                .onMove(perform: document.moveTimelines)
+                .onDelete { offsets in
+                    document.removeTimelines(at: offsets)
+                }
+                .onMove { from, to in
+                    document.moveTimelines(from: from, to: to)
+                }
             }
         }
         .toolbar { EditButton() }

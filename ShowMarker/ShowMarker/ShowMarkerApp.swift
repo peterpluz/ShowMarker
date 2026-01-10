@@ -4,10 +4,8 @@ import SwiftUI
 struct ShowMarkerApp: App {
 
     var body: some Scene {
-        DocumentGroup(
-            newDocument: { ShowMarkerDocument() }
-        ) { file in
-            ProjectView(document: file.document)
+        DocumentGroup(newDocument: ShowMarkerDocument()) { file in
+            ProjectView(document: file.$document)
         }
     }
 }

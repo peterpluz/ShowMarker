@@ -1,22 +1,17 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
-import Combine
 
-final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
-
-    // MARK: - ReferenceFileDocument config
+// FileDocument must remain non-actor / non-isolated.
+struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.smark] }
     static var writableContentTypes: [UTType] { [.smark] }
 
-    // Snapshot = immutable state for saving
-    typealias Snapshot = (project: ProjectFile, audioFiles: [String: Data])
-
-    // MARK: - Source of truth (LIVE STATE)
-
-    @Published var file: ProjectFile
-    @Published var audioFiles: [String: Data]
+    var file: ProjectFile
+    /// Map filename -> bytes for audio files included in the package.
+    /// Stored only in memory for the duration of editing; persisted in package via fileWrapper().
+    var audioFiles: [String: Data] = [:]
 
     // MARK: - New document
 
@@ -25,9 +20,9 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         self.audioFiles = [:]
     }
 
-    // MARK: - Open existing document
+    // MARK: - Open existing package
 
-    required init(configuration: ReadConfiguration) throws {
+    init(configuration: ReadConfiguration) throws {
         let wrapper = configuration.file
 
         guard
@@ -42,68 +37,55 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         self.file = try JSONDecoder().decode(ProjectFile.self, from: data)
         self.audioFiles = [:]
 
+        // Load any files from Audio/ into audioFiles
         for (path, fw) in wrappers where path.hasPrefix("Audio/") {
             if let bytes = fw.regularFileContents {
-                let name = URL(fileURLWithPath: path).lastPathComponent
-                audioFiles[name] = bytes
+                let fileName = URL(fileURLWithPath: path).lastPathComponent
+                audioFiles[fileName] = bytes
             }
         }
     }
 
-    // MARK: - Snapshot (CRITICAL)
+    // MARK: - Save as package
 
-    func snapshot(contentType: UTType) throws -> Snapshot {
-        // Immutable copy for save operation
-        (project: file, audioFiles: audioFiles)
-    }
-
-    // MARK: - Save document
-
-    func fileWrapper(
-        snapshot: Snapshot,
-        configuration: WriteConfiguration
-    ) throws -> FileWrapper {
-
-        let projectData = try JSONEncoder().encode(snapshot.project)
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        // encode project.json
+        let projectData = try JSONEncoder().encode(file)
         let projectWrapper = FileWrapper(regularFileWithContents: projectData)
 
         var wrappers: [String: FileWrapper] = [
             "project.json": projectWrapper
         ]
 
-        for (name, data) in snapshot.audioFiles {
-            wrappers["Audio/\(name)"] = FileWrapper(regularFileWithContents: data)
+        for (fileName, data) in audioFiles {
+            wrappers["Audio/\(fileName)"] = FileWrapper(regularFileWithContents: data)
         }
 
         return FileWrapper(directoryWithFileWrappers: wrappers)
     }
 
-    // MARK: - Timeline ops
+    // MARK: - Timeline ops (mutating)
 
-    func addTimeline(name: String) {
+    mutating func addTimeline(name: String) {
         file.project.timelines.append(Timeline(name: name))
     }
 
-    func renameTimeline(id: UUID, name: String) {
+    mutating func renameTimeline(id: UUID, name: String) {
         guard let index = file.project.timelines.firstIndex(where: { $0.id == id }) else { return }
         file.project.timelines[index].name = name
     }
 
-    func removeTimelines(at offsets: IndexSet) {
+    mutating func removeTimelines(at offsets: IndexSet) {
         file.project.timelines.remove(atOffsets: offsets)
     }
 
-    func moveTimelines(from source: IndexSet, to destination: Int) {
+    mutating func moveTimelines(from source: IndexSet, to destination: Int) {
         file.project.timelines.move(fromOffsets: source, toOffset: destination)
     }
 
-    // MARK: - Audio
+    // MARK: - Audio handling
 
-    func addAudio(
-        to timelineID: UUID,
-        sourceURL: URL,
-        duration: Double
-    ) throws {
+    mutating func addAudio(to timelineID: UUID, sourceURL: URL, duration: Double) throws {
         guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -112,6 +94,7 @@ final class ShowMarkerDocument: ReferenceFileDocument, ObservableObject {
         let fileName = UUID().uuidString + "." + ext
         let data = try Data(contentsOf: sourceURL)
 
+        // store bytes in memory map (will be persisted on save)
         audioFiles[fileName] = data
 
         file.project.timelines[index].audio = TimelineAudio(
