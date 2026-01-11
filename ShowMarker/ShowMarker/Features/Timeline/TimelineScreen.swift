@@ -7,8 +7,11 @@ struct TimelineScreen: View {
     @StateObject private var viewModel: TimelineViewModel
     @State private var isPickerPresented = false
 
-    @State private var renamingMarker: TimelineMarker?
+    @State private var isRenamingTimeline = false
     @State private var renameText: String = ""
+
+    @State private var renamingMarker: TimelineMarker?
+    @State private var renameMarkerText: String = ""
 
     init(
         document: Binding<ShowMarkerDocument>,
@@ -36,7 +39,7 @@ struct TimelineScreen: View {
                         .contextMenu {
                             Button {
                                 renamingMarker = marker
-                                renameText = marker.name
+                                renameMarkerText = marker.name
                             } label: {
                                 Label("Переименовать", systemImage: "pencil")
                             }
@@ -57,29 +60,41 @@ struct TimelineScreen: View {
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if viewModel.audio != nil {
-                    Menu {
-                        Button {
-                            isPickerPresented = true
-                        } label: {
-                            Label(
-                                "Заменить аудиофайл",
-                                systemImage: "arrow.triangle.2.circlepath"
-                            )
-                        }
 
-                        Button(role: .destructive) {
-                            viewModel.removeAudio()
-                        } label: {
-                            Label(
-                                "Удалить аудиофайл",
-                                systemImage: "trash"
-                            )
-                        }
+            // ТОЛЬКО КНОПКА ТРОЕТОЧИЯ
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button {
+                        isPickerPresented = true
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Label(
+                            "Заменить аудиофайл",
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
                     }
+
+                    Button(role: .destructive) {
+                        viewModel.removeAudio()
+                    } label: {
+                        Label(
+                            "Удалить аудиофайл",
+                            systemImage: "trash"
+                        )
+                    }
+
+                    Divider()
+
+                    Button {
+                        renameText = viewModel.name
+                        isRenamingTimeline = true
+                    } label: {
+                        Label(
+                            "Переименовать таймлайн",
+                            systemImage: "pencil"
+                        )
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
@@ -132,11 +147,20 @@ struct TimelineScreen: View {
                     .fill(.regularMaterial)
             )
         }
-        .alert("Переименовать маркер", isPresented: .constant(renamingMarker != nil)) {
+        // Переименование таймлайна
+        .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
             TextField("Название", text: $renameText)
             Button("Готово") {
+                viewModel.renameTimeline(to: renameText)
+            }
+            Button("Отмена", role: .cancel) {}
+        }
+        // Переименование маркера
+        .alert("Переименовать маркер", isPresented: .constant(renamingMarker != nil)) {
+            TextField("Название", text: $renameMarkerText)
+            Button("Готово") {
                 if let marker = renamingMarker {
-                    viewModel.renameMarker(marker, to: renameText)
+                    viewModel.renameMarker(marker, to: renameMarkerText)
                 }
                 renamingMarker = nil
             }

@@ -95,6 +95,22 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Timeline rename ✅
+
+    func renameTimeline(to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+
+        var doc = document.wrappedValue
+        guard let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            return
+        }
+
+        doc.file.project.timelines[index].name = trimmed
+        document.wrappedValue = doc
+        self.name = trimmed
+    }
+
     // MARK: - Marker ops
 
     func addMarkerAtCurrentTime() {
