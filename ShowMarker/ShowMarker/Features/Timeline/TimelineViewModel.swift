@@ -45,9 +45,9 @@ final class TimelineViewModel: ObservableObject {
     }
 
     private func syncAll() {
-        guard let timeline = document.wrappedValue.file.project.timelines.first(where: { $0.id == timelineID }) else {
-            return
-        }
+        guard let timeline = document.wrappedValue
+            .file.project.timelines.first(where: { $0.id == timelineID })
+        else { return }
 
         name = timeline.name
         audio = timeline.audio
@@ -85,7 +85,22 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
-    // MARK: Timeline ops
+    // MARK: - FPS
+
+    func setFPS(_ newFPS: Int) {
+        guard [25, 30, 50, 60, 100].contains(newFPS) else { return }
+
+        var doc = document.wrappedValue
+        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            return
+        }
+
+        doc.file.project.timelines[idx].fps = newFPS
+        document.wrappedValue = doc
+        fps = newFPS
+    }
+
+    // MARK: - Timeline
 
     func renameTimeline(to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
@@ -99,7 +114,7 @@ final class TimelineViewModel: ObservableObject {
         name = trimmed
     }
 
-    // MARK: Marker ops
+    // MARK: - Markers
 
     func addMarkerAtCurrentTime() {
         guard audio != nil else { return }
@@ -149,7 +164,7 @@ final class TimelineViewModel: ObservableObject {
         markers = sorted
     }
 
-    // MARK: Playback
+    // MARK: - Playback
 
     func seek(to seconds: Double) {
         player.seek(by: seconds - currentTime)
@@ -166,7 +181,7 @@ final class TimelineViewModel: ObservableObject {
         player.stop()
     }
 
-    // MARK: Audio (ВАЖНО)
+    // MARK: - Audio
 
     func addAudio(
         sourceData: Data,
@@ -212,6 +227,8 @@ final class TimelineViewModel: ObservableObject {
         currentTime = 0
         isPlaying = false
     }
+
+    // MARK: - Timecode
 
     func timecode() -> String {
         let totalFrames = Int(currentTime * Double(fps))
