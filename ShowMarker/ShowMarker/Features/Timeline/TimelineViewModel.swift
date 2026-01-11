@@ -59,8 +59,8 @@ final class TimelineViewModel: ObservableObject {
 
         name = timeline.name
         audio = timeline.audio
-        markers = timeline.markers
         fps = timeline.fps
+        markers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
 
         syncAudioIfNeeded()
     }
@@ -95,7 +95,7 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Timeline rename ✅
+    // MARK: - Timeline
 
     func renameTimeline(to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
@@ -108,10 +108,10 @@ final class TimelineViewModel: ObservableObject {
 
         doc.file.project.timelines[index].name = trimmed
         document.wrappedValue = doc
-        self.name = trimmed
+        name = trimmed
     }
 
-    // MARK: - Marker ops
+    // MARK: - Markers
 
     func addMarkerAtCurrentTime() {
         guard audio != nil else { return }
@@ -123,33 +123,54 @@ final class TimelineViewModel: ObservableObject {
 
         var doc = document.wrappedValue
         doc.addMarker(timelineID: timelineID, marker: marker)
-        document.wrappedValue = doc
 
-        markers.append(marker)
+        normalizeMarkers(&doc)
+        document.wrappedValue = doc
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
-        let name = newName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
+        let trimmed = newName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
 
         var updated = marker
-        updated.name = name
+        updated.name = trimmed
 
         var doc = document.wrappedValue
         doc.updateMarker(timelineID: timelineID, marker: updated)
-        document.wrappedValue = doc
 
-        if let i = markers.firstIndex(where: { $0.id == marker.id }) {
-            markers[i] = updated
-        }
+        normalizeMarkers(&doc)
+        document.wrappedValue = doc
+    }
+
+    func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
+        var updated = marker
+        updated.timeSeconds = min(max(newTime, 0), duration)
+
+        var doc = document.wrappedValue
+        doc.updateMarker(timelineID: timelineID, marker: updated)
+
+        normalizeMarkers(&doc)
+        document.wrappedValue = doc
     }
 
     func deleteMarker(_ marker: TimelineMarker) {
         var doc = document.wrappedValue
         doc.removeMarker(timelineID: timelineID, markerID: marker.id)
-        document.wrappedValue = doc
 
-        markers.removeAll { $0.id == marker.id }
+        normalizeMarkers(&doc)
+        document.wrappedValue = doc
+    }
+
+    private func normalizeMarkers(_ doc: inout ShowMarkerDocument) {
+        guard let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            return
+        }
+
+        let sorted = doc.file.project.timelines[index].markers
+            .sorted { $0.timeSeconds < $1.timeSeconds }
+
+        doc.file.project.timelines[index].markers = sorted
+        markers = sorted
     }
 
     // MARK: - Playback

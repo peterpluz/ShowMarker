@@ -10,17 +10,13 @@ struct ShowMarkerDocument: FileDocument {
     var file: ProjectFile
     var audioFiles: [String: Data] = [:]
 
-    // MARK: - New document
-
     init() {
         self.file = ProjectFile(project: Project(name: "New Project"))
         self.audioFiles = [:]
     }
 
-    // MARK: - Open
-
-    nonisolated
     init(configuration: ReadConfiguration) throws {
+
         let wrapper = configuration.file
 
         guard
@@ -45,9 +41,6 @@ struct ShowMarkerDocument: FileDocument {
         }
     }
 
-    // MARK: - Save
-
-    nonisolated
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
 
         let projectData = try JSONEncoder().encode(file)
