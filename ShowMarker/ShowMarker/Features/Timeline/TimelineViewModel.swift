@@ -27,17 +27,12 @@ final class TimelineViewModel: ObservableObject {
     private let baseSamples = 150
     private var cachedWaveform: WaveformCache.CachedWaveform?
 
-    // MARK: - Init
-
     init(document: Binding<ShowMarkerDocument>, timelineID: UUID) {
         self.document = document
         self.timelineID = timelineID
-
         bindPlayer()
         syncAll()
     }
-
-    // MARK: - Bindings
 
     private func bindPlayer() {
         player.$currentTime
@@ -49,13 +44,10 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Sync
-
     private func syncAll() {
-        guard let timeline = document.wrappedValue
-            .file.project.timelines
-            .first(where: { $0.id == timelineID })
-        else { return }
+        guard let timeline = document.wrappedValue.file.project.timelines.first(where: { $0.id == timelineID }) else {
+            return
+        }
 
         name = timeline.name
         audio = timeline.audio
@@ -71,9 +63,7 @@ final class TimelineViewModel: ObservableObject {
         let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
         guard let bytes = document.wrappedValue.audioFiles[fileName] else { return }
 
-        let tmpURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(fileName)
-
+        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         try? bytes.write(to: tmpURL, options: .atomic)
 
         player.load(url: tmpURL)
@@ -95,23 +85,21 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Timeline
+    // MARK: Timeline ops
 
     func renameTimeline(to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
 
         var doc = document.wrappedValue
-        guard let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
-            return
-        }
+        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
 
-        doc.file.project.timelines[index].name = trimmed
+        doc.file.project.timelines[idx].name = trimmed
         document.wrappedValue = doc
         name = trimmed
     }
 
-    // MARK: - Markers
+    // MARK: Marker ops
 
     func addMarkerAtCurrentTime() {
         guard audio != nil else { return }
@@ -123,21 +111,16 @@ final class TimelineViewModel: ObservableObject {
 
         var doc = document.wrappedValue
         doc.addMarker(timelineID: timelineID, marker: marker)
-
         normalizeMarkers(&doc)
         document.wrappedValue = doc
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
-        let trimmed = newName.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-
         var updated = marker
-        updated.name = trimmed
+        updated.name = newName
 
         var doc = document.wrappedValue
         doc.updateMarker(timelineID: timelineID, marker: updated)
-
         normalizeMarkers(&doc)
         document.wrappedValue = doc
     }
@@ -148,7 +131,6 @@ final class TimelineViewModel: ObservableObject {
 
         var doc = document.wrappedValue
         doc.updateMarker(timelineID: timelineID, marker: updated)
-
         normalizeMarkers(&doc)
         document.wrappedValue = doc
     }
@@ -156,50 +138,35 @@ final class TimelineViewModel: ObservableObject {
     func deleteMarker(_ marker: TimelineMarker) {
         var doc = document.wrappedValue
         doc.removeMarker(timelineID: timelineID, markerID: marker.id)
-
         normalizeMarkers(&doc)
         document.wrappedValue = doc
     }
 
     private func normalizeMarkers(_ doc: inout ShowMarkerDocument) {
-        guard let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
-            return
-        }
-
-        let sorted = doc.file.project.timelines[index].markers
-            .sorted { $0.timeSeconds < $1.timeSeconds }
-
-        doc.file.project.timelines[index].markers = sorted
+        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        let sorted = doc.file.project.timelines[idx].markers.sorted { $0.timeSeconds < $1.timeSeconds }
+        doc.file.project.timelines[idx].markers = sorted
         markers = sorted
     }
 
-    // MARK: - Playback
+    // MARK: Playback
 
     func seek(to seconds: Double) {
-        guard audio != nil else { return }
         player.seek(by: seconds - currentTime)
     }
 
     func togglePlayPause() {
-        guard audio != nil else { return }
         player.togglePlayPause()
     }
 
-    func seekBackward() {
-        guard audio != nil else { return }
-        player.seek(by: -5)
-    }
-
-    func seekForward() {
-        guard audio != nil else { return }
-        player.seek(by: 5)
-    }
+    func seekBackward() { player.seek(by: -5) }
+    func seekForward() { player.seek(by: 5) }
 
     func onDisappear() {
         player.stop()
     }
 
-    // MARK: - Audio
+    // MARK: Audio (ВАЖНО)
 
     func addAudio(
         sourceData: Data,
@@ -209,14 +176,14 @@ final class TimelineViewModel: ObservableObject {
     ) throws {
         var doc = document.wrappedValue
 
-        guard let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
             throw CocoaError(.fileNoSuchFile)
         }
 
         let fileName = UUID().uuidString + "." + fileExtension
         doc.audioFiles[fileName] = sourceData
 
-        doc.file.project.timelines[index].audio = TimelineAudio(
+        doc.file.project.timelines[idx].audio = TimelineAudio(
             relativePath: "Audio/\(fileName)",
             originalFileName: originalFileName,
             duration: duration
@@ -227,41 +194,32 @@ final class TimelineViewModel: ObservableObject {
     }
 
     func removeAudio() {
-        guard let audio else { return }
-
         player.stop()
 
         var doc = document.wrappedValue
-        guard let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
-            return
+        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+
+        if let audio {
+            let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
+            doc.audioFiles.removeValue(forKey: fileName)
         }
 
-        let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
-        doc.audioFiles.removeValue(forKey: fileName)
-        doc.file.project.timelines[index].audio = nil
+        doc.file.project.timelines[idx].audio = nil
         document.wrappedValue = doc
 
-        self.audio = nil
-        self.waveform = []
-        self.cachedWaveform = nil
-        self.currentTime = 0
-        self.isPlaying = false
+        audio = nil
+        waveform = []
+        currentTime = 0
+        isPlaying = false
     }
-
-    // MARK: - Timecode
 
     func timecode() -> String {
         let totalFrames = Int(currentTime * Double(fps))
         let frames = totalFrames % fps
-        let totalSeconds = totalFrames / fps
-        let seconds = totalSeconds % 60
-        let totalMinutes = totalSeconds / 60
-        let minutes = totalMinutes % 60
-        let hours = totalMinutes / 60
+        let seconds = (totalFrames / fps) % 60
+        let minutes = (totalFrames / fps / 60) % 60
+        let hours = totalFrames / fps / 3600
 
-        return String(
-            format: "%02d:%02d:%02d:%02d",
-            hours, minutes, seconds, frames
-        )
+        return String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
     }
 }
