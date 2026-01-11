@@ -4,11 +4,13 @@ struct ProjectView: View {
 
     @Binding var document: ShowMarkerDocument
 
+    @State private var searchText = ""
+
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
 
     @State private var renamingTimelineID: UUID?
-    @State private var renameText: String = ""
+    @State private var renameText = ""
 
     private var isRenamingPresented: Binding<Bool> {
         Binding(
@@ -17,13 +19,21 @@ struct ProjectView: View {
         )
     }
 
+    private var filteredTimelines: [Timeline] {
+        let all = document.file.project.timelines
+        guard !searchText.isEmpty else { return all }
+        return all.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
     var body: some View {
         List {
-            if document.file.project.timelines.isEmpty {
+            if filteredTimelines.isEmpty {
                 VStack(spacing: 8) {
                     Text("Нет таймлайнов")
                         .foregroundColor(.secondary)
-                    Text("Начните с создания таймлайна")
+                    Text("Создайте новый таймлайн")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
@@ -31,7 +41,7 @@ struct ProjectView: View {
                 .padding(.vertical, 40)
                 .listRowSeparator(.hidden)
             } else {
-                ForEach(document.file.project.timelines) { timeline in
+                ForEach(filteredTimelines) { timeline in
                     NavigationLink {
                         TimelineScreen(
                             document: $document,
@@ -53,41 +63,14 @@ struct ProjectView: View {
                             Label("Удалить", systemImage: "trash")
                         }
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-
-                        // СЛЕВА
-                        Button(role: .destructive) {
-                            deleteTimeline(timeline)
-                        } label: {
-                            Label("Удалить", systemImage: "trash")
-                        }
-
-                        // КРАЙНЯЯ СПРАВА
-                        Button {
-                            startRename(timeline)
-                        } label: {
-                            Label("Переименовать", systemImage: "pencil")
-                        }
-                        .tint(.blue)
-                    }
                 }
-                .onDelete { offsets in
-                    document.removeTimelines(at: offsets)
-                }
-                .onMove { from, to in
-                    document.moveTimelines(from: from, to: to)
-                }
+                .onDelete { document.removeTimelines(at: $0) }
+                .onMove { document.moveTimelines(from: $0, to: $1) }
             }
         }
         .toolbar { EditButton() }
         .safeAreaInset(edge: .bottom) {
-            Button {
-                isAddTimelinePresented = true
-            } label: {
-                Text("Создать таймлайн")
-            }
-            .buttonStyle(.borderedProminent)
-            .padding()
+            bottomNotesStyleBar
         }
         .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
             TextField("Название", text: $newTimelineName)
@@ -101,13 +84,62 @@ struct ProjectView: View {
         }
         .alert("Переименовать таймлайн", isPresented: isRenamingPresented) {
             TextField("Название", text: $renameText)
-            Button("Готово") {
-                applyRename()
-            }
+            Button("Готово") { applyRename() }
             Button("Отмена", role: .cancel) {
                 renamingTimelineID = nil
             }
         }
+    }
+
+    // MARK: - Bottom bar (Notes-style, equal insets)
+
+    private var bottomNotesStyleBar: some View {
+        HStack(spacing: 12) {
+
+            // Search capsule
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+
+                TextField("Поиск", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+
+                Image(systemName: "mic.fill")
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 48)
+            .background(
+                Capsule()
+                    .fill(.regularMaterial)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(
+                color: Color.black.opacity(0.18),
+                radius: 6,
+                x: 0,
+                y: 2
+            )
+
+            // Blue "+" button
+            Button {
+                isAddTimelinePresented = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 48, height: 48)
+                    .background(
+                        Circle()
+                            .fill(Color.accentColor)
+                    )
+            }
+        }
+        .padding(16) // ← одинаковые отступы: слева, справа и снизу
     }
 
     // MARK: - Helpers
