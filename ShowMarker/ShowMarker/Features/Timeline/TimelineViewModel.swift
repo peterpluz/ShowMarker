@@ -49,7 +49,7 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Sync (FULL)
+    // MARK: - Sync
 
     private func syncAll() {
         guard let timeline = document.wrappedValue
@@ -59,13 +59,11 @@ final class TimelineViewModel: ObservableObject {
 
         name = timeline.name
         audio = timeline.audio
+        markers = timeline.markers
         fps = timeline.fps
-        markers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
 
         syncAudioIfNeeded()
     }
-
-    // MARK: - Sync audio ONLY when needed
 
     private func syncAudioIfNeeded() {
         guard let audio else { return }
@@ -97,7 +95,7 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Timeline rename
+    // MARK: - Timeline rename ✅
 
     func renameTimeline(to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
@@ -110,10 +108,10 @@ final class TimelineViewModel: ObservableObject {
 
         doc.file.project.timelines[index].name = trimmed
         document.wrappedValue = doc
-        name = trimmed
+        self.name = trimmed
     }
 
-    // MARK: - Marker ops (NO AUDIO RESET)
+    // MARK: - Marker ops
 
     func addMarkerAtCurrentTime() {
         guard audio != nil else { return }
@@ -125,15 +123,9 @@ final class TimelineViewModel: ObservableObject {
 
         var doc = document.wrappedValue
         doc.addMarker(timelineID: timelineID, marker: marker)
-
-        if let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) {
-            let sorted = doc.file.project.timelines[index].markers
-                .sorted { $0.timeSeconds < $1.timeSeconds }
-            doc.file.project.timelines[index].markers = sorted
-            markers = sorted
-        }
-
         document.wrappedValue = doc
+
+        markers.append(marker)
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
@@ -145,27 +137,19 @@ final class TimelineViewModel: ObservableObject {
 
         var doc = document.wrappedValue
         doc.updateMarker(timelineID: timelineID, marker: updated)
-
-        if let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) {
-            let sorted = doc.file.project.timelines[index].markers
-                .sorted { $0.timeSeconds < $1.timeSeconds }
-            doc.file.project.timelines[index].markers = sorted
-            markers = sorted
-        }
-
         document.wrappedValue = doc
+
+        if let i = markers.firstIndex(where: { $0.id == marker.id }) {
+            markers[i] = updated
+        }
     }
 
     func deleteMarker(_ marker: TimelineMarker) {
         var doc = document.wrappedValue
         doc.removeMarker(timelineID: timelineID, markerID: marker.id)
-
-        if let index = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) {
-            markers = doc.file.project.timelines[index].markers
-                .sorted { $0.timeSeconds < $1.timeSeconds }
-        }
-
         document.wrappedValue = doc
+
+        markers.removeAll { $0.id == marker.id }
     }
 
     // MARK: - Playback
@@ -194,7 +178,7 @@ final class TimelineViewModel: ObservableObject {
         player.stop()
     }
 
-    // MARK: - Audio (FULL resync)
+    // MARK: - Audio
 
     func addAudio(
         sourceData: Data,
