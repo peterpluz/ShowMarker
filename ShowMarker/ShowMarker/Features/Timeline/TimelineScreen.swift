@@ -13,6 +13,9 @@ struct TimelineScreen: View {
     @State private var renamingMarker: TimelineMarker?
     @State private var renameMarkerText: String = ""
 
+    @State private var exportData: Data?
+    @State private var isExportPresented = false
+
     init(
         document: Binding<ShowMarkerDocument>,
         timelineID: UUID
@@ -60,26 +63,19 @@ struct TimelineScreen: View {
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-
-            // ТОЛЬКО КНОПКА ТРОЕТОЧИЯ
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+
                     Button {
                         isPickerPresented = true
                     } label: {
-                        Label(
-                            "Заменить аудиофайл",
-                            systemImage: "arrow.triangle.2.circlepath"
-                        )
+                        Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
                     }
 
                     Button(role: .destructive) {
                         viewModel.removeAudio()
                     } label: {
-                        Label(
-                            "Удалить аудиофайл",
-                            systemImage: "trash"
-                        )
+                        Label("Удалить аудиофайл", systemImage: "trash")
                     }
 
                     Divider()
@@ -88,18 +84,24 @@ struct TimelineScreen: View {
                         renameText = viewModel.name
                         isRenamingTimeline = true
                     } label: {
-                        Label(
-                            "Переименовать таймлайн",
-                            systemImage: "pencil"
-                        )
+                        Label("Переименовать таймлайн", systemImage: "pencil")
                     }
+
+                    Divider()
+
+                    Button {
+                        prepareExport()
+                    } label: {
+                        Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(viewModel.markers.isEmpty)
+
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
-
             VStack(spacing: 18) {
 
                 TimelineBarView(
@@ -108,9 +110,7 @@ struct TimelineScreen: View {
                     waveform: viewModel.waveform,
                     markers: viewModel.markers,
                     hasAudio: viewModel.audio != nil,
-                    onAddAudio: {
-                        isPickerPresented = true
-                    },
+                    onAddAudio: { isPickerPresented = true },
                     onSeek: { viewModel.seek(to: $0) }
                 )
                 .frame(height: 180)
@@ -147,15 +147,11 @@ struct TimelineScreen: View {
                     .fill(.regularMaterial)
             )
         }
-        // Переименование таймлайна
         .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
             TextField("Название", text: $renameText)
-            Button("Готово") {
-                viewModel.renameTimeline(to: renameText)
-            }
+            Button("Готово") { viewModel.renameTimeline(to: renameText) }
             Button("Отмена", role: .cancel) {}
         }
-        // Переименование маркера
         .alert("Переименовать маркер", isPresented: .constant(renamingMarker != nil)) {
             TextField("Название", text: $renameMarkerText)
             Button("Готово") {
@@ -174,10 +170,26 @@ struct TimelineScreen: View {
             allowsMultipleSelection: false,
             onCompletion: handleAudio
         )
+        .fileExporter(
+            isPresented: $isExportPresented,
+            document: CSVDocument(data: exportData ?? Data()),
+            contentType: .commaSeparatedText,
+            defaultFilename: "\(viewModel.name)_Markers"
+        ) { _ in }
         .onDisappear {
             viewModel.onDisappear()
         }
     }
+
+    // MARK: - Export
+
+    private func prepareExport() {
+        let csv = MarkersCSVExporter.export(markers: viewModel.markers)
+        exportData = csv.data(using: .utf8)
+        isExportPresented = true
+    }
+
+    // MARK: - Audio import
 
     private func handleAudio(_ result: Result<[URL], Error>) {
         guard
@@ -214,5 +226,26 @@ struct TimelineScreen: View {
         } catch {
             print("Audio import failed:", error)
         }
+    }
+}
+
+// MARK: - CSV FileDocument
+
+struct CSVDocument: FileDocument {
+
+    static var readableContentTypes: [UTType] { [.commaSeparatedText] }
+
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        self.data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }
