@@ -1,9 +1,8 @@
 import Foundation
 import AVFoundation
 
-enum WaveformGenerator {
+struct WaveformGenerator {
 
-    /// Apple-style RMS waveform
     static func generateFullResolutionPeaks(
         from url: URL,
         baseBucketSize: Int = 1024
@@ -82,7 +81,6 @@ enum WaveformGenerator {
         return normalize(values)
     }
 
-    /// Mipmaps как и раньше
     static func buildMipmaps(from base: [Float]) -> [[Float]] {
         var levels: [[Float]] = [base]
         var current = base
@@ -106,6 +104,8 @@ enum WaveformGenerator {
 
         return levels
     }
+
+    // MARK: - Private
 
     private static func normalize(_ values: [Float]) -> [Float] {
         guard let maxVal = values.max(), maxVal > 0 else { return values }

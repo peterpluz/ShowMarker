@@ -88,21 +88,21 @@ final class AudioPlayerService: ObservableObject {
         }
     }
 
-    // MARK: - Time observer
+    // MARK: - Time observer (ИСПРАВЛЕНО)
 
     private func addTimeObserver() {
         guard let player else { return }
 
         let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
 
-        // AVPlayer may call the block on a non-actor queue — use GCD to update MainActor safely
+        // ИСПРАВЛЕНИЕ: правильная работа с MainActor
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
-            // Use DispatchQueue.main.async with weak capture to avoid Sendable/self-capture issues in Swift 6
-            DispatchQueue.main.async { [weak self] in
-                self?.currentTime = time.seconds
+            guard let self else { return }
+            Task { @MainActor in
+                self.currentTime = time.seconds
             }
         }
     }
