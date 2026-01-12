@@ -24,7 +24,7 @@ struct ProjectView: View {
     }
 
     private var filteredTimelines: [Timeline] {
-        let all = document.file.project.timelines
+        let all = document.project.timelines
         guard !searchText.isEmpty else { return all }
         return all.filter {
             $0.name.localizedCaseInsensitiveContains(searchText)
@@ -33,7 +33,7 @@ struct ProjectView: View {
 
     var body: some View {
         mainContent
-            .navigationTitle(document.file.project.name)
+            .navigationTitle(document.project.name)
             .environment(\.editMode, .constant(isEditing ? .active : .inactive))
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) { bottomNotesStyleBar }
@@ -184,7 +184,7 @@ struct ProjectView: View {
                 Button {
                     document.setProjectFPS(value)
                 } label: {
-                    if document.file.project.fps == value {
+                    if document.project.fps == value {
                         Label("\(value) FPS", systemImage: "checkmark")
                     } else {
                         Text("\(value) FPS")
@@ -193,7 +193,7 @@ struct ProjectView: View {
             }
         } label: {
             Label(
-                "FPS (\(document.file.project.fps))",
+                "FPS (\(document.project.fps))",
                 systemImage: "speedometer"
             )
         }
@@ -255,7 +255,7 @@ struct ProjectView: View {
     private func applyRename() {
         guard
             let id = renamingTimelineID,
-            let index = document.file.project.timelines.firstIndex(where: { $0.id == id })
+            let index = document.project.timelines.firstIndex(where: { $0.id == id })
         else {
             renamingTimelineID = nil
             return
@@ -267,12 +267,12 @@ struct ProjectView: View {
             return
         }
 
-        document.file.project.timelines[index].name = name
+        document.project.timelines[index].name = name
         renamingTimelineID = nil
     }
 
     private func deleteTimeline(_ timeline: Timeline) {
-        guard let index = document.file.project.timelines.firstIndex(where: { $0.id == timeline.id }) else { return }
-        document.file.project.timelines.remove(at: index)
+        guard let index = document.project.timelines.firstIndex(where: { $0.id == timeline.id }) else { return }
+        document.project.timelines.remove(at: index)
     }
 }

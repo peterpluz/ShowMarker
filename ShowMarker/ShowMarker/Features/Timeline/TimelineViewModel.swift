@@ -51,10 +51,7 @@ final class TimelineViewModel: ObservableObject {
     private var cachedWaveform: WaveformCache.CachedWaveform?
     private var loadedAudioID: UUID?
     
-    // НОВОЕ: debouncing для recalc
     private var recalcTask: Task<Void, Never>?
-    
-    // НОВОЕ: отслеживание temp-файлов для cleanup
     private var temporaryAudioURL: URL?
 
     // MARK: - Init
@@ -72,7 +69,6 @@ final class TimelineViewModel: ObservableObject {
         recalcVisibleContent()
     }
     
-    // НОВОЕ: cleanup при уничтожении VM
     deinit {
         if let tmpURL = temporaryAudioURL {
             try? FileManager.default.removeItem(at: tmpURL)
@@ -94,13 +90,12 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Sync (Model → VM)
 
     private func syncTimelineState() {
-        guard let timeline = document.wrappedValue
-            .file.project.timelines.first(where: { $0.id == timelineID })
+        guard let timeline = document.wrappedValue.project.timelines.first(where: { $0.id == timelineID })
         else { return }
 
         name = timeline.name
         audio = timeline.audio
-        fps = document.wrappedValue.file.project.fps
+        fps = document.wrappedValue.project.fps
         markers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
 
         recalcVisibleContent()
@@ -120,7 +115,6 @@ final class TimelineViewModel: ObservableObject {
 
         try? bytes.write(to: tmpURL, options: .atomic)
         
-        // НОВОЕ: сохраняем URL для cleanup
         temporaryAudioURL = tmpURL
         
         player.load(url: tmpURL)
@@ -138,7 +132,7 @@ final class TimelineViewModel: ObservableObject {
         recalcVisibleContent()
     }
 
-    // MARK: - Zoom API (called from View)
+    // MARK: - Zoom API
 
     func applyPinchZoom(delta: CGFloat) {
         let newZoom = clampZoom(zoomScale * delta)
@@ -152,10 +146,9 @@ final class TimelineViewModel: ObservableObject {
         min(max(value, minZoom), maxZoom)
     }
 
-    // MARK: - Visible range + slicing (CORE) — ИСПРАВЛЕНО
+    // MARK: - Visible range + slicing
 
     private func recalcVisibleContent() {
-        // НОВОЕ: debouncing для предотвращения 30 вызовов в секунду
         recalcTask?.cancel()
         recalcTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(50))
@@ -173,7 +166,6 @@ final class TimelineViewModel: ObservableObject {
             return
         }
 
-        // Длина видимого окна во времени
         let visibleDuration = duration / Double(zoomScale)
 
         let center = currentTime
@@ -195,7 +187,6 @@ final class TimelineViewModel: ObservableObject {
             return
         }
 
-        // Выбор mipmap по zoom
         let targetSamples = Int(CGFloat(baseSamples) * zoomScale)
         let level = WaveformCache.bestLevel(
             from: cachedWaveform,
@@ -250,9 +241,9 @@ final class TimelineViewModel: ObservableObject {
 
     func renameTimeline(to newName: String) {
         var doc = document.wrappedValue
-        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        guard let idx = doc.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         
-        doc.file.project.timelines[idx].name = newName
+        doc.project.timelines[idx].name = newName
         document.wrappedValue = doc
         
         syncTimelineState()
@@ -310,11 +301,11 @@ final class TimelineViewModel: ObservableObject {
     }
 
     private func normalizeMarkers(_ doc: inout ShowMarkerDocument) {
-        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
-        let sorted = doc.file.project.timelines[idx]
+        guard let idx = doc.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        let sorted = doc.project.timelines[idx]
             .markers
             .sorted { $0.timeSeconds < $1.timeSeconds }
-        doc.file.project.timelines[idx].markers = sorted
+        doc.project.timelines[idx].markers = sorted
         markers = sorted
     }
 
@@ -328,14 +319,14 @@ final class TimelineViewModel: ObservableObject {
     ) throws {
         var doc = document.wrappedValue
 
-        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+        guard let idx = doc.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
             throw CocoaError(.fileNoSuchFile)
         }
 
         let fileName = UUID().uuidString + "." + fileExtension
         doc.audioFiles[fileName] = sourceData
 
-        doc.file.project.timelines[idx].audio = TimelineAudio(
+        doc.project.timelines[idx].audio = TimelineAudio(
             relativePath: "Audio/\(fileName)",
             originalFileName: originalFileName,
             duration: duration
@@ -352,14 +343,14 @@ final class TimelineViewModel: ObservableObject {
         player.stop()
 
         var doc = document.wrappedValue
-        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        guard let idx = doc.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
 
         if let audio {
             let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
             doc.audioFiles.removeValue(forKey: fileName)
         }
 
-        doc.file.project.timelines[idx].audio = nil
+        doc.project.timelines[idx].audio = nil
         document.wrappedValue = doc
 
         loadedAudioID = nil
@@ -369,7 +360,6 @@ final class TimelineViewModel: ObservableObject {
         currentTime = 0
         isPlaying = false
         
-        // НОВОЕ: cleanup temp-файла
         if let tmpURL = temporaryAudioURL {
             try? FileManager.default.removeItem(at: tmpURL)
             temporaryAudioURL = nil

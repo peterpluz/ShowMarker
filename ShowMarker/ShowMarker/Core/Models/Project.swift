@@ -1,13 +1,20 @@
 import Foundation
 
 struct Project: Codable, Identifiable {
+    static let currentFormatVersion = 1
+    
+    let formatVersion: Int
     let id: UUID
     var name: String
-    /// Глобальный FPS проекта (25,30,50,60,100)
     var fps: Int
     var timelines: [Timeline]
 
-    init(name: String, fps: Int = 30) {
+    init(
+        name: String,
+        fps: Int = 30,
+        formatVersion: Int = Self.currentFormatVersion
+    ) {
+        self.formatVersion = formatVersion
         self.id = UUID()
         self.name = name
         self.fps = fps
