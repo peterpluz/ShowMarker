@@ -11,7 +11,8 @@ struct ShowMarkerDocument: FileDocument {
     var audioFiles: [String: Data] = [:]
 
     init() {
-        self.file = ProjectFile(project: Project(name: "New Project"))
+        // По умолчанию проект с глобальным FPS = 30
+        self.file = ProjectFile(project: Project(name: "New Project", fps: 30))
         self.audioFiles = [:]
     }
 
@@ -100,5 +101,33 @@ struct ShowMarkerDocument: FileDocument {
     mutating func removeMarker(timelineID: UUID, markerID: UUID) {
         guard let index = file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         file.project.timelines[index].markers.removeAll { $0.id == markerID }
+    }
+
+    // MARK: - Project-wide FPS change (миграция маркеров)
+
+    /// Меняет глобальный FPS проекта на newFPS.
+    /// При этом пересчитывает все маркеры так, чтобы позиция во времени не изменилась визуально:
+    /// frames = round(timeSeconds * oldFPS)
+    /// newSeconds = Double(frames) / Double(newFPS)
+    mutating func setProjectFPS(_ newFPS: Int) {
+        guard newFPS > 0 else { return }
+        let oldFPS = file.project.fps
+        guard oldFPS != newFPS else { return }
+
+        for tIndex in file.project.timelines.indices {
+            // Пересчёт маркеров
+            for mIndex in file.project.timelines[tIndex].markers.indices {
+                let oldSeconds = file.project.timelines[tIndex].markers[mIndex].timeSeconds
+                let frames = Int(round(oldSeconds * Double(oldFPS)))
+                let newSeconds = Double(frames) / Double(newFPS)
+                file.project.timelines[tIndex].markers[mIndex].timeSeconds = newSeconds
+            }
+
+            // Синхронизируем поле fps в таймлайне (для совместимости)
+            file.project.timelines[tIndex].fps = newFPS
+        }
+
+        // Устанавливаем новый глобальный FPS
+        file.project.fps = newFPS
     }
 }

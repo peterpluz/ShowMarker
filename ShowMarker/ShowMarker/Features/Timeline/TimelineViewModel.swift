@@ -45,13 +45,17 @@ final class TimelineViewModel: ObservableObject {
     }
 
     private func syncAll() {
-        guard let timeline = document.wrappedValue.file.project.timelines.first(where: { $0.id == timelineID }) else {
-            return
-        }
+        guard let timeline = document.wrappedValue
+            .file.project.timelines.first(where: { $0.id == timelineID })
+        else { return }
 
         name = timeline.name
         audio = timeline.audio
-        fps = timeline.fps
+
+        // fps берем из глобального проекта (при этом timeline.fps обновляется при смене проекта)
+        fps = document.wrappedValue.file.project.fps
+
+        // сортируем по timeSeconds (в секундах), как раньше
         markers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
 
         syncAudioIfNeeded()
@@ -85,7 +89,22 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
-    // MARK: Timeline ops
+    // MARK: - FPS
+
+    func setFPS(_ newFPS: Int) {
+        guard [25, 30, 50, 60, 100].contains(newFPS) else { return }
+
+        // Выполняем проектную смену FPS через документ (миграция маркеров)
+        var doc = document.wrappedValue
+        doc.setProjectFPS(newFPS)
+        document.wrappedValue = doc
+
+        // Обновляем локальный fps и синхронизируем список маркеров/имён
+        fps = newFPS
+        syncAll()
+    }
+
+    // MARK: - Timeline
 
     func renameTimeline(to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
@@ -99,7 +118,7 @@ final class TimelineViewModel: ObservableObject {
         name = trimmed
     }
 
-    // MARK: Marker ops
+    // MARK: - Markers
 
     func addMarkerAtCurrentTime() {
         guard audio != nil else { return }
@@ -113,6 +132,7 @@ final class TimelineViewModel: ObservableObject {
         doc.addMarker(timelineID: timelineID, marker: marker)
         normalizeMarkers(&doc)
         document.wrappedValue = doc
+        syncAll()
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
@@ -123,6 +143,7 @@ final class TimelineViewModel: ObservableObject {
         doc.updateMarker(timelineID: timelineID, marker: updated)
         normalizeMarkers(&doc)
         document.wrappedValue = doc
+        syncAll()
     }
 
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
@@ -133,6 +154,7 @@ final class TimelineViewModel: ObservableObject {
         doc.updateMarker(timelineID: timelineID, marker: updated)
         normalizeMarkers(&doc)
         document.wrappedValue = doc
+        syncAll()
     }
 
     func deleteMarker(_ marker: TimelineMarker) {
@@ -140,6 +162,7 @@ final class TimelineViewModel: ObservableObject {
         doc.removeMarker(timelineID: timelineID, markerID: marker.id)
         normalizeMarkers(&doc)
         document.wrappedValue = doc
+        syncAll()
     }
 
     private func normalizeMarkers(_ doc: inout ShowMarkerDocument) {
@@ -149,7 +172,7 @@ final class TimelineViewModel: ObservableObject {
         markers = sorted
     }
 
-    // MARK: Playback
+    // MARK: - Playback
 
     func seek(to seconds: Double) {
         player.seek(by: seconds - currentTime)
@@ -166,7 +189,7 @@ final class TimelineViewModel: ObservableObject {
         player.stop()
     }
 
-    // MARK: Audio (ВАЖНО)
+    // MARK: - Audio
 
     func addAudio(
         sourceData: Data,
@@ -212,6 +235,8 @@ final class TimelineViewModel: ObservableObject {
         currentTime = 0
         isPlaying = false
     }
+
+    // MARK: - Timecode
 
     func timecode() -> String {
         let totalFrames = Int(currentTime * Double(fps))

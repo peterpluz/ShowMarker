@@ -12,6 +12,8 @@ struct ProjectView: View {
     @State private var renamingTimelineID: UUID?
     @State private var renameText = ""
 
+    private let availableFPS = [25, 30, 50, 60, 100]
+
     private var isRenamingPresented: Binding<Bool> {
         Binding(
             get: { renamingTimelineID != nil },
@@ -68,7 +70,34 @@ struct ProjectView: View {
                 .onMove { document.moveTimelines(from: $0, to: $1) }
             }
         }
-        .toolbar { EditButton() }
+        .navigationTitle(document.file.project.name)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                EditButton()
+            }
+
+            // ===== PROJECT FPS MENU =====
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    ForEach(availableFPS, id: \.self) { value in
+                        Button {
+                            document.setProjectFPS(value)
+                        } label: {
+                            if document.file.project.fps == value {
+                                Label("\(value) FPS", systemImage: "checkmark")
+                            } else {
+                                Text("\(value) FPS")
+                            }
+                        }
+                    }
+                } label: {
+                    Label(
+                        "\(document.file.project.fps) FPS",
+                        systemImage: "speedometer"
+                    )
+                }
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             bottomNotesStyleBar
         }
@@ -91,12 +120,11 @@ struct ProjectView: View {
         }
     }
 
-    // MARK: - Bottom bar (Notes-style, equal insets)
+    // MARK: - Bottom bar
 
     private var bottomNotesStyleBar: some View {
         HStack(spacing: 12) {
 
-            // Search capsule
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
@@ -118,14 +146,7 @@ struct ProjectView: View {
                 Capsule()
                     .stroke(Color.white.opacity(0.08), lineWidth: 1)
             )
-            .shadow(
-                color: Color.black.opacity(0.18),
-                radius: 6,
-                x: 0,
-                y: 2
-            )
 
-            // Blue "+" button
             Button {
                 isAddTimelinePresented = true
             } label: {
@@ -139,7 +160,7 @@ struct ProjectView: View {
                     )
             }
         }
-        .padding(16) // ← одинаковые отступы: слева, справа и снизу
+        .padding(16)
     }
 
     // MARK: - Helpers
