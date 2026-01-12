@@ -5,6 +5,8 @@ import Combine
 @MainActor
 final class TimelineViewModel: ObservableObject {
 
+    // MARK: - Published state
+
     @Published private(set) var audio: TimelineAudio?
     @Published private(set) var name: String = ""
     @Published private(set) var markers: [TimelineMarker] = []
@@ -18,6 +20,8 @@ final class TimelineViewModel: ObservableObject {
         audio?.duration ?? 0
     }
 
+    // MARK: - Internals
+
     private let player = AudioPlayerService()
     private var cancellables = Set<AnyCancellable>()
 
@@ -27,12 +31,23 @@ final class TimelineViewModel: ObservableObject {
     private let baseSamples = 150
     private var cachedWaveform: WaveformCache.CachedWaveform?
 
-    init(document: Binding<ShowMarkerDocument>, timelineID: UUID) {
+    /// Чтобы не перезагружать аудио при изменении маркеров
+    private var loadedAudioID: UUID?
+
+    // MARK: - Init
+
+    init(
+        document: Binding<ShowMarkerDocument>,
+        timelineID: UUID
+    ) {
         self.document = document
         self.timelineID = timelineID
         bindPlayer()
-        syncAll()
+        syncTimelineState()
+        syncAudioIfNeeded()
     }
+
+    // MARK: - Player binding
 
     private func bindPlayer() {
         player.$currentTime
@@ -44,33 +59,39 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    private func syncAll() {
+    // MARK: - Sync
+
+    /// Синхронизация данных таймлайна БЕЗ аудио
+    private func syncTimelineState() {
         guard let timeline = document.wrappedValue
             .file.project.timelines.first(where: { $0.id == timelineID })
         else { return }
 
         name = timeline.name
         audio = timeline.audio
-
-        // fps берем из глобального проекта (при этом timeline.fps обновляется при смене проекта)
         fps = document.wrappedValue.file.project.fps
-
-        // сортируем по timeSeconds (в секундах), как раньше
         markers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
-
-        syncAudioIfNeeded()
     }
 
+    /// Загрузка аудио ТОЛЬКО если оно реально изменилось
     private func syncAudioIfNeeded() {
         guard let audio else { return }
+
+        if loadedAudioID == audio.id {
+            return
+        }
 
         let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
         guard let bytes = document.wrappedValue.audioFiles[fileName] else { return }
 
-        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        let tmpURL = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent(fileName)
+
         try? bytes.write(to: tmpURL, options: .atomic)
 
         player.load(url: tmpURL)
+        loadedAudioID = audio.id
 
         if let cached = WaveformCache.load(cacheKey: fileName) {
             cachedWaveform = cached
@@ -89,36 +110,37 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
-    // MARK: - FPS
+    // MARK: - FPS (project-wide)
 
     func setFPS(_ newFPS: Int) {
         guard [25, 30, 50, 60, 100].contains(newFPS) else { return }
 
-        // Выполняем проектную смену FPS через документ (миграция маркеров)
         var doc = document.wrappedValue
         doc.setProjectFPS(newFPS)
         document.wrappedValue = doc
 
-        // Обновляем локальный fps и синхронизируем список маркеров/имён
-        fps = newFPS
-        syncAll()
+        syncTimelineState()
     }
 
     // MARK: - Timeline
 
+    /// ❗️НУЖЕН TimelineScreen — был удалён по ошибке ранее
     func renameTimeline(to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
 
         var doc = document.wrappedValue
-        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            return
+        }
 
         doc.file.project.timelines[idx].name = trimmed
         document.wrappedValue = doc
+
         name = trimmed
     }
 
-    // MARK: - Markers
+    // MARK: - Markers (без перезагрузки аудио)
 
     func addMarkerAtCurrentTime() {
         guard audio != nil else { return }
@@ -132,7 +154,8 @@ final class TimelineViewModel: ObservableObject {
         doc.addMarker(timelineID: timelineID, marker: marker)
         normalizeMarkers(&doc)
         document.wrappedValue = doc
-        syncAll()
+
+        syncTimelineState()
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
@@ -143,7 +166,8 @@ final class TimelineViewModel: ObservableObject {
         doc.updateMarker(timelineID: timelineID, marker: updated)
         normalizeMarkers(&doc)
         document.wrappedValue = doc
-        syncAll()
+
+        syncTimelineState()
     }
 
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
@@ -154,7 +178,8 @@ final class TimelineViewModel: ObservableObject {
         doc.updateMarker(timelineID: timelineID, marker: updated)
         normalizeMarkers(&doc)
         document.wrappedValue = doc
-        syncAll()
+
+        syncTimelineState()
     }
 
     func deleteMarker(_ marker: TimelineMarker) {
@@ -162,12 +187,15 @@ final class TimelineViewModel: ObservableObject {
         doc.removeMarker(timelineID: timelineID, markerID: marker.id)
         normalizeMarkers(&doc)
         document.wrappedValue = doc
-        syncAll()
+
+        syncTimelineState()
     }
 
     private func normalizeMarkers(_ doc: inout ShowMarkerDocument) {
         guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
-        let sorted = doc.file.project.timelines[idx].markers.sorted { $0.timeSeconds < $1.timeSeconds }
+        let sorted = doc.file.project.timelines[idx]
+            .markers
+            .sorted { $0.timeSeconds < $1.timeSeconds }
         doc.file.project.timelines[idx].markers = sorted
         markers = sorted
     }
@@ -213,7 +241,10 @@ final class TimelineViewModel: ObservableObject {
         )
 
         document.wrappedValue = doc
-        syncAll()
+
+        loadedAudioID = nil
+        syncTimelineState()
+        syncAudioIfNeeded()
     }
 
     func removeAudio() {
@@ -230,6 +261,7 @@ final class TimelineViewModel: ObservableObject {
         doc.file.project.timelines[idx].audio = nil
         document.wrappedValue = doc
 
+        loadedAudioID = nil
         audio = nil
         waveform = []
         currentTime = 0
@@ -245,6 +277,9 @@ final class TimelineViewModel: ObservableObject {
         let minutes = (totalFrames / fps / 60) % 60
         let hours = totalFrames / fps / 3600
 
-        return String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
+        return String(
+            format: "%02d:%02d:%02d:%02d",
+            hours, minutes, seconds, frames
+        )
     }
 }

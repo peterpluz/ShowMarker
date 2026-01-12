@@ -12,6 +12,8 @@ struct ProjectView: View {
     @State private var renamingTimelineID: UUID?
     @State private var renameText = ""
 
+    @State private var isEditing = false
+
     private let availableFPS = [25, 30, 50, 60, 100]
 
     private var isRenamingPresented: Binding<Bool> {
@@ -52,6 +54,25 @@ struct ProjectView: View {
                     } label: {
                         TimelineRow(title: timeline.name)
                     }
+                    // ===== SWIPE ACTIONS =====
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+
+                        // Delete — САМАЯ ПРАВАЯ
+                        Button(role: .destructive) {
+                            deleteTimeline(timeline)
+                        } label: {
+                            Label("Удалить", systemImage: "trash")
+                        }
+
+                        // Rename — левее delete
+                        Button {
+                            startRename(timeline)
+                        } label: {
+                            Label("Переименовать", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                    }
+                    // ===== CONTEXT MENU (оставляем) =====
                     .contextMenu {
                         Button {
                             startRename(timeline)
@@ -71,30 +92,44 @@ struct ProjectView: View {
             }
         }
         .navigationTitle(document.file.project.name)
+        .environment(\.editMode, .constant(isEditing ? .active : .inactive))
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                EditButton()
-            }
 
-            // ===== PROJECT FPS MENU =====
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    ForEach(availableFPS, id: \.self) { value in
-                        Button {
-                            document.setProjectFPS(value)
-                        } label: {
-                            if document.file.project.fps == value {
-                                Label("\(value) FPS", systemImage: "checkmark")
-                            } else {
-                                Text("\(value) FPS")
+
+                    Button {
+                        isEditing.toggle()
+                    } label: {
+                        Label(
+                            isEditing ? "Done" : "Edit",
+                            systemImage: "list.bullet"
+                        )
+                    }
+
+                    Divider()
+
+                    Menu {
+                        ForEach(availableFPS, id: \.self) { value in
+                            Button {
+                                document.setProjectFPS(value)
+                            } label: {
+                                if document.file.project.fps == value {
+                                    Label("\(value) FPS", systemImage: "checkmark")
+                                } else {
+                                    Text("\(value) FPS")
+                                }
                             }
                         }
+                    } label: {
+                        Label(
+                            "FPS (\(document.file.project.fps))",
+                            systemImage: "speedometer"
+                        )
                     }
+
                 } label: {
-                    Label(
-                        "\(document.file.project.fps) FPS",
-                        systemImage: "speedometer"
-                    )
+                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
