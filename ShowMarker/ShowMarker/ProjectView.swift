@@ -54,17 +54,14 @@ struct ProjectView: View {
                     } label: {
                         TimelineRow(title: timeline.name)
                     }
-                    // ===== SWIPE ACTIONS =====
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
 
-                        // Delete — САМАЯ ПРАВАЯ
                         Button(role: .destructive) {
                             deleteTimeline(timeline)
                         } label: {
                             Label("Удалить", systemImage: "trash")
                         }
 
-                        // Rename — левее delete
                         Button {
                             startRename(timeline)
                         } label: {
@@ -72,7 +69,6 @@ struct ProjectView: View {
                         }
                         .tint(.blue)
                     }
-                    // ===== CONTEXT MENU (оставляем) =====
                     .contextMenu {
                         Button {
                             startRename(timeline)
@@ -94,7 +90,6 @@ struct ProjectView: View {
         .navigationTitle(document.file.project.name)
         .environment(\.editMode, .constant(isEditing ? .active : .inactive))
         .toolbar {
-
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
 
@@ -129,7 +124,8 @@ struct ProjectView: View {
                     }
 
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20, weight: .semibold))
                 }
             }
         }
@@ -167,9 +163,6 @@ struct ProjectView: View {
                 TextField("Поиск", text: $searchText)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
-
-                Image(systemName: "mic.fill")
-                    .foregroundColor(.secondary)
             }
             .padding(.horizontal, 16)
             .frame(height: 48)

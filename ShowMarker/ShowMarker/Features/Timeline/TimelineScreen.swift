@@ -11,8 +11,6 @@ struct TimelineScreen: View {
     @State private var renameText = ""
 
     @State private var renamingMarker: TimelineMarker?
-
-    // ВАЖНО: item-based sheet
     @State private var timePickerMarker: TimelineMarker?
 
     @State private var exportData: Data?
@@ -84,15 +82,11 @@ struct TimelineScreen: View {
         .toolbar { toolbarContent }
         .safeAreaInset(edge: .bottom) { bottomPanel }
 
-        // MARK: - Sheet (исправлено)
-
         .sheet(item: $timePickerMarker) { marker in
             TimecodePickerView(
                 seconds: marker.timeSeconds,
                 fps: viewModel.fps,
-                onCancel: {
-                    timePickerMarker = nil
-                },
+                onCancel: { timePickerMarker = nil },
                 onDone: { newSeconds in
                     viewModel.moveMarker(marker, to: newSeconds)
                     timePickerMarker = nil
@@ -101,8 +95,6 @@ struct TimelineScreen: View {
             .presentationDetents([.height(320)])
             .presentationDragIndicator(.visible)
         }
-
-        // MARK: - Alerts
 
         .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
             TextField("Название", text: $renameText)
@@ -134,8 +126,6 @@ struct TimelineScreen: View {
             }
         }
 
-        // MARK: - Import / Export
-
         .fileImporter(
             isPresented: $isPickerPresented,
             allowedContentTypes: [.audio],
@@ -156,7 +146,6 @@ struct TimelineScreen: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
             Menu {
-
                 Button {
                     isPickerPresented = true
                 } label: {
@@ -188,15 +177,16 @@ struct TimelineScreen: View {
                 .disabled(viewModel.markers.isEmpty)
 
             } label: {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .semibold))
             }
         }
     }
 
-    // MARK: - Bottom panel
+    // MARK: - Bottom panel (исправлено)
 
     private var bottomPanel: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
 
             TimelineBarView(
                 duration: viewModel.duration,
@@ -215,9 +205,31 @@ struct TimelineScreen: View {
             )
             .frame(height: 160)
 
+            // ⏱ СНАЧАЛА ТАЙМКОД
             Text(viewModel.timecode())
-                .font(.system(size: 30, weight: .bold))
+                .font(.system(size: 32, weight: .bold))
 
+            // ▶︎ ПОТОМ ПЛЕЕР
+            HStack(spacing: 40) {
+
+                Button { viewModel.seekBackward() } label: {
+                    Image(systemName: "gobackward.5")
+                        .font(.system(size: 22))
+                }
+
+                Button { viewModel.togglePlayPause() } label: {
+                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 28))
+                }
+
+                Button { viewModel.seekForward() } label: {
+                    Image(systemName: "goforward.5")
+                        .font(.system(size: 22))
+                }
+            }
+            .foregroundColor(.primary)
+
+            // ➕ ADD MARKER (Liquid Glass)
             Button {
                 viewModel.addMarkerAtCurrentTime()
             } label: {
