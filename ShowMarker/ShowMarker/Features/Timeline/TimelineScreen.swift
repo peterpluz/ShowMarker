@@ -31,22 +31,64 @@ struct TimelineScreen: View {
         )
     }
 
-    // MARK: - BODY
-
     var body: some View {
-        VStack(spacing: 0) {
-            markersList
+        List {
+            Section {
+                ForEach(viewModel.markers) { marker in
+                    MarkerCard(marker: marker, fps: viewModel.fps)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            viewModel.seek(to: marker.timeSeconds)
+                        }
+                        .contextMenu {
+                            Button {
+                                renamingMarker = marker
+                                renameMarkerText = marker.name
+                            } label: {
+                                Label("Переименовать", systemImage: "pencil")
+                            }
+
+                            Button {
+                                editingTimeMarker = marker
+                                markerTimeText = String(format: "%.3f", marker.timeSeconds)
+                            } label: {
+                                Label("Изменить время положения", systemImage: "clock")
+                            }
+
+                            Divider()
+
+                            Button(role: .destructive) {
+                                viewModel.deleteMarker(marker)
+                            } label: {
+                                Label("Удалить", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+
+                            Button(role: .destructive) {
+                                viewModel.deleteMarker(marker)
+                            } label: {
+                                Label("Удалить", systemImage: "trash")
+                            }
+
+                            Button {
+                                renamingMarker = marker
+                                renameMarkerText = marker.name
+                            } label: {
+                                Label("Переименовать", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
+                }
+            }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .safeAreaInset(edge: .bottom) { bottomPanel }
-        .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
-            TextField("Название", text: $renameText)
-            Button("Готово") {
-                viewModel.renameTimeline(to: renameText)
-            }
-            Button("Отмена", role: .cancel) {}
+        .onDisappear {
+            viewModel.onDisappear()
         }
         .alert("Переименовать маркер", isPresented: Binding(
             get: { renamingMarker != nil },
@@ -71,10 +113,8 @@ struct TimelineScreen: View {
                 .keyboardType(.decimalPad)
 
             Button("Готово") {
-                if
-                    let marker = editingTimeMarker,
-                    let value = Double(markerTimeText)
-                {
+                if let marker = editingTimeMarker,
+                   let value = Double(markerTimeText) {
                     viewModel.moveMarker(marker, to: value)
                 }
                 editingTimeMarker = nil
@@ -84,109 +124,22 @@ struct TimelineScreen: View {
                 editingTimeMarker = nil
             }
         }
-        .fileImporter(
-            isPresented: $isPickerPresented,
-            allowedContentTypes: [.audio],
-            allowsMultipleSelection: false,
-            onCompletion: handleAudio
-        )
-        .fileExporter(
-            isPresented: $isExportPresented,
-            document: CSVDocument(data: exportData ?? Data()),
-            contentType: .commaSeparatedText,
-            defaultFilename: "\(viewModel.name)_Markers",
-            onCompletion: { _ in }
-        )
-        .onDisappear {
-            viewModel.onDisappear()
-        }
-    }
-
-    // MARK: - MARKERS LIST
-
-    private var markersList: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(viewModel.markers) { marker in
-                    Button {
-                        viewModel.seek(to: marker.timeSeconds)
-                    } label: {
-                        MarkerCard(marker: marker, fps: viewModel.fps)
-                    }
-                    .contextMenu {
-                        Button {
-                            renamingMarker = marker
-                            renameMarkerText = marker.name
-                        } label: {
-                            Label("Переименовать", systemImage: "pencil")
-                        }
-
-                        Button {
-                            editingTimeMarker = marker
-                            markerTimeText = String(format: "%.3f", marker.timeSeconds)
-                        } label: {
-                            Label("Изменить время положения", systemImage: "clock")
-                        }
-
-                        Button(role: .destructive) {
-                            viewModel.deleteMarker(marker)
-                        } label: {
-                            Label("Удалить", systemImage: "trash")
-                        }
-                    }
-                }
-            }
-            .padding()
-        }
     }
 
     // MARK: - TOOLBAR
 
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
-            Menu {
-
-                Button {
-                    isPickerPresented = true
-                } label: {
-                    Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
-                }
-
-                Button(role: .destructive) {
-                    viewModel.removeAudio()
-                } label: {
-                    Label("Удалить аудиофайл", systemImage: "trash")
-                }
-
-                Divider()
-
-                Button {
-                    renameText = viewModel.name
-                    isRenamingTimeline = true
-                } label: {
-                    Label("Переименовать таймлайн", systemImage: "pencil")
-                }
-
-                Divider()
-
-                Button {
-                    prepareExport()
-                } label: {
-                    Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
-                }
-                .disabled(viewModel.markers.isEmpty)
-
-            } label: {
-                Image(systemName: "ellipsis.circle")
-            }
+            Image(systemName: "ellipsis.circle")
         }
     }
 
-    // MARK: - BOTTOM PANEL
+    // MARK: - BOTTOM PANEL (лево==право==низ = 24pt)
 
     private var bottomPanel: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
 
+            // чуть меньше пространства над waveform чтобы визуально кнопка ниже
             TimelineBarView(
                 duration: viewModel.duration,
                 currentTime: viewModel.currentTime,
@@ -195,91 +148,57 @@ struct TimelineScreen: View {
                 hasAudio: viewModel.audio != nil,
                 onAddAudio: { isPickerPresented = true },
                 onSeek: { viewModel.seek(to: $0) },
-                onPreviewMoveMarker: { markerID, time in
-                    if let marker = viewModel.markers.first(where: { $0.id == markerID }) {
+                onPreviewMoveMarker: { id, time in
+                    if let marker = viewModel.markers.first(where: { $0.id == id }) {
                         viewModel.moveMarker(marker, to: time)
                     }
                 },
                 onCommitMoveMarker: { _, _ in }
             )
-            .frame(height: 180)
+            .frame(height: 160)
 
             Text(viewModel.timecode())
                 .font(.system(size: 30, weight: .bold))
 
             HStack(spacing: 44) {
                 Button { viewModel.seekBackward() } label: {
-                    Image(systemName: "gobackward.5")
+                    Image(systemName: "gobackward.15")
                 }
                 Button { viewModel.togglePlayPause() } label: {
                     Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
                 }
                 Button { viewModel.seekForward() } label: {
-                    Image(systemName: "goforward.5")
+                    Image(systemName: "goforward.15")
                 }
             }
             .font(.system(size: 28, weight: .semibold))
             .disabled(viewModel.audio == nil)
             .opacity(viewModel.audio == nil ? 0.4 : 1)
 
+            // кнопка опущена визуально за счёт уменьшения высоты waveform и уменьшенных spacing
             Button {
                 viewModel.addMarkerAtCurrentTime()
             } label: {
-                Label("Добавить маркер", systemImage: "bookmark.fill")
+                Text("ДОБАВИТЬ МАРКЕР")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        Capsule()
+                            .fill(Color.accentColor)
+                    )
             }
-            .buttonStyle(.bordered)
             .disabled(viewModel.audio == nil)
+            .opacity(viewModel.audio == nil ? 0.4 : 1)
         }
-        .padding()
+        // одинаковые отступы слева/справа/снизу
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
+        .padding(.top, 12)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.regularMaterial)
         )
-    }
-
-    // MARK: - HELPERS
-
-    private func prepareExport() {
-        let csv = MarkersCSVExporter.export(markers: viewModel.markers)
-        exportData = csv.data(using: .utf8)
-        isExportPresented = true
-    }
-
-    private func handleAudio(_ result: Result<[URL], Error>) {
-        guard
-            case .success(let urls) = result,
-            let url = urls.first
-        else { return }
-
-        guard url.startAccessingSecurityScopedResource() else { return }
-        defer { url.stopAccessingSecurityScopedResource() }
-
-        do {
-            let data = try Data(contentsOf: url)
-
-            let tmpURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-                .appendingPathExtension(url.pathExtension)
-
-            try data.write(to: tmpURL, options: .atomic)
-
-            let vm = viewModel
-
-            Task { @MainActor in
-                let asset = AVURLAsset(url: tmpURL)
-                let d = try? await asset.load(.duration)
-
-                try? vm.addAudio(
-                    sourceData: data,
-                    originalFileName: url.lastPathComponent,
-                    fileExtension: url.pathExtension,
-                    duration: d?.seconds ?? 0
-                )
-
-                try? FileManager.default.removeItem(at: tmpURL)
-            }
-        } catch {
-            print("Audio import failed:", error)
-        }
     }
 }

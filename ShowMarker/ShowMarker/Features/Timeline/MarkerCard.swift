@@ -8,28 +8,31 @@ struct MarkerCard: View {
     var body: some View {
         HStack(spacing: 12) {
 
-            Rectangle()
-                .fill(Color.accentColor)
-                .frame(width: 4)
-                .cornerRadius(2)
+            Image(systemName: "bookmark.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.accentColor)
+                .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(marker.name)
-                    .font(.headline)
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.primary)
+                    .lineLimit(1)
 
                 Text(timecode())
-                    .font(.subheadline)
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
 
             Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.5))
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.secondary.opacity(0.12))
-        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8) // ⬅️ ключевое уменьшение высоты
+        .contentShape(Rectangle())
     }
 
     private func timecode() -> String {
@@ -41,9 +44,6 @@ struct MarkerCard: View {
         let minutes = totalMinutes % 60
         let hours = totalMinutes / 60
 
-        return String(
-            format: "%02d:%02d:%02d:%02d",
-            hours, minutes, seconds, frames
-        )
+        return String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
     }
 }
