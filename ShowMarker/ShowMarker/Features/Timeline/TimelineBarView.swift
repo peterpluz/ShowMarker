@@ -4,17 +4,23 @@ struct TimelineBarView: View {
 
     let duration: Double
     let currentTime: Double
+
+    // ⬇️ ТЕПЕРЬ ТОЛЬКО ВИДИМЫЕ ДАННЫЕ
     let waveform: [Float]
     let markers: [TimelineMarker]
+
     let hasAudio: Bool
 
     let onAddAudio: () -> Void
     let onSeek: (Double) -> Void
 
-    // preview (live)
     let onPreviewMoveMarker: (UUID, Double) -> Void
-    // commit (once)
     let onCommitMoveMarker: (UUID, Double) -> Void
+
+    // ZOOM
+    let onPinchZoom: (CGFloat) -> Void
+
+    // MARK: - Layout
 
     private let barHeight: CGFloat = 140
     private let barWidth: CGFloat = 3
@@ -25,6 +31,8 @@ struct TimelineBarView: View {
 
     @State private var armedMarkerID: UUID?
     @State private var dragStartTime: Double?
+
+    @State private var pinchStartScale: CGFloat = 1.0
 
     var body: some View {
         GeometryReader { geo in
@@ -75,31 +83,43 @@ struct TimelineBarView: View {
                         .frame(width: playheadLineWidth, height: barHeight)
                         .position(x: centerX, y: barHeight / 2)
                 }
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            guard armedMarkerID == nil else { return }
-
-                            if dragStartTime == nil {
-                                dragStartTime = currentTime
-                            }
-                            guard let start = dragStartTime else { return }
-
-                            let delta = Double(value.translation.width)
-                                * secondsPerPixel * -1
-
-                            onSeek(clamp(start + delta))
-                        }
-                        .onEnded { _ in
-                            dragStartTime = nil
-                        }
-                )
+                .gesture(playheadDrag(secondsPerPixel: secondsPerPixel))
+                .simultaneousGesture(pinchGesture)
             }
         }
         .frame(height: barHeight)
     }
 
-    // MARK: - Marker gesture (LongPress → Drag)
+    // MARK: - Gestures
+
+    private var pinchGesture: some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                onPinchZoom(value)
+            }
+    }
+
+    private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                guard armedMarkerID == nil else { return }
+
+                if dragStartTime == nil {
+                    dragStartTime = currentTime
+                }
+                guard let start = dragStartTime else { return }
+
+                let delta = Double(value.translation.width)
+                    * secondsPerPixel * -1
+
+                onSeek(clamp(start + delta))
+            }
+            .onEnded { _ in
+                dragStartTime = nil
+            }
+    }
+
+    // MARK: - Marker gesture
 
     private func markerGesture(
         marker: TimelineMarker,
@@ -122,7 +142,6 @@ struct TimelineBarView: View {
                 let relative = (drag.location.x - originX) / contentWidth
                 let newTime = clamp(Double(relative) * duration)
 
-                // LIVE preview
                 onPreviewMoveMarker(marker.id, newTime)
             }
             .onEnded { _ in
