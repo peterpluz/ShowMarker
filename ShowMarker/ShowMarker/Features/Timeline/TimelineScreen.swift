@@ -31,6 +31,8 @@ struct TimelineScreen: View {
         )
     }
 
+    // MARK: - BODY
+
     var body: some View {
         List {
             Section {
@@ -90,6 +92,17 @@ struct TimelineScreen: View {
         .onDisappear {
             viewModel.onDisappear()
         }
+
+        // MARK: - Alerts
+
+        .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
+            TextField("Название", text: $renameText)
+            Button("Готово") {
+                viewModel.renameTimeline(to: renameText)
+            }
+            Button("Отмена", role: .cancel) {}
+        }
+
         .alert("Переименовать маркер", isPresented: Binding(
             get: { renamingMarker != nil },
             set: { if !$0 { renamingMarker = nil } }
@@ -105,6 +118,7 @@ struct TimelineScreen: View {
                 renamingMarker = nil
             }
         }
+
         .alert("Изменить время маркера", isPresented: Binding(
             get: { editingTimeMarker != nil },
             set: { if !$0 { editingTimeMarker = nil } }
@@ -113,8 +127,10 @@ struct TimelineScreen: View {
                 .keyboardType(.decimalPad)
 
             Button("Готово") {
-                if let marker = editingTimeMarker,
-                   let value = Double(markerTimeText) {
+                if
+                    let marker = editingTimeMarker,
+                    let value = Double(markerTimeText)
+                {
                     viewModel.moveMarker(marker, to: value)
                 }
                 editingTimeMarker = nil
@@ -124,22 +140,71 @@ struct TimelineScreen: View {
                 editingTimeMarker = nil
             }
         }
+
+        // MARK: - File import / export
+
+        .fileImporter(
+            isPresented: $isPickerPresented,
+            allowedContentTypes: [.audio],
+            allowsMultipleSelection: false,
+            onCompletion: handleAudio
+        )
+        .fileExporter(
+            isPresented: $isExportPresented,
+            document: CSVDocument(data: exportData ?? Data()),
+            contentType: .commaSeparatedText,
+            defaultFilename: "\(viewModel.name)_Markers",
+            onCompletion: { _ in }
+        )
     }
 
-    // MARK: - TOOLBAR
+    // MARK: - TOOLBAR (ВОЗВРАЩЕНО ПОЛНОСТЬЮ)
 
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
-            Image(systemName: "ellipsis.circle")
+            Menu {
+
+                Button {
+                    isPickerPresented = true
+                } label: {
+                    Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
+                }
+
+                Button(role: .destructive) {
+                    viewModel.removeAudio()
+                } label: {
+                    Label("Удалить аудиофайл", systemImage: "trash")
+                }
+
+                Divider()
+
+                Button {
+                    renameText = viewModel.name
+                    isRenamingTimeline = true
+                } label: {
+                    Label("Переименовать таймлайн", systemImage: "pencil")
+                }
+
+                Divider()
+
+                Button {
+                    prepareExport()
+                } label: {
+                    Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
+                }
+                .disabled(viewModel.markers.isEmpty)
+
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
         }
     }
 
-    // MARK: - BOTTOM PANEL (лево==право==низ = 24pt)
+    // MARK: - BOTTOM PANEL (НЕ МЕНЯЛСЯ)
 
     private var bottomPanel: some View {
         VStack(spacing: 12) {
 
-            // чуть меньше пространства над waveform чтобы визуально кнопка ниже
             TimelineBarView(
                 duration: viewModel.duration,
                 currentTime: viewModel.currentTime,
@@ -175,7 +240,6 @@ struct TimelineScreen: View {
             .disabled(viewModel.audio == nil)
             .opacity(viewModel.audio == nil ? 0.4 : 1)
 
-            // кнопка опущена визуально за счёт уменьшения высоты waveform и уменьшенных spacing
             Button {
                 viewModel.addMarkerAtCurrentTime()
             } label: {
@@ -192,7 +256,6 @@ struct TimelineScreen: View {
             .disabled(viewModel.audio == nil)
             .opacity(viewModel.audio == nil ? 0.4 : 1)
         }
-        // одинаковые отступы слева/справа/снизу
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
         .padding(.top, 12)
@@ -201,4 +264,51 @@ struct TimelineScreen: View {
                 .fill(.regularMaterial)
         )
     }
+
+    // MARK: - Helpers
+
+    private func prepareExport() {
+        let csv = MarkersCSVExporter.export(markers: viewModel.markers)
+        exportData = csv.data(using: .utf8)
+        isExportPresented = true
+    }
+
+    private func handleAudio(_ result: Result<[URL], Error>) {
+        guard
+            case .success(let urls) = result,
+            let url = urls.first
+        else { return }
+
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        do {
+            let data = try Data(contentsOf: url)
+
+            let tmpURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(url.pathExtension)
+
+            try data.write(to: tmpURL, options: .atomic)
+
+            let vm = viewModel
+
+            Task { @MainActor in
+                let asset = AVURLAsset(url: tmpURL)
+                let d = try? await asset.load(.duration)
+
+                try? vm.addAudio(
+                    sourceData: data,
+                    originalFileName: url.lastPathComponent,
+                    fileExtension: url.pathExtension,
+                    duration: d?.seconds ?? 0
+                )
+
+                try? FileManager.default.removeItem(at: tmpURL)
+            }
+        } catch {
+            print("Audio import failed:", error)
+        }
+    }
 }
+К
