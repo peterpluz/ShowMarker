@@ -167,23 +167,6 @@ struct TimelineScreen: View {
                     Label("Переименовать таймлайн", systemImage: "pencil")
                 }
 
-                // ===== FPS MENU =====
-                Menu {
-                    ForEach([25, 30, 50, 60, 100], id: \.self) { value in
-                        Button {
-                            viewModel.setFPS(value)
-                        } label: {
-                            if viewModel.fps == value {
-                                Label("\(value) FPS", systemImage: "checkmark")
-                            } else {
-                                Text("\(value) FPS")
-                            }
-                        }
-                    }
-                } label: {
-                    Label("FPS", systemImage: "speedometer")
-                }
-
                 Divider()
 
                 Button {
