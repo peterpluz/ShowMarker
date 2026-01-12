@@ -11,10 +11,9 @@ struct TimelineScreen: View {
     @State private var renameText = ""
 
     @State private var renamingMarker: TimelineMarker?
-    @State private var renameMarkerText = ""
 
-    @State private var editingTimeMarker: TimelineMarker?
-    @State private var markerTimeText = ""
+    // ВАЖНО: item-based sheet
+    @State private var timePickerMarker: TimelineMarker?
 
     @State private var exportData: Data?
     @State private var isExportPresented = false
@@ -31,8 +30,6 @@ struct TimelineScreen: View {
         )
     }
 
-    // MARK: - BODY
-
     var body: some View {
         List {
             Section {
@@ -45,16 +42,14 @@ struct TimelineScreen: View {
                         .contextMenu {
                             Button {
                                 renamingMarker = marker
-                                renameMarkerText = marker.name
                             } label: {
                                 Label("Переименовать", systemImage: "pencil")
                             }
 
                             Button {
-                                editingTimeMarker = marker
-                                markerTimeText = String(format: "%.3f", marker.timeSeconds)
+                                timePickerMarker = marker
                             } label: {
-                                Label("Изменить время положения", systemImage: "clock")
+                                Label("Изменить время маркера", systemImage: "clock")
                             }
 
                             Divider()
@@ -75,7 +70,6 @@ struct TimelineScreen: View {
 
                             Button {
                                 renamingMarker = marker
-                                renameMarkerText = marker.name
                             } label: {
                                 Label("Переименовать", systemImage: "pencil")
                             }
@@ -89,8 +83,23 @@ struct TimelineScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .safeAreaInset(edge: .bottom) { bottomPanel }
-        .onDisappear {
-            viewModel.onDisappear()
+
+        // MARK: - Sheet (исправлено)
+
+        .sheet(item: $timePickerMarker) { marker in
+            TimecodePickerView(
+                seconds: marker.timeSeconds,
+                fps: viewModel.fps,
+                onCancel: {
+                    timePickerMarker = nil
+                },
+                onDone: { newSeconds in
+                    viewModel.moveMarker(marker, to: newSeconds)
+                    timePickerMarker = nil
+                }
+            )
+            .presentationDetents([.height(320)])
+            .presentationDragIndicator(.visible)
         }
 
         // MARK: - Alerts
@@ -107,10 +116,16 @@ struct TimelineScreen: View {
             get: { renamingMarker != nil },
             set: { if !$0 { renamingMarker = nil } }
         )) {
-            TextField("Название", text: $renameMarkerText)
+            TextField(
+                "Название",
+                text: Binding(
+                    get: { renamingMarker?.name ?? "" },
+                    set: { renamingMarker?.name = $0 }
+                )
+            )
             Button("Готово") {
                 if let marker = renamingMarker {
-                    viewModel.renameMarker(marker, to: renameMarkerText)
+                    viewModel.renameMarker(marker, to: marker.name)
                 }
                 renamingMarker = nil
             }
@@ -119,29 +134,7 @@ struct TimelineScreen: View {
             }
         }
 
-        .alert("Изменить время маркера", isPresented: Binding(
-            get: { editingTimeMarker != nil },
-            set: { if !$0 { editingTimeMarker = nil } }
-        )) {
-            TextField("Время (секунды)", text: $markerTimeText)
-                .keyboardType(.decimalPad)
-
-            Button("Готово") {
-                if
-                    let marker = editingTimeMarker,
-                    let value = Double(markerTimeText)
-                {
-                    viewModel.moveMarker(marker, to: value)
-                }
-                editingTimeMarker = nil
-            }
-
-            Button("Отмена", role: .cancel) {
-                editingTimeMarker = nil
-            }
-        }
-
-        // MARK: - File import / export
+        // MARK: - Import / Export
 
         .fileImporter(
             isPresented: $isPickerPresented,
@@ -158,7 +151,7 @@ struct TimelineScreen: View {
         )
     }
 
-    // MARK: - TOOLBAR (ВОЗВРАЩЕНО ПОЛНОСТЬЮ)
+    // MARK: - Toolbar
 
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
@@ -200,7 +193,7 @@ struct TimelineScreen: View {
         }
     }
 
-    // MARK: - BOTTOM PANEL (НЕ МЕНЯЛСЯ)
+    // MARK: - Bottom panel
 
     private var bottomPanel: some View {
         VStack(spacing: 12) {
@@ -225,21 +218,6 @@ struct TimelineScreen: View {
             Text(viewModel.timecode())
                 .font(.system(size: 30, weight: .bold))
 
-            HStack(spacing: 44) {
-                Button { viewModel.seekBackward() } label: {
-                    Image(systemName: "gobackward.15")
-                }
-                Button { viewModel.togglePlayPause() } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                }
-                Button { viewModel.seekForward() } label: {
-                    Image(systemName: "goforward.15")
-                }
-            }
-            .font(.system(size: 28, weight: .semibold))
-            .disabled(viewModel.audio == nil)
-            .opacity(viewModel.audio == nil ? 0.4 : 1)
-
             Button {
                 viewModel.addMarkerAtCurrentTime()
             } label: {
@@ -249,8 +227,7 @@ struct TimelineScreen: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)
                     .background(
-                        Capsule()
-                            .fill(Color.accentColor)
+                        Capsule().fill(Color.accentColor)
                     )
             }
             .disabled(viewModel.audio == nil)
@@ -260,7 +237,7 @@ struct TimelineScreen: View {
         .padding(.bottom, 24)
         .padding(.top, 12)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 20)
                 .fill(.regularMaterial)
         )
     }
@@ -311,4 +288,3 @@ struct TimelineScreen: View {
         }
     }
 }
-К
