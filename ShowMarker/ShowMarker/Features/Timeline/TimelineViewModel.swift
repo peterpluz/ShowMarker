@@ -5,7 +5,7 @@ import Combine
 @MainActor
 final class TimelineViewModel: ObservableObject {
 
-    // MARK: - Published state
+    // MARK: - Published state (Model → View)
 
     @Published private(set) var audio: TimelineAudio?
     @Published private(set) var name: String = ""
@@ -14,7 +14,26 @@ final class TimelineViewModel: ObservableObject {
 
     @Published var currentTime: Double = 0
     @Published var isPlaying: Bool = false
-    @Published var waveform: [Float] = []
+
+    // Waveform (VISIBLE ONLY)
+    @Published private(set) var visibleWaveform: [Float] = []
+    @Published private(set) var visibleMarkers: [TimelineMarker] = []
+
+    // MARK: - Zoom (VIEW STATE ONLY)
+
+    @Published private(set) var zoomScale: CGFloat = 1.0
+
+    let minZoom: CGFloat = 1.0
+    let maxZoom: CGFloat = 10.0
+
+    var zoomIndicatorText: String {
+        String(format: "×%.2f", zoomScale)
+    }
+
+    // Видимый диапазон времени
+    private(set) var visibleTimeRange: ClosedRange<Double> = 0...0
+
+    // MARK: - Derived
 
     var duration: Double {
         audio?.duration ?? 0
@@ -30,9 +49,13 @@ final class TimelineViewModel: ObservableObject {
 
     private let baseSamples = 150
     private var cachedWaveform: WaveformCache.CachedWaveform?
-
-    /// Чтобы не перезагружать аудио при изменении маркеров
     private var loadedAudioID: UUID?
+    
+    // НОВОЕ: debouncing для recalc
+    private var recalcTask: Task<Void, Never>?
+    
+    // НОВОЕ: отслеживание temp-файлов для cleanup
+    private var temporaryAudioURL: URL?
 
     // MARK: - Init
 
@@ -42,9 +65,18 @@ final class TimelineViewModel: ObservableObject {
     ) {
         self.document = document
         self.timelineID = timelineID
+
         bindPlayer()
         syncTimelineState()
         syncAudioIfNeeded()
+        recalcVisibleContent()
+    }
+    
+    // НОВОЕ: cleanup при уничтожении VM
+    deinit {
+        if let tmpURL = temporaryAudioURL {
+            try? FileManager.default.removeItem(at: tmpURL)
+        }
     }
 
     // MARK: - Player binding
@@ -59,9 +91,8 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Sync
+    // MARK: - Sync (Model → VM)
 
-    /// Синхронизация данных таймлайна БЕЗ аудио
     private func syncTimelineState() {
         guard let timeline = document.wrappedValue
             .file.project.timelines.first(where: { $0.id == timelineID })
@@ -71,15 +102,14 @@ final class TimelineViewModel: ObservableObject {
         audio = timeline.audio
         fps = document.wrappedValue.file.project.fps
         markers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
+
+        recalcVisibleContent()
     }
 
-    /// Загрузка аудио ТОЛЬКО если оно реально изменилось
     private func syncAudioIfNeeded() {
         guard let audio else { return }
 
-        if loadedAudioID == audio.id {
-            return
-        }
+        if loadedAudioID == audio.id { return }
 
         let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
         guard let bytes = document.wrappedValue.audioFiles[fileName] else { return }
@@ -89,7 +119,10 @@ final class TimelineViewModel: ObservableObject {
             .appendingPathComponent(fileName)
 
         try? bytes.write(to: tmpURL, options: .atomic)
-
+        
+        // НОВОЕ: сохраняем URL для cleanup
+        temporaryAudioURL = tmpURL
+        
         player.load(url: tmpURL)
         loadedAudioID = audio.id
 
@@ -102,45 +135,130 @@ final class TimelineViewModel: ObservableObject {
             )
         }
 
-        if let cachedWaveform {
-            waveform = WaveformCache.bestLevel(
-                from: cachedWaveform,
-                targetSamples: baseSamples
-            )
+        recalcVisibleContent()
+    }
+
+    // MARK: - Zoom API (called from View)
+
+    func applyPinchZoom(delta: CGFloat) {
+        let newZoom = clampZoom(zoomScale * delta)
+        guard newZoom != zoomScale else { return }
+
+        zoomScale = newZoom
+        recalcVisibleContent()
+    }
+
+    private func clampZoom(_ value: CGFloat) -> CGFloat {
+        min(max(value, minZoom), maxZoom)
+    }
+
+    // MARK: - Visible range + slicing (CORE) — ИСПРАВЛЕНО
+
+    private func recalcVisibleContent() {
+        // НОВОЕ: debouncing для предотвращения 30 вызовов в секунду
+        recalcTask?.cancel()
+        recalcTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled, let self else { return }
+            
+            self.performRecalc()
         }
     }
-
-    // MARK: - FPS (project-wide)
-
-    func setFPS(_ newFPS: Int) {
-        guard [25, 30, 50, 60, 100].contains(newFPS) else { return }
-
-        var doc = document.wrappedValue
-        doc.setProjectFPS(newFPS)
-        document.wrappedValue = doc
-
-        syncTimelineState()
-    }
-
-    // MARK: - Timeline
-
-    /// ❗️НУЖЕН TimelineScreen — был удалён по ошибке ранее
-    func renameTimeline(to newName: String) {
-        let trimmed = newName.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-
-        var doc = document.wrappedValue
-        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+    
+    private func performRecalc() {
+        guard duration > 0 else {
+            visibleWaveform = []
+            visibleMarkers = []
+            visibleTimeRange = 0...0
             return
         }
 
-        doc.file.project.timelines[idx].name = trimmed
-        document.wrappedValue = doc
+        // Длина видимого окна во времени
+        let visibleDuration = duration / Double(zoomScale)
 
-        name = trimmed
+        let center = currentTime
+        let start = max(0, center - visibleDuration / 2)
+        let end = min(duration, start + visibleDuration)
+
+        visibleTimeRange = start...end
+
+        sliceWaveform()
+        sliceMarkers()
     }
 
-    // MARK: - Markers (без перезагрузки аудио)
+    private func sliceWaveform() {
+        guard
+            let cachedWaveform,
+            duration > 0
+        else {
+            visibleWaveform = []
+            return
+        }
+
+        // Выбор mipmap по zoom
+        let targetSamples = Int(CGFloat(baseSamples) * zoomScale)
+        let level = WaveformCache.bestLevel(
+            from: cachedWaveform,
+            targetSamples: targetSamples
+        )
+
+        guard !level.isEmpty else {
+            visibleWaveform = []
+            return
+        }
+
+        let startRatio = visibleTimeRange.lowerBound / duration
+        let endRatio = visibleTimeRange.upperBound / duration
+
+        let startIndex = Int(startRatio * Double(level.count))
+        let endIndex = Int(endRatio * Double(level.count))
+
+        let safeStart = max(0, min(level.count - 1, startIndex))
+        let safeEnd = max(safeStart, min(level.count, endIndex))
+
+        visibleWaveform = Array(level[safeStart..<safeEnd])
+    }
+
+    private func sliceMarkers() {
+        visibleMarkers = markers.filter {
+            visibleTimeRange.contains($0.timeSeconds)
+        }
+    }
+
+    // MARK: - Playback
+
+    func seek(to seconds: Double) {
+        player.seek(by: seconds - currentTime)
+        recalcVisibleContent()
+    }
+
+    func togglePlayPause() {
+        player.togglePlayPause()
+    }
+
+    func seekBackward() {
+        player.seek(by: -5)
+        recalcVisibleContent()
+    }
+
+    func seekForward() {
+        player.seek(by: 5)
+        recalcVisibleContent()
+    }
+
+    // MARK: - Timeline ops
+
+    func renameTimeline(to newName: String) {
+        var doc = document.wrappedValue
+        guard let idx = doc.file.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        
+        doc.file.project.timelines[idx].name = newName
+        document.wrappedValue = doc
+        
+        syncTimelineState()
+    }
+
+    // MARK: - Marker ops
 
     func addMarkerAtCurrentTime() {
         guard audio != nil else { return }
@@ -200,23 +318,6 @@ final class TimelineViewModel: ObservableObject {
         markers = sorted
     }
 
-    // MARK: - Playback
-
-    func seek(to seconds: Double) {
-        player.seek(by: seconds - currentTime)
-    }
-
-    func togglePlayPause() {
-        player.togglePlayPause()
-    }
-
-    func seekBackward() { player.seek(by: -5) }
-    func seekForward() { player.seek(by: 5) }
-
-    func onDisappear() {
-        player.stop()
-    }
-
     // MARK: - Audio
 
     func addAudio(
@@ -263,9 +364,16 @@ final class TimelineViewModel: ObservableObject {
 
         loadedAudioID = nil
         audio = nil
-        waveform = []
+        visibleWaveform = []
+        visibleMarkers = []
         currentTime = 0
         isPlaying = false
+        
+        // НОВОЕ: cleanup temp-файла
+        if let tmpURL = temporaryAudioURL {
+            try? FileManager.default.removeItem(at: tmpURL)
+            temporaryAudioURL = nil
+        }
     }
 
     // MARK: - Timecode

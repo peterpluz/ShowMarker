@@ -4,24 +4,27 @@ struct TimelineBarView: View {
 
     let duration: Double
     let currentTime: Double
+
     let waveform: [Float]
     let markers: [TimelineMarker]
+
     let hasAudio: Bool
 
     let onAddAudio: () -> Void
     let onSeek: (Double) -> Void
 
-    // preview (live)
     let onPreviewMoveMarker: (UUID, Double) -> Void
-    // commit (once)
     let onCommitMoveMarker: (UUID, Double) -> Void
 
-    private let barHeight: CGFloat = 140
-    private let barWidth: CGFloat = 3
-    private let spacing: CGFloat = 1
+    let onPinchZoom: (CGFloat) -> Void
 
-    private let playheadLineWidth: CGFloat = 2
-    private let markerLineWidth: CGFloat = 3
+    // MARK: - Constants (ИСПРАВЛЕНО: вынесены как static)
+
+    private static let barHeight: CGFloat = 140
+    private static let barWidth: CGFloat = 3
+    private static let spacing: CGFloat = 1
+    private static let playheadLineWidth: CGFloat = 2
+    private static let markerLineWidth: CGFloat = 3
 
     @State private var armedMarkerID: UUID?
     @State private var dragStartTime: Double?
@@ -45,7 +48,7 @@ struct TimelineBarView: View {
             } else {
 
                 let centerX = geo.size.width / 2
-                let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
+                let contentWidth = max(CGFloat(waveform.count) * (Self.barWidth + Self.spacing), 1)
                 let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
 
                 ZStack {
@@ -56,12 +59,12 @@ struct TimelineBarView: View {
                     ForEach(markers) { marker in
                         Rectangle()
                             .fill(Color.orange)
-                            .frame(width: markerLineWidth, height: barHeight)
+                            .frame(width: Self.markerLineWidth, height: Self.barHeight)
                             .position(
                                 x: centerX
                                     - timelineOffset(contentWidth)
                                     + CGFloat(marker.timeSeconds / max(duration, 0.0001)) * contentWidth,
-                                y: barHeight / 2
+                                y: Self.barHeight / 2
                             )
                             .gesture(markerGesture(
                                 marker: marker,
@@ -72,34 +75,46 @@ struct TimelineBarView: View {
 
                     Rectangle()
                         .fill(Color.accentColor)
-                        .frame(width: playheadLineWidth, height: barHeight)
-                        .position(x: centerX, y: barHeight / 2)
+                        .frame(width: Self.playheadLineWidth, height: Self.barHeight)
+                        .position(x: centerX, y: Self.barHeight / 2)
                 }
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            guard armedMarkerID == nil else { return }
-
-                            if dragStartTime == nil {
-                                dragStartTime = currentTime
-                            }
-                            guard let start = dragStartTime else { return }
-
-                            let delta = Double(value.translation.width)
-                                * secondsPerPixel * -1
-
-                            onSeek(clamp(start + delta))
-                        }
-                        .onEnded { _ in
-                            dragStartTime = nil
-                        }
-                )
+                .gesture(playheadDrag(secondsPerPixel: secondsPerPixel))
+                .simultaneousGesture(pinchGesture)
             }
         }
-        .frame(height: barHeight)
+        .frame(height: Self.barHeight)
     }
 
-    // MARK: - Marker gesture (LongPress → Drag)
+    // MARK: - Gestures
+
+    private var pinchGesture: some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                onPinchZoom(value)
+            }
+    }
+
+    private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                guard armedMarkerID == nil else { return }
+
+                if dragStartTime == nil {
+                    dragStartTime = currentTime
+                }
+                guard let start = dragStartTime else { return }
+
+                let delta = Double(value.translation.width)
+                    * secondsPerPixel * -1
+
+                onSeek(clamp(start + delta))
+            }
+            .onEnded { _ in
+                dragStartTime = nil
+            }
+    }
+
+    // MARK: - Marker gesture
 
     private func markerGesture(
         marker: TimelineMarker,
@@ -122,7 +137,6 @@ struct TimelineBarView: View {
                 let relative = (drag.location.x - originX) / contentWidth
                 let newTime = clamp(Double(relative) * duration)
 
-                // LIVE preview
                 onPreviewMoveMarker(marker.id, newTime)
             }
             .onEnded { _ in
@@ -142,15 +156,15 @@ struct TimelineBarView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.secondary.opacity(0.12))
-                .frame(width: width, height: barHeight)
+                .frame(width: width, height: Self.barHeight)
 
-            HStack(spacing: spacing) {
+            HStack(spacing: Self.spacing) {
                 ForEach(waveform.indices, id: \.self) { i in
                     Rectangle()
                         .fill(Color.secondary.opacity(0.6))
                         .frame(
-                            width: barWidth,
-                            height: max(12, CGFloat(waveform[i]) * barHeight)
+                            width: Self.barWidth,
+                            height: max(12, CGFloat(waveform[i]) * Self.barHeight)
                         )
                 }
             }
