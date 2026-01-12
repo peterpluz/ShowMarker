@@ -1,6 +1,6 @@
 import Foundation
 
-enum AudioStorage {
+struct AudioStorage {
 
     static func audioDirectory(documentURL: URL) throws -> URL {
         let dir = documentURL

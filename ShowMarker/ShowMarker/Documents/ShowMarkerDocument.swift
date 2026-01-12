@@ -2,6 +2,14 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
 
+// MARK: - UTType Extension
+
+extension UTType {
+    static let smark = UTType(exportedAs: "com.peterpluz.showmarker.smark")
+}
+
+// MARK: - Document
+
 struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.smark] }

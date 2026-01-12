@@ -1,6 +1,6 @@
 import Foundation
 
-enum WaveformCache {
+struct WaveformCache {
 
     struct CachedWaveform: Codable {
         let mipmaps: [[Float]]
@@ -22,26 +22,22 @@ enum WaveformCache {
         return cached
     }
 
-    static func load(
-        cacheKey: String
-    ) -> CachedWaveform? {
+    static func load(cacheKey: String) -> CachedWaveform? {
         let url = cacheURL(for: cacheKey)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(CachedWaveform.self, from: data)
     }
 
-    /// Выбирает лучший уровень под нужное количество точек
     static func bestLevel(
         from cached: CachedWaveform,
         targetSamples: Int
     ) -> [Float] {
-
         return cached.mipmaps.min {
             abs($0.count - targetSamples) < abs($1.count - targetSamples)
         } ?? []
     }
 
-    // MARK: - Paths
+    // MARK: - Private
 
     private static func cacheURL(for key: String) -> URL {
         FileManager.default.temporaryDirectory

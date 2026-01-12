@@ -1,12 +1,8 @@
-// ShowMarker/ShowMarker/Core/Export/MarkersCSVExporter.swift
-
 import Foundation
 
-enum MarkersCSVExporter {
+struct MarkersCSVExporter {
 
     /// Reaper Markers CSV v1 (seconds-based)
-    /// Формат строки:
-    /// index,seconds,0,"escaped_name"
     static func export(markers: [TimelineMarker]) -> String {
 
         let sorted = markers
@@ -28,15 +24,12 @@ enum MarkersCSVExporter {
         return lines.joined(separator: "\n")
     }
 
-    // MARK: - Helpers
+    // MARK: - Private
 
-    /// Округление до 6 знаков после точки, без локализации
     private static func formatSeconds(_ value: Double) -> String {
         String(format: "%.6f", value)
     }
 
-    /// CSV-экранирование для Reaper
-    /// " -> ""
     private static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "\"", with: "\"\"")
     }
