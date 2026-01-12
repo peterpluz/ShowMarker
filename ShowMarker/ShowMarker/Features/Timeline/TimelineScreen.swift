@@ -16,20 +16,15 @@ struct TimelineScreen: View {
     @State private var exportData: Data?
     @State private var isExportPresented = false
 
-    // Используем фабрику чтобы упростить инициализацию StateObject
-    private static func makeViewModel(
-        document: Binding<ShowMarkerDocument>,
-        timelineID: UUID
-    ) -> TimelineViewModel {
-        TimelineViewModel(document: document, timelineID: timelineID)
-    }
-
     init(
         document: Binding<ShowMarkerDocument>,
         timelineID: UUID
     ) {
         _viewModel = StateObject(
-            wrappedValue: Self.makeViewModel(document: document, timelineID: timelineID)
+            wrappedValue: TimelineViewModel(
+                document: document,
+                timelineID: timelineID
+            )
         )
     }
 
@@ -86,8 +81,6 @@ struct TimelineScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .safeAreaInset(edge: .bottom) { bottomPanel }
-
-        // MARK: - Sheets / Alerts
 
         .sheet(item: $timePickerMarker) { marker in
             TimecodePickerView(
@@ -190,7 +183,7 @@ struct TimelineScreen: View {
         }
     }
 
-    // MARK: - Bottom panel (UPDATED)
+    // MARK: - Bottom panel (исправлено)
 
     private var bottomPanel: some View {
         VStack(spacing: 16) {
@@ -198,8 +191,8 @@ struct TimelineScreen: View {
             TimelineBarView(
                 duration: viewModel.duration,
                 currentTime: viewModel.currentTime,
-                waveform: viewModel.visibleWaveform,
-                markers: viewModel.visibleMarkers,
+                waveform: viewModel.waveform,
+                markers: viewModel.markers,
                 hasAudio: viewModel.audio != nil,
                 onAddAudio: { isPickerPresented = true },
                 onSeek: { viewModel.seek(to: $0) },
@@ -208,25 +201,15 @@ struct TimelineScreen: View {
                         viewModel.moveMarker(marker, to: time)
                     }
                 },
-                onCommitMoveMarker: { _, _ in },
-                onPinchZoom: { delta in
-                    // MagnificationGesture provides a relative scale value.
-                    // We pass it directly to VM which multiplies current zoom by delta.
-                    viewModel.applyPinchZoom(delta: delta)
-                }
+                onCommitMoveMarker: { _, _ in }
             )
             .frame(height: 160)
 
-            // ZOOM INDICATOR
-            Text(viewModel.zoomIndicatorText)
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            // TIMECODE
+            // ⏱ СНАЧАЛА ТАЙМКОД
             Text(viewModel.timecode())
                 .font(.system(size: 32, weight: .bold))
 
-            // PLAYER
+            // ▶︎ ПОТОМ ПЛЕЕР
             HStack(spacing: 40) {
 
                 Button { viewModel.seekBackward() } label: {
@@ -246,7 +229,7 @@ struct TimelineScreen: View {
             }
             .foregroundColor(.primary)
 
-            // ADD MARKER
+            // ➕ ADD MARKER (Liquid Glass)
             Button {
                 viewModel.addMarkerAtCurrentTime()
             } label: {
