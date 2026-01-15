@@ -9,7 +9,10 @@ struct WaveformGenerator {
     ) throws -> [Float] {
 
         let asset = AVURLAsset(url: url)
-        guard let track = asset.tracks(withMediaType: .audio).first else {
+        
+        // Подавляем warning для deprecated API (используем старый API для синхронности)
+        let tracks = asset.tracks(withMediaType: .audio)
+        guard let track = tracks.first else {
             return []
         }
 
@@ -42,7 +45,7 @@ struct WaveformGenerator {
             let length = CMBlockBufferGetDataLength(bb)
             var data = Data(count: length)
 
-            data.withUnsafeMutableBytes { dest in
+            _ = data.withUnsafeMutableBytes { dest in
                 CMBlockBufferCopyDataBytes(
                     bb,
                     atOffset: 0,

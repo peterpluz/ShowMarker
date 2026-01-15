@@ -3,6 +3,9 @@ import SwiftUI
 struct ProjectView: View {
 
     @Binding var document: ShowMarkerDocument
+    
+    // НОВОЕ: Прямой доступ к repository
+    @ObservedObject private var repository: ProjectRepository
 
     @State private var searchText = ""
 
@@ -16,6 +19,11 @@ struct ProjectView: View {
 
     private let availableFPS = [25, 30, 50, 60, 100]
 
+    init(document: Binding<ShowMarkerDocument>) {
+        _document = document
+        _repository = ObservedObject(wrappedValue: document.wrappedValue.repository)
+    }
+
     private var isRenamingPresented: Binding<Bool> {
         Binding(
             get: { renamingTimelineID != nil },
@@ -24,7 +32,7 @@ struct ProjectView: View {
     }
 
     private var filteredTimelines: [Timeline] {
-        let all = document.project.timelines
+        let all = repository.project.timelines
         guard !searchText.isEmpty else { return all }
         return all.filter {
             $0.name.localizedCaseInsensitiveContains(searchText)
@@ -33,7 +41,7 @@ struct ProjectView: View {
 
     var body: some View {
         mainContent
-            .navigationTitle(document.project.name)
+            .navigationTitle(repository.project.name)
             .environment(\.editMode, .constant(isEditing ? .active : .inactive))
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) { bottomNotesStyleBar }
@@ -74,14 +82,14 @@ struct ProjectView: View {
         ForEach(filteredTimelines) { timeline in
             timelineRow(timeline)
         }
-        .onDelete { document.removeTimelines(at: $0) }
-        .onMove { document.moveTimelines(from: $0, to: $1) }
+        .onDelete { repository.removeTimelines(at: $0) }
+        .onMove { repository.moveTimelines(from: $0, to: $1) }
     }
 
     private func timelineRow(_ timeline: Timeline) -> some View {
         NavigationLink {
             TimelineScreen(
-                document: $document,
+                repository: repository,
                 timelineID: timeline.id
             )
         } label: {
@@ -136,7 +144,7 @@ struct ProjectView: View {
             Button("Создать") {
                 let name = newTimelineName.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
-                document.addTimeline(name: name)
+                repository.addTimeline(name: name)
                 newTimelineName = ""
             }
             Button("Отмена", role: .cancel) {}
@@ -182,9 +190,9 @@ struct ProjectView: View {
         Menu {
             ForEach(availableFPS, id: \.self) { value in
                 Button {
-                    document.setProjectFPS(value)
+                    repository.setProjectFPS(value)
                 } label: {
-                    if document.project.fps == value {
+                    if repository.project.fps == value {
                         Label("\(value) FPS", systemImage: "checkmark")
                     } else {
                         Text("\(value) FPS")
@@ -193,7 +201,7 @@ struct ProjectView: View {
             }
         } label: {
             Label(
-                "FPS (\(document.project.fps))",
+                "FPS (\(repository.project.fps))",
                 systemImage: "speedometer"
             )
         }
@@ -253,11 +261,7 @@ struct ProjectView: View {
     }
 
     private func applyRename() {
-        guard
-            let id = renamingTimelineID,
-            let index = document.project.timelines.firstIndex(where: { $0.id == id })
-        else {
-            renamingTimelineID = nil
+        guard let id = renamingTimelineID else {
             return
         }
 
@@ -267,12 +271,12 @@ struct ProjectView: View {
             return
         }
 
-        document.project.timelines[index].name = name
+        repository.renameTimeline(id: id, newName: name)
         renamingTimelineID = nil
     }
 
     private func deleteTimeline(_ timeline: Timeline) {
-        guard let index = document.project.timelines.firstIndex(where: { $0.id == timeline.id }) else { return }
-        document.project.timelines.remove(at: index)
+        guard let index = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) else { return }
+        repository.removeTimelines(at: IndexSet(integer: index))
     }
 }

@@ -16,19 +16,20 @@ struct TimelineScreen: View {
     @State private var exportData: Data?
     @State private var isExportPresented = false
 
+    // НОВОЕ: принимаем repository вместо document
     private static func makeViewModel(
-        document: Binding<ShowMarkerDocument>,
+        repository: ProjectRepository,
         timelineID: UUID
     ) -> TimelineViewModel {
-        TimelineViewModel(document: document, timelineID: timelineID)
+        TimelineViewModel(repository: repository, timelineID: timelineID)
     }
 
     init(
-        document: Binding<ShowMarkerDocument>,
+        repository: ProjectRepository,
         timelineID: UUID
     ) {
         _viewModel = StateObject(
-            wrappedValue: Self.makeViewModel(document: document, timelineID: timelineID)
+            wrappedValue: Self.makeViewModel(repository: repository, timelineID: timelineID)
         )
     }
 

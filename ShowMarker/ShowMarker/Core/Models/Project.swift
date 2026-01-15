@@ -1,7 +1,7 @@
 import Foundation
 
-struct Project: Codable, Identifiable {
-    static let currentFormatVersion = 1
+struct Project: Codable, Identifiable, Sendable {
+    nonisolated(unsafe) static let currentFormatVersion = 1
     
     let formatVersion: Int
     let id: UUID
