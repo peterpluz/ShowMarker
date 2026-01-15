@@ -16,15 +16,16 @@ struct ShowMarkerDocument: FileDocument {
     static var writableContentTypes: [UTType] { [.smark] }
 
     var project: Project
-    var audioFiles: [String: Data] = [:]
+    
+    // URL документа для доступа к файлам
+    var documentURL: URL?
 
     init() {
         self.project = Project(name: "New Project", fps: 30)
-        self.audioFiles = [:]
+        self.documentURL = nil
     }
 
-    init(configuration: ReadConfiguration) throws {
-
+    nonisolated init(configuration: ReadConfiguration) throws {
         let wrapper = configuration.file
 
         guard
@@ -36,38 +37,25 @@ struct ShowMarkerDocument: FileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        self.project = try JSONDecoder().decode(Project.self, from: data)
-        self.audioFiles = [:]
-
-        if let audioDir = wrappers["Audio"],
-           let audioWrappers = audioDir.fileWrappers {
-            for (fileName, fw) in audioWrappers {
-                if let bytes = fw.regularFileContents {
-                    audioFiles[fileName] = bytes
-                }
-            }
-        }
+        let decoder = JSONDecoder()
+        self.project = try decoder.decode(Project.self, from: data)
+        self.documentURL = nil
     }
 
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-
-        let projectData = try JSONEncoder().encode(project)
+    nonisolated func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        let encoder = JSONEncoder()
+        let projectData = try encoder.encode(project)
         let projectWrapper = FileWrapper(regularFileWithContents: projectData)
 
         var root: [String: FileWrapper] = [
             "project.json": projectWrapper
         ]
 
-        if !audioFiles.isEmpty {
-            var audioWrappers: [String: FileWrapper] = [:]
-            for (fileName, data) in audioFiles {
-                audioWrappers[fileName] = FileWrapper(
-                    regularFileWithContents: data
-                )
-            }
-            root["Audio"] = FileWrapper(
-                directoryWithFileWrappers: audioWrappers
-            )
+        // Audio directory - будет создан автоматически через AudioFileManager
+        // Просто включаем существующую директорию если она есть
+        if let existingFile = configuration.existingFile,
+           let audioWrapper = existingFile.fileWrappers?["Audio"] {
+            root["Audio"] = audioWrapper
         }
 
         return FileWrapper(directoryWithFileWrappers: root)
@@ -118,7 +106,6 @@ struct ShowMarkerDocument: FileDocument {
         guard oldFPS != newFPS else { return }
 
         for tIndex in project.timelines.indices {
-            // Пересчёт маркеров
             for mIndex in project.timelines[tIndex].markers.indices {
                 let oldSeconds = project.timelines[tIndex].markers[mIndex].timeSeconds
                 let frames = Int(round(oldSeconds * Double(oldFPS)))
@@ -126,10 +113,62 @@ struct ShowMarkerDocument: FileDocument {
                 project.timelines[tIndex].markers[mIndex].timeSeconds = newSeconds
             }
 
-            // Синхронизируем поле fps в таймлайне
             project.timelines[tIndex].fps = newFPS
         }
 
         project.fps = newFPS
+    }
+    
+    // MARK: - Audio Operations
+    
+    mutating func addAudioFile(
+        timelineID: UUID,
+        sourceData: Data,
+        originalFileName: String,
+        fileExtension: String,
+        duration: Double
+    ) throws {
+        guard let docURL = documentURL else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        
+        guard let tIndex = project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        
+        let fileName = UUID().uuidString + "." + fileExtension
+        
+        // Создаём Audio директорию если нужно
+        let audioDir = docURL.appendingPathComponent("Audio")
+        if !FileManager.default.fileExists(atPath: audioDir.path) {
+            try FileManager.default.createDirectory(at: audioDir, withIntermediateDirectories: true)
+        }
+        
+        // Записываем файл
+        let targetURL = audioDir.appendingPathComponent(fileName)
+        try sourceData.write(to: targetURL, options: .atomic)
+        
+        project.timelines[tIndex].audio = TimelineAudio(
+            relativePath: "Audio/\(fileName)",
+            originalFileName: originalFileName,
+            duration: duration
+        )
+    }
+    
+    mutating func removeAudioFile(timelineID: UUID) throws {
+        guard let docURL = documentURL else { return }
+        
+        guard let tIndex = project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        
+        if let audio = project.timelines[tIndex].audio {
+            let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
+            let fileURL = docURL.appendingPathComponent("Audio").appendingPathComponent(fileName)
+            
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+        }
+        
+        project.timelines[tIndex].audio = nil
     }
 }

@@ -52,7 +52,6 @@ final class TimelineViewModel: ObservableObject {
     private var loadedAudioID: UUID?
     
     private var recalcTask: Task<Void, Never>?
-    private var temporaryAudioURL: URL?
 
     // MARK: - Init
 
@@ -67,12 +66,6 @@ final class TimelineViewModel: ObservableObject {
         syncTimelineState()
         syncAudioIfNeeded()
         recalcVisibleContent()
-    }
-    
-    deinit {
-        if let tmpURL = temporaryAudioURL {
-            try? FileManager.default.removeItem(at: tmpURL)
-        }
     }
 
     // MARK: - Player binding
@@ -106,25 +99,26 @@ final class TimelineViewModel: ObservableObject {
 
         if loadedAudioID == audio.id { return }
 
+        guard let docURL = document.wrappedValue.documentURL else { return }
+        
         let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
-        guard let bytes = document.wrappedValue.audioFiles[fileName] else { return }
-
-        let tmpURL = FileManager.default
-            .temporaryDirectory
-            .appendingPathComponent(fileName)
-
-        try? bytes.write(to: tmpURL, options: .atomic)
+        let manager = AudioFileManager(documentURL: docURL)
         
-        temporaryAudioURL = tmpURL
+        // Получаем прямой URL к файлу (без копирования в память)
+        let audioURL = manager.audioFileURL(fileName: fileName)
         
-        player.load(url: tmpURL)
+        guard manager.audioFileExists(fileName: fileName) else { return }
+        
+        // Загружаем аудио напрямую из package
+        player.load(url: audioURL)
         loadedAudioID = audio.id
 
+        // Waveform кеш
         if let cached = WaveformCache.load(cacheKey: fileName) {
             cachedWaveform = cached
         } else {
             cachedWaveform = try? WaveformCache.generateAndCache(
-                audioURL: tmpURL,
+                audioURL: audioURL,
                 cacheKey: fileName
             )
         }
@@ -319,16 +313,11 @@ final class TimelineViewModel: ObservableObject {
     ) throws {
         var doc = document.wrappedValue
 
-        guard let idx = doc.project.timelines.firstIndex(where: { $0.id == timelineID }) else {
-            throw CocoaError(.fileNoSuchFile)
-        }
-
-        let fileName = UUID().uuidString + "." + fileExtension
-        doc.audioFiles[fileName] = sourceData
-
-        doc.project.timelines[idx].audio = TimelineAudio(
-            relativePath: "Audio/\(fileName)",
+        try doc.addAudioFile(
+            timelineID: timelineID,
+            sourceData: sourceData,
             originalFileName: originalFileName,
+            fileExtension: fileExtension,
             duration: duration
         )
 
@@ -343,14 +332,7 @@ final class TimelineViewModel: ObservableObject {
         player.stop()
 
         var doc = document.wrappedValue
-        guard let idx = doc.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
-
-        if let audio {
-            let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
-            doc.audioFiles.removeValue(forKey: fileName)
-        }
-
-        doc.project.timelines[idx].audio = nil
+        try? doc.removeAudioFile(timelineID: timelineID)
         document.wrappedValue = doc
 
         loadedAudioID = nil
@@ -359,11 +341,6 @@ final class TimelineViewModel: ObservableObject {
         visibleMarkers = []
         currentTime = 0
         isPlaying = false
-        
-        if let tmpURL = temporaryAudioURL {
-            try? FileManager.default.removeItem(at: tmpURL)
-            temporaryAudioURL = nil
-        }
     }
 
     // MARK: - Timecode
