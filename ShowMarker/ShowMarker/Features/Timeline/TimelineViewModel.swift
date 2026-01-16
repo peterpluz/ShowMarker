@@ -19,19 +19,6 @@ final class TimelineViewModel: ObservableObject {
     @Published private(set) var visibleWaveform: [Float] = []
     @Published private(set) var visibleMarkers: [TimelineMarker] = []
 
-    // MARK: - Zoom (VIEW STATE ONLY)
-
-    @Published private(set) var zoomScale: CGFloat = 1.0
-
-    let minZoom: CGFloat = 1.0
-    let maxZoom: CGFloat = 10.0
-
-    var zoomIndicatorText: String {
-        String(format: "×%.2f", zoomScale)
-    }
-
-    private(set) var visibleTimeRange: ClosedRange<Double> = 0...0
-
     // MARK: - Derived
 
     var duration: Double {
@@ -43,15 +30,12 @@ final class TimelineViewModel: ObservableObject {
     private let player = AudioPlayerService()
     private var cancellables = Set<AnyCancellable>()
 
-    // НОВОЕ: Repository вместо Binding<Document>
     private let repository: ProjectRepository
     private let timelineID: UUID
 
     private let baseSamples = 150
     private var cachedWaveform: WaveformCache.CachedWaveform?
     private var loadedAudioID: UUID?
-    
-    private var recalcTask: Task<Void, Never>?
 
     // MARK: - Init
 
@@ -66,7 +50,6 @@ final class TimelineViewModel: ObservableObject {
         bindRepository()
         syncTimelineState()
         syncAudioIfNeeded()
-        recalcVisibleContent()
     }
 
     // MARK: - Player binding
@@ -81,10 +64,9 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    // MARK: - Repository binding (НОВОЕ)
+    // MARK: - Repository binding
     
     private func bindRepository() {
-        // Подписываемся на изменения проекта
         repository.$project
             .sink { [weak self] _ in
                 self?.syncTimelineState()
@@ -102,7 +84,7 @@ final class TimelineViewModel: ObservableObject {
         fps = repository.project.fps
         markers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
 
-        recalcVisibleContent()
+        updateVisibleContent()
     }
 
     private func syncAudioIfNeeded() {
@@ -131,56 +113,23 @@ final class TimelineViewModel: ObservableObject {
             )
         }
 
-        recalcVisibleContent()
+        updateVisibleContent()
     }
 
-    // MARK: - Zoom API
+    // MARK: - Visible content
 
-    func applyPinchZoom(delta: CGFloat) {
-        let newZoom = clampZoom(zoomScale * delta)
-        guard newZoom != zoomScale else { return }
-
-        zoomScale = newZoom
-        recalcVisibleContent()
-    }
-
-    private func clampZoom(_ value: CGFloat) -> CGFloat {
-        min(max(value, minZoom), maxZoom)
-    }
-
-    // MARK: - Visible range + slicing
-
-    private func recalcVisibleContent() {
-        recalcTask?.cancel()
-        recalcTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(50))
-            guard !Task.isCancelled, let self else { return }
-            
-            self.performRecalc()
-        }
-    }
-    
-    private func performRecalc() {
+    private func updateVisibleContent() {
         guard duration > 0 else {
             visibleWaveform = []
             visibleMarkers = []
-            visibleTimeRange = 0...0
             return
         }
 
-        let visibleDuration = duration / Double(zoomScale)
-
-        let center = currentTime
-        let start = max(0, center - visibleDuration / 2)
-        let end = min(duration, start + visibleDuration)
-
-        visibleTimeRange = start...end
-
-        sliceWaveform()
-        sliceMarkers()
+        updateWaveform()
+        updateMarkers()
     }
 
-    private func sliceWaveform() {
+    private func updateWaveform() {
         guard
             let cachedWaveform,
             duration > 0
@@ -189,40 +138,22 @@ final class TimelineViewModel: ObservableObject {
             return
         }
 
-        let targetSamples = Int(CGFloat(baseSamples) * zoomScale)
         let level = WaveformCache.bestLevel(
             from: cachedWaveform,
-            targetSamples: targetSamples
+            targetSamples: baseSamples
         )
 
-        guard !level.isEmpty else {
-            visibleWaveform = []
-            return
-        }
-
-        let startRatio = visibleTimeRange.lowerBound / duration
-        let endRatio = visibleTimeRange.upperBound / duration
-
-        let startIndex = Int(startRatio * Double(level.count))
-        let endIndex = Int(endRatio * Double(level.count))
-
-        let safeStart = max(0, min(level.count - 1, startIndex))
-        let safeEnd = max(safeStart, min(level.count, endIndex))
-
-        visibleWaveform = Array(level[safeStart..<safeEnd])
+        visibleWaveform = level
     }
 
-    private func sliceMarkers() {
-        visibleMarkers = markers.filter {
-            visibleTimeRange.contains($0.timeSeconds)
-        }
+    private func updateMarkers() {
+        visibleMarkers = markers
     }
 
     // MARK: - Playback
 
     func seek(to seconds: Double) {
         player.seek(by: seconds - currentTime)
-        recalcVisibleContent()
     }
 
     func togglePlayPause() {
@@ -231,21 +162,19 @@ final class TimelineViewModel: ObservableObject {
 
     func seekBackward() {
         player.seek(by: -5)
-        recalcVisibleContent()
     }
 
     func seekForward() {
         player.seek(by: 5)
-        recalcVisibleContent()
     }
 
-    // MARK: - Timeline ops (НОВОЕ: прямые вызовы repository)
+    // MARK: - Timeline ops
 
     func renameTimeline(to newName: String) {
         repository.renameTimeline(id: timelineID, newName: newName)
     }
 
-    // MARK: - Marker ops (НОВОЕ: без копирования документа)
+    // MARK: - Marker ops
 
     func addMarkerAtCurrentTime() {
         guard audio != nil else { return }
@@ -255,7 +184,6 @@ final class TimelineViewModel: ObservableObject {
             name: "Маркер \(markers.count + 1)"
         )
 
-        // ⚡ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: прямая мутация без копирования
         repository.addMarker(timelineID: timelineID, marker: marker)
     }
 
@@ -263,7 +191,6 @@ final class TimelineViewModel: ObservableObject {
         var updated = marker
         updated.name = newName
 
-        // ⚡ Прямая мутация
         repository.updateMarker(timelineID: timelineID, marker: updated)
     }
 
@@ -271,12 +198,10 @@ final class TimelineViewModel: ObservableObject {
         var updated = marker
         updated.timeSeconds = min(max(newTime, 0), duration)
 
-        // ⚡ Прямая мутация
         repository.updateMarker(timelineID: timelineID, marker: updated)
     }
 
     func deleteMarker(_ marker: TimelineMarker) {
-        // ⚡ Прямая мутация
         repository.removeMarker(timelineID: timelineID, markerID: marker.id)
     }
 

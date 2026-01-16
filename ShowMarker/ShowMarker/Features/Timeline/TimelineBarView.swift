@@ -16,9 +16,7 @@ struct TimelineBarView: View {
     let onPreviewMoveMarker: (UUID, Double) -> Void
     let onCommitMoveMarker: (UUID, Double) -> Void
 
-    let onPinchZoom: (CGFloat) -> Void
-
-    // MARK: - Constants (ИСПРАВЛЕНО: вынесены как static)
+    // MARK: - Constants
 
     private static let barHeight: CGFloat = 140
     private static let barWidth: CGFloat = 3
@@ -26,7 +24,10 @@ struct TimelineBarView: View {
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
 
-    @State private var armedMarkerID: UUID?
+    // MARK: - Local state для smooth preview
+    
+    @State private var draggedMarkerID: UUID?
+    @State private var draggedMarkerPreviewTime: Double?
     @State private var dragStartTime: Double?
 
     var body: some View {
@@ -57,13 +58,17 @@ struct TimelineBarView: View {
                         .offset(x: centerX - timelineOffset(contentWidth))
 
                     ForEach(markers) { marker in
+                        let displayTime = (draggedMarkerID == marker.id && draggedMarkerPreviewTime != nil)
+                            ? draggedMarkerPreviewTime!
+                            : marker.timeSeconds
+                        
                         Rectangle()
                             .fill(Color.orange)
                             .frame(width: Self.markerLineWidth, height: Self.barHeight)
                             .position(
                                 x: centerX
                                     - timelineOffset(contentWidth)
-                                    + CGFloat(marker.timeSeconds / max(duration, 0.0001)) * contentWidth,
+                                    + CGFloat(displayTime / max(duration, 0.0001)) * contentWidth,
                                 y: Self.barHeight / 2
                             )
                             .gesture(markerGesture(
@@ -79,7 +84,6 @@ struct TimelineBarView: View {
                         .position(x: centerX, y: Self.barHeight / 2)
                 }
                 .gesture(playheadDrag(secondsPerPixel: secondsPerPixel))
-                .simultaneousGesture(pinchGesture)
             }
         }
         .frame(height: Self.barHeight)
@@ -87,26 +91,17 @@ struct TimelineBarView: View {
 
     // MARK: - Gestures
 
-    private var pinchGesture: some Gesture {
-        MagnificationGesture()
-            .onChanged { value in
-                onPinchZoom(value)
-            }
-    }
-
     private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
         DragGesture()
             .onChanged { value in
-                guard armedMarkerID == nil else { return }
+                guard draggedMarkerID == nil else { return }
 
                 if dragStartTime == nil {
                     dragStartTime = currentTime
                 }
                 guard let start = dragStartTime else { return }
 
-                let delta = Double(value.translation.width)
-                    * secondsPerPixel * -1
-
+                let delta = Double(value.translation.width) * secondsPerPixel * -1
                 onSeek(clamp(start + delta))
             }
             .onEnded { _ in
@@ -114,7 +109,7 @@ struct TimelineBarView: View {
             }
     }
 
-    // MARK: - Marker gesture
+    // MARK: - Marker gesture (ИСПРАВЛЕНО: локальный preview)
 
     private func markerGesture(
         marker: TimelineMarker,
@@ -124,29 +119,33 @@ struct TimelineBarView: View {
 
         LongPressGesture(minimumDuration: 0.35)
             .onEnded { _ in
-                armedMarkerID = marker.id
+                draggedMarkerID = marker.id
+                draggedMarkerPreviewTime = marker.timeSeconds
             }
             .sequenced(before: DragGesture())
             .onChanged { value in
                 guard
                     case .second(true, let drag?) = value,
-                    armedMarkerID == marker.id
+                    draggedMarkerID == marker.id
                 else { return }
 
                 let originX = centerX - timelineOffset(contentWidth)
                 let relative = (drag.location.x - originX) / contentWidth
                 let newTime = clamp(Double(relative) * duration)
 
-                onPreviewMoveMarker(marker.id, newTime)
+                // ⚡ Локальный preview БЕЗ вызова repository
+                draggedMarkerPreviewTime = newTime
             }
             .onEnded { _ in
-                guard armedMarkerID == marker.id else { return }
+                guard draggedMarkerID == marker.id else { return }
 
-                if let marker = markers.first(where: { $0.id == armedMarkerID }) {
-                    onCommitMoveMarker(marker.id, marker.timeSeconds)
+                // ⚡ Только при завершении коммитим в repository
+                if let finalTime = draggedMarkerPreviewTime {
+                    onCommitMoveMarker(marker.id, finalTime)
                 }
 
-                armedMarkerID = nil
+                draggedMarkerID = nil
+                draggedMarkerPreviewTime = nil
             }
     }
 

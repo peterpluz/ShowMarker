@@ -16,7 +16,6 @@ struct TimelineScreen: View {
     @State private var exportData: Data?
     @State private var isExportPresented = false
 
-    // НОВОЕ: принимаем repository вместо document
     private static func makeViewModel(
         repository: ProjectRepository,
         timelineID: UUID
@@ -220,7 +219,6 @@ struct TimelineScreen: View {
     private var bottomPanel: some View {
         VStack(spacing: 16) {
             timelineBar
-            zoomIndicator
             timecode
             playbackControls
             addMarkerButton
@@ -243,23 +241,17 @@ struct TimelineScreen: View {
             hasAudio: viewModel.audio != nil,
             onAddAudio: { isPickerPresented = true },
             onSeek: { viewModel.seek(to: $0) },
-            onPreviewMoveMarker: { id, time in
+            onPreviewMoveMarker: { _, _ in
+                // Preview теперь внутри TimelineBarView
+            },
+            onCommitMoveMarker: { id, time in
+                // ИСПРАВЛЕНО: коммитим финальную позицию
                 if let marker = viewModel.markers.first(where: { $0.id == id }) {
                     viewModel.moveMarker(marker, to: time)
                 }
-            },
-            onCommitMoveMarker: { _, _ in },
-            onPinchZoom: { delta in
-                viewModel.applyPinchZoom(delta: delta)
             }
         )
         .frame(height: 160)
-    }
-
-    private var zoomIndicator: some View {
-        Text(viewModel.zoomIndicatorText)
-            .font(.caption)
-            .foregroundColor(.secondary)
     }
 
     private var timecode: some View {
