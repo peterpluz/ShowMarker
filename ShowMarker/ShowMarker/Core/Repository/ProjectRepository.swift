@@ -33,11 +33,15 @@ final class ProjectRepository: ObservableObject {
         let oldFPS = project.fps
         guard oldFPS != newFPS else { return }
         
+        // ИСПРАВЛЕНО: Более точная конвертация FPS
         for tIndex in project.timelines.indices {
             for mIndex in project.timelines[tIndex].markers.indices {
                 let oldSeconds = project.timelines[tIndex].markers[mIndex].timeSeconds
-                let frames = Int(round(oldSeconds * Double(oldFPS)))
-                let newSeconds = Double(frames) / Double(newFPS)
+                
+                // Сохраняем frame number для точности
+                let frameNumber = oldSeconds * Double(oldFPS)
+                let newSeconds = frameNumber / Double(newFPS)
+                
                 project.timelines[tIndex].markers[mIndex].timeSeconds = newSeconds
             }
             
@@ -57,6 +61,16 @@ final class ProjectRepository: ObservableObject {
     
     @MainActor
     func removeTimelines(at offsets: IndexSet) {
+        // НОВОЕ: Cleanup аудио файлов перед удалением
+        for index in offsets {
+            if let audio = project.timelines[index].audio,
+               let docURL = documentURL {
+                let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
+                let fileURL = docURL.appendingPathComponent("Audio").appendingPathComponent(fileName)
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+        
         project.timelines.remove(atOffsets: offsets)
     }
     
@@ -119,11 +133,18 @@ final class ProjectRepository: ObservableObject {
         duration: Double
     ) throws {
         guard let docURL = documentURL else {
-            throw CocoaError(.fileNoSuchFile)
+            throw RepositoryError.documentURLNotSet
         }
         
         guard let tIndex = project.timelines.firstIndex(where: { $0.id == timelineID }) else {
-            throw CocoaError(.fileNoSuchFile)
+            throw RepositoryError.timelineNotFound
+        }
+        
+        // ИСПРАВЛЕНО: Удаляем старый аудио файл если есть
+        if let oldAudio = project.timelines[tIndex].audio {
+            let oldFileName = URL(fileURLWithPath: oldAudio.relativePath).lastPathComponent
+            let oldFileURL = docURL.appendingPathComponent("Audio").appendingPathComponent(oldFileName)
+            try? FileManager.default.removeItem(at: oldFileURL)
         }
         
         let fileName = UUID().uuidString + "." + fileExtension
@@ -145,9 +166,13 @@ final class ProjectRepository: ObservableObject {
     
     @MainActor
     func removeAudioFile(timelineID: UUID) throws {
-        guard let docURL = documentURL else { return }
+        guard let docURL = documentURL else {
+            throw RepositoryError.documentURLNotSet
+        }
         
-        guard let tIndex = project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        guard let tIndex = project.timelines.firstIndex(where: { $0.id == timelineID }) else {
+            throw RepositoryError.timelineNotFound
+        }
         
         if let audio = project.timelines[tIndex].audio {
             let fileName = URL(fileURLWithPath: audio.relativePath).lastPathComponent
@@ -171,5 +196,21 @@ final class ProjectRepository: ObservableObject {
     func load(project: Project, documentURL: URL?) {
         self.project = project
         self.documentURL = documentURL
+    }
+}
+
+// MARK: - Repository Errors
+
+enum RepositoryError: LocalizedError {
+    case documentURLNotSet
+    case timelineNotFound
+    
+    var errorDescription: String? {
+        switch self {
+        case .documentURLNotSet:
+            return "Document URL не установлен"
+        case .timelineNotFound:
+            return "Timeline не найден"
+        }
     }
 }

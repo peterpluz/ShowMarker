@@ -37,6 +37,14 @@ struct TimelineScreen: View {
             .sheet(item: $timePickerMarker) { marker in
                 timecodePickerSheet(for: marker)
             }
+            // НОВОЕ: Error handling
+            .alert(item: $viewModel.error) { error in
+                Alert(
+                    title: Text("Ошибка"),
+                    message: Text(error.errorDescription ?? "Неизвестная ошибка"),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
             .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
                 TextField("Название", text: $renameText)
                 Button("Готово") {
@@ -245,7 +253,6 @@ struct TimelineScreen: View {
                 // Preview теперь внутри TimelineBarView
             },
             onCommitMoveMarker: { id, time in
-                // ИСПРАВЛЕНО: коммитим финальную позицию
                 if let marker = viewModel.markers.first(where: { $0.id == id }) {
                     viewModel.moveMarker(marker, to: time)
                 }
@@ -304,13 +311,22 @@ struct TimelineScreen: View {
         isExportPresented = true
     }
 
+    // ИСПРАВЛЕНО: Лучший error handling
     private func handleAudio(_ result: Result<[URL], Error>) {
-        guard
-            case .success(let urls) = result,
-            let url = urls.first
-        else { return }
+        guard case .success(let urls) = result, let url = urls.first else {
+            if case .failure(let error) = result {
+                viewModel.error = .audioImportFailed(error)
+            }
+            return
+        }
 
-        guard url.startAccessingSecurityScopedResource() else { return }
+        guard url.startAccessingSecurityScopedResource() else {
+            viewModel.error = .audioImportFailed(
+                NSError(domain: "ShowMarker", code: -1,
+                       userInfo: [NSLocalizedDescriptionKey: "Нет доступа к файлу"])
+            )
+            return
+        }
         defer { url.stopAccessingSecurityScopedResource() }
 
         do {
@@ -322,23 +338,27 @@ struct TimelineScreen: View {
 
             try data.write(to: tmpURL, options: .atomic)
 
-            let vm = viewModel
-
             Task { @MainActor in
                 let asset = AVURLAsset(url: tmpURL)
-                let d = try? await asset.load(.duration)
-
-                try? vm.addAudio(
-                    sourceData: data,
-                    originalFileName: url.lastPathComponent,
-                    fileExtension: url.pathExtension,
-                    duration: d?.seconds ?? 0
-                )
-
-                try? FileManager.default.removeItem(at: tmpURL)
+                
+                do {
+                    let duration = try await asset.load(.duration)
+                    
+                    viewModel.addAudio(
+                        sourceData: data,
+                        originalFileName: url.lastPathComponent,
+                        fileExtension: url.pathExtension,
+                        duration: duration.seconds
+                    )
+                    
+                    try? FileManager.default.removeItem(at: tmpURL)
+                } catch {
+                    viewModel.error = .audioImportFailed(error)
+                    try? FileManager.default.removeItem(at: tmpURL)
+                }
             }
         } catch {
-            print("Audio import failed:", error)
+            viewModel.error = .audioImportFailed(error)
         }
     }
 }

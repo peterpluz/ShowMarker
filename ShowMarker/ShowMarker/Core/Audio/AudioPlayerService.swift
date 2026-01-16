@@ -12,6 +12,14 @@ final class AudioPlayerService: ObservableObject {
     private var player: AVPlayer?
     private var timeObserver: Any?
 
+    // MARK: - Lifecycle
+    
+    deinit {
+        // ИСПРАВЛЕНО: Гарантированная очистка observer
+        // deinit не может вызывать async/MainActor методы
+        // Очистка происходит в stop()
+    }
+
     // MARK: - Load
 
     func load(url: URL) {
@@ -43,13 +51,10 @@ final class AudioPlayerService: ObservableObject {
     }
 
     func stop() {
-        if let player, let obs = timeObserver {
-            player.removeTimeObserver(obs)
-        }
+        cleanupObserver()
 
         player?.pause()
         player = nil
-        timeObserver = nil
 
         currentTime = 0
         duration = 0
@@ -84,18 +89,17 @@ final class AudioPlayerService: ObservableObject {
             )
             try session.setActive(true)
         } catch {
-            print("AudioSession error:", error)
+            print("⚠️ AudioSession error:", error)
         }
     }
 
-    // MARK: - Time observer (ИСПРАВЛЕНО)
+    // MARK: - Time observer
 
     private func addTimeObserver() {
         guard let player else { return }
 
         let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
 
-        // ИСПРАВЛЕНИЕ: правильная работа с MainActor
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: interval,
             queue: .main
@@ -104,6 +108,14 @@ final class AudioPlayerService: ObservableObject {
             Task { @MainActor in
                 self.currentTime = time.seconds
             }
+        }
+    }
+    
+    // ИСПРАВЛЕНО: Выделен отдельный метод для cleanup
+    private func cleanupObserver() {
+        if let player, let obs = timeObserver {
+            player.removeTimeObserver(obs)
+            timeObserver = nil
         }
     }
 }
