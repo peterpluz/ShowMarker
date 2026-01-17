@@ -29,8 +29,8 @@ struct TimelineBarView: View {
     // MARK: - Constants
 
     private static let barHeight: CGFloat = 140
-    private static let baseBarWidth: CGFloat = 2
-    private static let baseSpacing: CGFloat = 0.5
+    private static let baseBarWidth: CGFloat = 1.0  // Тоньше!
+    private static let baseSpacing: CGFloat = 0.3   // Меньше промежуток!
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
     
@@ -118,18 +118,15 @@ struct TimelineBarView: View {
                     .gesture(
                         DragGesture()
                             .onChanged { value in
-                                // ИСПРАВЛЕНИЕ: сохраняем начальную позицию при старте
                                 if capsuleDragStart == nil {
                                     capsuleDragStart = xOffset
                                 }
                                 
                                 guard let startOffset = capsuleDragStart else { return }
                                 
-                                // Вычисляем новую позицию 1:1 с пальцем
                                 let newX = startOffset + value.translation.width
                                 let clampedX = max(0, min(geo.size.width - visibleWidth, newX))
                                 
-                                // Конвертируем в время
                                 let newTimeRatio = (clampedX + visibleWidth / 2) / geo.size.width
                                 onSeek(duration * newTimeRatio)
                             }
@@ -227,7 +224,7 @@ struct TimelineBarView: View {
         let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
 
         return ZStack {
-            waveformView(width: contentWidth)
+            waveformView(width: contentWidth, geoWidth: geo.size.width)
                 .offset(x: centerX - timelineOffset(contentWidth))
 
             ForEach(markers) { marker in
@@ -356,22 +353,36 @@ struct TimelineBarView: View {
 
     // MARK: - Subviews
 
-    private func waveformView(width: CGFloat) -> some View {
+    private func waveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.secondary.opacity(0.12))
                 .frame(width: width, height: Self.barHeight)
 
-            HStack(spacing: spacing) {
-                ForEach(waveform.indices, id: \.self) { i in
-                    Rectangle()
-                        .fill(Color.secondary.opacity(0.7))
-                        .frame(
-                            width: barWidth,
-                            height: max(2, CGFloat(waveform[i]) * Self.barHeight * 0.9)
-                        )
+            // ИСПРАВЛЕНИЕ: Canvas для точной отрисовки тонких линий
+            Canvas { context, size in
+                let totalWidth = CGFloat(waveform.count) * (barWidth + spacing)
+                let scale = width / totalWidth
+                
+                for (index, value) in waveform.enumerated() {
+                    let x = CGFloat(index) * (barWidth + spacing) * scale
+                    let height = max(2, CGFloat(value) * Self.barHeight * 0.95)
+                    let y = (Self.barHeight - height) / 2
+                    
+                    let rect = CGRect(
+                        x: x,
+                        y: y,
+                        width: barWidth * scale,
+                        height: height
+                    )
+                    
+                    context.fill(
+                        Path(roundedRect: rect, cornerRadius: 0),
+                        with: .color(.secondary.opacity(0.75))
+                    )
                 }
             }
+            .frame(width: width, height: Self.barHeight)
         }
     }
 

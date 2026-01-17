@@ -36,7 +36,7 @@ final class TimelineViewModel: ObservableObject {
     private let repository: ProjectRepository
     private let timelineID: UUID
 
-    private let baseSamples = 500  // Базовое количество баров на экране
+    private let baseSamples = 800  // УВЕЛИЧЕНО: больше баров = выше детализация!
     private var cachedWaveform: WaveformCache.CachedWaveform?
     private var loadedAudioID: UUID?
 
