@@ -12,6 +12,7 @@ struct TimelineBarView: View {
 
     let onAddAudio: () -> Void
     let onSeek: (Double) -> Void
+    let onZoomChange: (CGFloat) -> Void
 
     let onPreviewMoveMarker: (UUID, Double) -> Void
     let onCommitMoveMarker: (UUID, Double) -> Void
@@ -22,20 +23,26 @@ struct TimelineBarView: View {
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
     
+    // Drag state для капсулы
+    @State private var capsuleDragStart: CGFloat?
+    
     // MARK: - Constants
 
     private static let barHeight: CGFloat = 140
-    private static let baseBarWidth: CGFloat = 3
-    private static let baseSpacing: CGFloat = 1
+    private static let baseBarWidth: CGFloat = 2
+    private static let baseSpacing: CGFloat = 0.5
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
     
     // Zoom limits
-    private static let minZoom: CGFloat = 0.5
+    private static let minZoom: CGFloat = 1.0
     private static let maxZoom: CGFloat = 20.0
     
     // Timeline indicator
     private static let indicatorHeight: CGFloat = 6
+    
+    // Time ruler
+    private static let rulerHeight: CGFloat = 24
 
     // MARK: - Local state для smooth preview
     
@@ -54,10 +61,15 @@ struct TimelineBarView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             
             // Timeline overview indicator
             timelineOverviewIndicator
+            
+            // Time ruler
+            if hasAudio {
+                timeRuler
+            }
             
             // Timeline bar
             GeometryReader { geo in
@@ -89,7 +101,9 @@ struct TimelineBarView: View {
                 // Position based on currentTime
                 let timeRatio = duration > 0 ? currentTime / duration : 0
                 let centerOffset = geo.size.width * timeRatio
-                let xOffset = max(0, min(geo.size.width - visibleWidth, centerOffset - visibleWidth / 2))
+                
+                let idealOffset = centerOffset - visibleWidth / 2
+                let xOffset = max(0, min(geo.size.width - visibleWidth, idealOffset))
                 
                 Capsule()
                     .fill(Color.accentColor.opacity(0.6))
@@ -101,23 +115,115 @@ struct TimelineBarView: View {
                             .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
                             .offset(x: xOffset)
                     )
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                // ИСПРАВЛЕНИЕ: сохраняем начальную позицию при старте
+                                if capsuleDragStart == nil {
+                                    capsuleDragStart = xOffset
+                                }
+                                
+                                guard let startOffset = capsuleDragStart else { return }
+                                
+                                // Вычисляем новую позицию 1:1 с пальцем
+                                let newX = startOffset + value.translation.width
+                                let clampedX = max(0, min(geo.size.width - visibleWidth, newX))
+                                
+                                // Конвертируем в время
+                                let newTimeRatio = (clampedX + visibleWidth / 2) / geo.size.width
+                                onSeek(duration * newTimeRatio)
+                            }
+                            .onEnded { _ in
+                                capsuleDragStart = nil
+                            }
+                    )
                 
                 // Playhead indicator line
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
                     .offset(x: centerOffset - 1)
+                    .allowsHitTesting(false)
             }
         }
         .frame(height: Self.indicatorHeight)
         .padding(.horizontal, 4)
     }
     
+    // MARK: - Time Ruler
+    
+    private var timeRuler: some View {
+        GeometryReader { geo in
+            let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), geo.size.width)
+            let centerX = geo.size.width / 2
+            
+            Canvas { context, size in
+                let offset = timelineOffset(contentWidth)
+                
+                let interval = timeInterval(for: zoomScale)
+                let smallInterval = interval / 5.0
+                
+                var time: Double = 0
+                while time <= duration {
+                    let x = centerX - offset + CGFloat(time / duration) * contentWidth
+                    
+                    guard x >= 0 && x <= size.width else {
+                        time += smallInterval
+                        continue
+                    }
+                    
+                    let isMajor = Int(time / interval) * Int(interval) == Int(time)
+                    
+                    if isMajor {
+                        var path = Path()
+                        path.move(to: CGPoint(x: x, y: size.height - 12))
+                        path.addLine(to: CGPoint(x: x, y: size.height))
+                        context.stroke(path, with: .color(.secondary.opacity(0.6)), lineWidth: 1.5)
+                        
+                        let timeText = formatTime(time)
+                        context.draw(
+                            Text(timeText)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.secondary),
+                            at: CGPoint(x: x, y: 6)
+                        )
+                    } else {
+                        var path = Path()
+                        path.move(to: CGPoint(x: x, y: size.height - 6))
+                        path.addLine(to: CGPoint(x: x, y: size.height))
+                        context.stroke(path, with: .color(.secondary.opacity(0.3)), lineWidth: 1)
+                    }
+                    
+                    time += smallInterval
+                }
+            }
+            .frame(height: Self.rulerHeight)
+        }
+        .frame(height: Self.rulerHeight)
+    }
+    
+    private func timeInterval(for zoom: CGFloat) -> Double {
+        switch zoom {
+        case 0...2: return 10.0
+        case 2...5: return 5.0
+        case 5...10: return 2.0
+        default: return 1.0
+        }
+    }
+    
+    private func formatTime(_ seconds: Double) -> String {
+        let totalSeconds = Int(seconds)
+        let minutes = totalSeconds / 60
+        let secs = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, secs)
+    }
+    
     // MARK: - Timeline Content
     
     private func timelineContent(geo: GeometryProxy) -> some View {
         let centerX = geo.size.width / 2
-        let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), 1)
+        let baseWidth = geo.size.width
+        let contentWidth = max(baseWidth * zoomScale, CGFloat(waveform.count) * (barWidth + spacing))
         let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
 
         return ZStack {
@@ -197,10 +303,11 @@ struct TimelineBarView: View {
                     lastMagnification = 1.0
                 }
                 
-                // Incremental scaling for 1:1 feel
                 let delta = value / lastMagnification
                 let newScale = zoomScale * delta
-                zoomScale = min(max(newScale, Self.minZoom), Self.maxZoom)
+                let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
+                zoomScale = clamped
+                onZoomChange(clamped)
                 lastMagnification = value
             }
             .onEnded { _ in
@@ -258,10 +365,10 @@ struct TimelineBarView: View {
             HStack(spacing: spacing) {
                 ForEach(waveform.indices, id: \.self) { i in
                     Rectangle()
-                        .fill(Color.secondary.opacity(0.6))
+                        .fill(Color.secondary.opacity(0.7))
                         .frame(
                             width: barWidth,
-                            height: max(12, CGFloat(waveform[i]) * Self.barHeight)
+                            height: max(2, CGFloat(waveform[i]) * Self.barHeight * 0.9)
                         )
                 }
             }

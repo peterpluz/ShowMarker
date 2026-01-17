@@ -36,7 +36,7 @@ final class TimelineViewModel: ObservableObject {
     private let repository: ProjectRepository
     private let timelineID: UUID
 
-    private let baseSamples = 300  // Увеличено для лучшей базовой детализации
+    private let baseSamples = 500  // Базовое количество баров на экране
     private var cachedWaveform: WaveformCache.CachedWaveform?
     private var loadedAudioID: UUID?
 
@@ -83,7 +83,7 @@ final class TimelineViewModel: ObservableObject {
     private func bindZoom() {
         $zoomScale
             .removeDuplicates()
-            .debounce(for: .milliseconds(50), scheduler: RunLoop.main)
+            .debounce(for: .milliseconds(30), scheduler: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateVisibleContent()
             }
@@ -124,10 +124,13 @@ final class TimelineViewModel: ObservableObject {
         if let cached = WaveformCache.load(cacheKey: fileName) {
             cachedWaveform = cached
         } else {
-            cachedWaveform = try? WaveformCache.generateAndCache(
-                audioURL: audioURL,
-                cacheKey: fileName
-            )
+            Task {
+                cachedWaveform = try? WaveformCache.generateAndCache(
+                    audioURL: audioURL,
+                    cacheKey: fileName
+                )
+                updateVisibleContent()
+            }
         }
 
         updateVisibleContent()

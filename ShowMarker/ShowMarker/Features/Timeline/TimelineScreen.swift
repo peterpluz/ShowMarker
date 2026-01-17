@@ -241,6 +241,7 @@ struct TimelineScreen: View {
             hasAudio: viewModel.audio != nil,
             onAddAudio: { isPickerPresented = true },
             onSeek: { viewModel.seek(to: $0) },
+            onZoomChange: { viewModel.zoomScale = $0 },
             onPreviewMoveMarker: { _, _ in },
             onCommitMoveMarker: { id, time in
                 if let marker = viewModel.markers.first(where: { $0.id == id }) {

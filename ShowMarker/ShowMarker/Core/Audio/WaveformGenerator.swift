@@ -3,11 +3,11 @@ import AVFoundation
 
 struct WaveformGenerator {
 
-    /// Генерация полной детализации waveform для разных уровней зума
-    /// Создаёт максимально детализированный базовый уровень (1 sample per bucket)
+    /// Генерация максимально детализированной waveform
+    /// baseBucketSize = 16 означает ~16 аудио-сэмплов на 1 визуальный бар
     static func generateFullResolutionPeaks(
         from url: URL,
-        baseBucketSize: Int = 64  // Уменьшено для большей детализации
+        baseBucketSize: Int = 16
     ) throws -> [Float] {
 
         let asset = AVURLAsset(url: url)
@@ -34,8 +34,8 @@ struct WaveformGenerator {
         reader.startReading()
 
         var values: [Float] = []
-        var sumSquares: Float = 0
         var maxPeak: Float = 0
+        var minPeak: Float = 0
         var count: Int = 0
 
         while reader.status == .reading {
@@ -64,19 +64,17 @@ struct WaveformGenerator {
             }
 
             for s in samples {
-                let absValue = abs(s)
-                sumSquares += s * s
-                maxPeak = max(maxPeak, absValue)
+                maxPeak = max(maxPeak, s)
+                minPeak = min(minPeak, s)
                 count += 1
 
                 if count >= baseBucketSize {
-                    // Используем комбинацию RMS и Peak для лучшей визуализации
-                    let rms = sqrt(sumSquares / Float(count))
-                    let combined = (rms * 0.7 + maxPeak * 0.3)  // Weighted average
-                    values.append(combined)
+                    // Используем максимальное абсолютное значение (peak)
+                    let peak = max(abs(maxPeak), abs(minPeak))
+                    values.append(peak)
                     
-                    sumSquares = 0
                     maxPeak = 0
+                    minPeak = 0
                     count = 0
                 }
             }
@@ -85,22 +83,20 @@ struct WaveformGenerator {
         }
 
         if count > 0 {
-            let rms = sqrt(sumSquares / Float(count))
-            let combined = (rms * 0.7 + maxPeak * 0.3)
-            values.append(combined)
+            let peak = max(abs(maxPeak), abs(minPeak))
+            values.append(peak)
         }
 
         return normalize(values)
     }
 
-    /// Создание множества уровней детализации (mipmap pyramid)
-    /// Каждый следующий уровень имеет в 2 раза меньше сэмплов
+    /// Создание mipmap pyramid для разных уровней зума
     static func buildMipmaps(from base: [Float]) -> [[Float]] {
         var levels: [[Float]] = [base]
         var current = base
 
-        // Создаём уровни до очень малого количества сэмплов
-        while current.count > 100 {
+        // Создаём уровни пока не дойдём до минимума
+        while current.count > 50 {
             var next: [Float] = []
             next.reserveCapacity(current.count / 2)
 
@@ -109,7 +105,7 @@ struct WaveformGenerator {
                 let end = min(i + 2, current.count)
                 let slice = current[i..<end]
                 
-                // Используем максимальное значение для сохранения пиков
+                // Сохраняем максимальный пик
                 let maxVal = slice.max() ?? 0
                 next.append(maxVal)
                 i += 2
@@ -126,6 +122,6 @@ struct WaveformGenerator {
 
     private static func normalize(_ values: [Float]) -> [Float] {
         guard let maxVal = values.max(), maxVal > 0 else { return values }
-        return values.map { min(1, $0 / maxVal) }
+        return values.map { $0 / maxVal }
     }
 }
