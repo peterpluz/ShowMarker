@@ -3,11 +3,11 @@ import AVFoundation
 
 struct WaveformGenerator {
 
-    /// Генерация максимально детализированной waveform
-    /// baseBucketSize = 16 означает ~16 аудио-сэмплов на 1 визуальный бар
+    /// Генерация stereo waveform (min/max пары) как в Reaper
+    /// Возвращает массив пар [min, max, min, max, ...]
     static func generateFullResolutionPeaks(
         from url: URL,
-        baseBucketSize: Int = 16
+        baseBucketSize: Int = 32  // Детализация: меньше = больше деталей
     ) throws -> [Float] {
 
         let asset = AVURLAsset(url: url)
@@ -33,7 +33,7 @@ struct WaveformGenerator {
         reader.add(output)
         reader.startReading()
 
-        var values: [Float] = []
+        var values: [Float] = []  // Чередование [min, max, min, max, ...]
         var maxPeak: Float = 0
         var minPeak: Float = 0
         var count: Int = 0
@@ -69,9 +69,9 @@ struct WaveformGenerator {
                 count += 1
 
                 if count >= baseBucketSize {
-                    // Используем максимальное абсолютное значение (peak)
-                    let peak = max(abs(maxPeak), abs(minPeak))
-                    values.append(peak)
+                    // Сохраняем min и max для stereo-отображения
+                    values.append(minPeak)
+                    values.append(maxPeak)
                     
                     maxPeak = 0
                     minPeak = 0
@@ -83,8 +83,8 @@ struct WaveformGenerator {
         }
 
         if count > 0 {
-            let peak = max(abs(maxPeak), abs(minPeak))
-            values.append(peak)
+            values.append(minPeak)
+            values.append(maxPeak)
         }
 
         return normalize(values)
@@ -95,24 +95,42 @@ struct WaveformGenerator {
         var levels: [[Float]] = [base]
         var current = base
 
-        // Создаём уровни пока не дойдём до минимума
-        while current.count > 50 {
+        // Создаём уровни с сохранением min/max пар
+        while current.count > 100 {
             var next: [Float] = []
             next.reserveCapacity(current.count / 2)
 
             var i = 0
             while i < current.count {
-                let end = min(i + 2, current.count)
+                // Берём 2 пары (4 значения): min1, max1, min2, max2
+                let end = min(i + 4, current.count)
                 let slice = current[i..<end]
                 
-                // Сохраняем максимальный пик
-                let maxVal = slice.max() ?? 0
-                next.append(maxVal)
-                i += 2
+                if slice.count >= 2 {
+                    // Находим общий min и max из всех значений
+                    let minVal = slice.enumerated()
+                        .filter { $0.offset % 2 == 0 }  // Только min значения
+                        .map { $0.element }
+                        .min() ?? 0
+                    
+                    let maxVal = slice.enumerated()
+                        .filter { $0.offset % 2 == 1 }  // Только max значения
+                        .map { $0.element }
+                        .max() ?? 0
+                    
+                    next.append(minVal)
+                    next.append(maxVal)
+                }
+                
+                i += 4
             }
 
-            levels.append(normalize(next))
-            current = next
+            if next.count >= 2 {
+                levels.append(normalize(next))
+                current = next
+            } else {
+                break
+            }
         }
 
         return levels
@@ -121,7 +139,14 @@ struct WaveformGenerator {
     // MARK: - Private
 
     private static func normalize(_ values: [Float]) -> [Float] {
-        guard let maxVal = values.max(), maxVal > 0 else { return values }
-        return values.map { $0 / maxVal }
+        guard !values.isEmpty else { return values }
+        
+        // Находим максимальное абсолютное значение
+        let maxAbs = values.map { abs($0) }.max() ?? 1.0
+        
+        guard maxAbs > 0 else { return values }
+        
+        // Нормализуем, сохраняя знак
+        return values.map { $0 / maxAbs }
     }
 }

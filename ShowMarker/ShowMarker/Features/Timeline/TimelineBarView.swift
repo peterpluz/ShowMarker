@@ -29,8 +29,8 @@ struct TimelineBarView: View {
     // MARK: - Constants
 
     private static let barHeight: CGFloat = 140
-    private static let baseBarWidth: CGFloat = 1.0  // Тоньше!
-    private static let baseSpacing: CGFloat = 0.3   // Меньше промежуток!
+    private static let baseBarWidth: CGFloat = 0.8  // Очень тонкие линии
+    private static let baseSpacing: CGFloat = 0.2
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
     
@@ -151,7 +151,8 @@ struct TimelineBarView: View {
     
     private var timeRuler: some View {
         GeometryReader { geo in
-            let contentWidth = max(CGFloat(waveform.count) * (barWidth + spacing), geo.size.width)
+            let pairCount = waveform.count / 2
+            let contentWidth = max(CGFloat(pairCount) * (barWidth + spacing), geo.size.width)
             let centerX = geo.size.width / 2
             
             Canvas { context, size in
@@ -220,7 +221,8 @@ struct TimelineBarView: View {
     private func timelineContent(geo: GeometryProxy) -> some View {
         let centerX = geo.size.width / 2
         let baseWidth = geo.size.width
-        let contentWidth = max(baseWidth * zoomScale, CGFloat(waveform.count) * (barWidth + spacing))
+        let pairCount = waveform.count / 2
+        let contentWidth = max(baseWidth * zoomScale, CGFloat(pairCount) * (barWidth + spacing))
         let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
 
         return ZStack {
@@ -351,7 +353,7 @@ struct TimelineBarView: View {
             }
     }
 
-    // MARK: - Subviews
+    // MARK: - Subviews (REAPER-STYLE WAVEFORM)
 
     private func waveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
         ZStack {
@@ -359,28 +361,51 @@ struct TimelineBarView: View {
                 .fill(Color.secondary.opacity(0.12))
                 .frame(width: width, height: Self.barHeight)
 
-            // ИСПРАВЛЕНИЕ: Canvas для точной отрисовки тонких линий
+            // Canvas для Reaper-style waveform с заливкой
             Canvas { context, size in
-                let totalWidth = CGFloat(waveform.count) * (barWidth + spacing)
-                let scale = width / totalWidth
+                let pairCount = waveform.count / 2
+                guard pairCount > 0 else { return }
                 
-                for (index, value) in waveform.enumerated() {
-                    let x = CGFloat(index) * (barWidth + spacing) * scale
-                    let height = max(2, CGFloat(value) * Self.barHeight * 0.95)
-                    let y = (Self.barHeight - height) / 2
+                let totalWidth = CGFloat(pairCount) * (barWidth + spacing)
+                let scale = width / totalWidth
+                let centerY = Self.barHeight / 2
+                
+                for i in 0..<pairCount {
+                    let minIndex = i * 2
+                    let maxIndex = i * 2 + 1
                     
-                    let rect = CGRect(
-                        x: x,
-                        y: y,
-                        width: barWidth * scale,
-                        height: height
-                    )
+                    guard maxIndex < waveform.count else { break }
                     
-                    context.fill(
-                        Path(roundedRect: rect, cornerRadius: 0),
-                        with: .color(.secondary.opacity(0.75))
+                    let minValue = waveform[minIndex]  // Отрицательное значение
+                    let maxValue = waveform[maxIndex]  // Положительное значение
+                    
+                    let x = CGFloat(i) * (barWidth + spacing) * scale
+                    
+                    // Верхняя часть (от центра вверх)
+                    let topHeight = CGFloat(maxValue) * (Self.barHeight / 2)
+                    let topY = centerY - topHeight
+                    
+                    // Нижняя часть (от центра вниз)
+                    let bottomHeight = CGFloat(abs(minValue)) * (Self.barHeight / 2)
+                    
+                    // Рисуем сплошную вертикальную линию от min до max
+                    let path = Path { p in
+                        p.move(to: CGPoint(x: x, y: topY))
+                        p.addLine(to: CGPoint(x: x, y: centerY + bottomHeight))
+                    }
+                    
+                    context.stroke(
+                        path,
+                        with: .color(.secondary.opacity(0.75)),
+                        lineWidth: max(0.5, barWidth * scale)
                     )
                 }
+                
+                // Центральная линия
+                var centerLine = Path()
+                centerLine.move(to: CGPoint(x: 0, y: centerY))
+                centerLine.addLine(to: CGPoint(x: width, y: centerY))
+                context.stroke(centerLine, with: .color(.secondary.opacity(0.2)), lineWidth: 1)
             }
             .frame(width: width, height: Self.barHeight)
         }
