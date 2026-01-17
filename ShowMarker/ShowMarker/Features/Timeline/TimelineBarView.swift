@@ -29,14 +29,12 @@ struct TimelineBarView: View {
     // MARK: - Constants
 
     private static let barHeight: CGFloat = 140
-    private static let baseBarWidth: CGFloat = 0.8  // Очень тонкие линии
-    private static let baseSpacing: CGFloat = 0.2
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
     
-    // Zoom limits
+    // Zoom limits - МАКРО-УРОВЕНЬ
     private static let minZoom: CGFloat = 1.0
-    private static let maxZoom: CGFloat = 20.0
+    private static let maxZoom: CGFloat = 500.0
     
     // Timeline indicator
     private static let indicatorHeight: CGFloat = 6
@@ -49,16 +47,6 @@ struct TimelineBarView: View {
     @State private var draggedMarkerID: UUID?
     @State private var draggedMarkerPreviewTime: Double?
     @State private var dragStartTime: Double?
-
-    // MARK: - Computed zoom values
-    
-    private var barWidth: CGFloat {
-        Self.baseBarWidth * zoomScale
-    }
-    
-    private var spacing: CGFloat {
-        Self.baseSpacing * zoomScale
-    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -89,16 +77,13 @@ struct TimelineBarView: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 
-                // Background track
                 Capsule()
                     .fill(Color.secondary.opacity(0.15))
                     .frame(height: Self.indicatorHeight)
                 
-                // Visible region capsule
                 let visibleRatio = 1.0 / zoomScale
                 let visibleWidth = geo.size.width * visibleRatio
                 
-                // Position based on currentTime
                 let timeRatio = duration > 0 ? currentTime / duration : 0
                 let centerOffset = geo.size.width * timeRatio
                 
@@ -135,7 +120,6 @@ struct TimelineBarView: View {
                             }
                     )
                 
-                // Playhead indicator line
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
@@ -147,30 +131,30 @@ struct TimelineBarView: View {
         .padding(.horizontal, 4)
     }
     
-    // MARK: - Time Ruler
+    // MARK: - Time Ruler - ИСПРАВЛЕНО
     
     private var timeRuler: some View {
         GeometryReader { geo in
-            let pairCount = waveform.count / 2
-            let contentWidth = max(CGFloat(pairCount) * (barWidth + spacing), geo.size.width)
+            let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
             let centerX = geo.size.width / 2
+            let offset = timelineOffset(contentWidth)
             
             Canvas { context, size in
-                let offset = timelineOffset(contentWidth)
-                
                 let interval = timeInterval(for: zoomScale)
                 let smallInterval = interval / 5.0
                 
                 var time: Double = 0
                 while time <= duration {
-                    let x = centerX - offset + CGFloat(time / duration) * contentWidth
+                    // ИСПРАВЛЕНО: правильный расчёт позиции
+                    let normalizedPosition = time / duration
+                    let x = centerX - offset + (normalizedPosition * contentWidth)
                     
-                    guard x >= 0 && x <= size.width else {
+                    guard x >= -20 && x <= size.width + 20 else {
                         time += smallInterval
                         continue
                     }
                     
-                    let isMajor = Int(time / interval) * Int(interval) == Int(time)
+                    let isMajor = abs(time.truncatingRemainder(dividingBy: interval)) < 0.001
                     
                     if isMajor {
                         var path = Path()
@@ -200,49 +184,62 @@ struct TimelineBarView: View {
         .frame(height: Self.rulerHeight)
     }
     
+    // ИСПРАВЛЕНО: макро-интервалы для экстремального зума
     private func timeInterval(for zoom: CGFloat) -> Double {
         switch zoom {
-        case 0...2: return 10.0
-        case 2...5: return 5.0
-        case 5...10: return 2.0
-        default: return 1.0
+        case 0...1.5: return 10.0
+        case 1.5...3: return 5.0
+        case 3...6: return 2.0
+        case 6...12: return 1.0
+        case 12...25: return 0.5
+        case 25...50: return 0.2
+        case 50...100: return 0.1
+        case 100...200: return 0.05
+        case 200...350: return 0.02
+        default: return 0.01  // 10ms интервалы на макро-уровне
         }
     }
     
     private func formatTime(_ seconds: Double) -> String {
-        let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let secs = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, secs)
+        // Для макро-зума показываем миллисекунды
+        if zoomScale > 100 {
+            let ms = Int((seconds - floor(seconds)) * 1000)
+            let totalSeconds = Int(seconds)
+            let minutes = totalSeconds / 60
+            let secs = totalSeconds % 60
+            return String(format: "%d:%02d.%03d", minutes, secs, ms)
+        } else {
+            let totalSeconds = Int(seconds)
+            let minutes = totalSeconds / 60
+            let secs = totalSeconds % 60
+            return String(format: "%d:%02d", minutes, secs)
+        }
     }
     
     // MARK: - Timeline Content
     
     private func timelineContent(geo: GeometryProxy) -> some View {
         let centerX = geo.size.width / 2
-        let baseWidth = geo.size.width
-        let pairCount = waveform.count / 2
-        let contentWidth = max(baseWidth * zoomScale, CGFloat(pairCount) * (barWidth + spacing))
+        let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
         let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
 
         return ZStack {
             waveformView(width: contentWidth, geoWidth: geo.size.width)
                 .offset(x: centerX - timelineOffset(contentWidth))
 
+            // ИСПРАВЛЕНО: правильный расчёт позиций маркеров
             ForEach(markers) { marker in
                 let displayTime = (draggedMarkerID == marker.id && draggedMarkerPreviewTime != nil)
                     ? draggedMarkerPreviewTime!
                     : marker.timeSeconds
                 
+                let normalizedPosition = displayTime / max(duration, 0.0001)
+                let markerX = centerX - timelineOffset(contentWidth) + (normalizedPosition * contentWidth)
+                
                 Rectangle()
                     .fill(Color.orange)
                     .frame(width: Self.markerLineWidth, height: Self.barHeight)
-                    .position(
-                        x: centerX
-                            - timelineOffset(contentWidth)
-                            + CGFloat(displayTime / max(duration, 0.0001)) * contentWidth,
-                        y: Self.barHeight / 2
-                    )
+                    .position(x: markerX, y: Self.barHeight / 2)
                     .gesture(markerGesture(
                         marker: marker,
                         centerX: centerX,
@@ -315,7 +312,7 @@ struct TimelineBarView: View {
             }
     }
 
-    // MARK: - Marker gesture
+    // MARK: - Marker gesture - ИСПРАВЛЕНО
 
     private func markerGesture(
         marker: TimelineMarker,
@@ -335,9 +332,10 @@ struct TimelineBarView: View {
                     draggedMarkerID == marker.id
                 else { return }
 
-                let originX = centerX - timelineOffset(contentWidth)
-                let relative = (drag.location.x - originX) / contentWidth
-                let newTime = clamp(Double(relative) * duration)
+                let offset = timelineOffset(contentWidth)
+                let originX = centerX - offset
+                let normalizedPosition = (drag.location.x - originX) / contentWidth
+                let newTime = clamp(normalizedPosition * duration)
 
                 draggedMarkerPreviewTime = newTime
             }
@@ -353,7 +351,7 @@ struct TimelineBarView: View {
             }
     }
 
-    // MARK: - Subviews (REAPER-STYLE WAVEFORM)
+    // MARK: - WAVEFORM - ИСПРАВЛЕНО
 
     private func waveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
         ZStack {
@@ -361,14 +359,20 @@ struct TimelineBarView: View {
                 .fill(Color.secondary.opacity(0.12))
                 .frame(width: width, height: Self.barHeight)
 
-            // Canvas для Reaper-style waveform с заливкой
             Canvas { context, size in
                 let pairCount = waveform.count / 2
                 guard pairCount > 0 else { return }
                 
-                let totalWidth = CGFloat(pairCount) * (barWidth + spacing)
-                let scale = width / totalWidth
                 let centerY = Self.barHeight / 2
+                let pixelsPerSample = width / CGFloat(pairCount)
+                
+                // ИСПРАВЛЕНО: Уменьшаем амплитуду для читаемости
+                let amplitudeScale: CGFloat = 0.7 // 70% от максимума
+                
+                var upperPath = Path()
+                var lowerPath = Path()
+                
+                var isFirstPoint = true
                 
                 for i in 0..<pairCount {
                     let minIndex = i * 2
@@ -376,36 +380,49 @@ struct TimelineBarView: View {
                     
                     guard maxIndex < waveform.count else { break }
                     
-                    let minValue = waveform[minIndex]  // Отрицательное значение
-                    let maxValue = waveform[maxIndex]  // Положительное значение
+                    let minValue = waveform[minIndex]
+                    let maxValue = waveform[maxIndex]
                     
-                    let x = CGFloat(i) * (barWidth + spacing) * scale
+                    let x = CGFloat(i) * pixelsPerSample
                     
-                    // Верхняя часть (от центра вверх)
-                    let topHeight = CGFloat(maxValue) * (Self.barHeight / 2)
-                    let topY = centerY - topHeight
+                    // ИСПРАВЛЕНО: применяем amplitudeScale
+                    let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
+                    let bottomY = centerY + CGFloat(abs(minValue)) * (Self.barHeight / 2) * amplitudeScale
                     
-                    // Нижняя часть (от центра вниз)
-                    let bottomHeight = CGFloat(abs(minValue)) * (Self.barHeight / 2)
-                    
-                    // Рисуем сплошную вертикальную линию от min до max
-                    let path = Path { p in
-                        p.move(to: CGPoint(x: x, y: topY))
-                        p.addLine(to: CGPoint(x: x, y: centerY + bottomHeight))
+                    if isFirstPoint {
+                        upperPath.move(to: CGPoint(x: x, y: centerY))
+                        lowerPath.move(to: CGPoint(x: x, y: centerY))
+                        isFirstPoint = false
                     }
                     
-                    context.stroke(
-                        path,
-                        with: .color(.secondary.opacity(0.75)),
-                        lineWidth: max(0.5, barWidth * scale)
-                    )
+                    upperPath.addLine(to: CGPoint(x: x, y: topY))
+                    lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
                 }
+                
+                if pairCount > 0 {
+                    let lastX = CGFloat(pairCount - 1) * pixelsPerSample
+                    upperPath.addLine(to: CGPoint(x: lastX, y: centerY))
+                    lowerPath.addLine(to: CGPoint(x: lastX, y: centerY))
+                }
+                
+                upperPath.closeSubpath()
+                lowerPath.closeSubpath()
+                
+                // ИСПРАВЛЕНО: используем системный цвет
+                let fillColor = Color.secondary.opacity(0.4)
+                context.fill(upperPath, with: .color(fillColor))
+                context.fill(lowerPath, with: .color(fillColor))
+                
+                // ИСПРАВЛЕНО: контур в цвете интерфейса
+                let strokeColor = Color.secondary.opacity(0.8)
+                context.stroke(upperPath, with: .color(strokeColor), lineWidth: 1.0)
+                context.stroke(lowerPath, with: .color(strokeColor), lineWidth: 1.0)
                 
                 // Центральная линия
                 var centerLine = Path()
                 centerLine.move(to: CGPoint(x: 0, y: centerY))
                 centerLine.addLine(to: CGPoint(x: width, y: centerY))
-                context.stroke(centerLine, with: .color(.secondary.opacity(0.2)), lineWidth: 1)
+                context.stroke(centerLine, with: .color(.secondary.opacity(0.25)), lineWidth: 0.5)
             }
             .frame(width: width, height: Self.barHeight)
         }

@@ -3,11 +3,11 @@ import AVFoundation
 
 struct WaveformGenerator {
 
-    /// Генерация stereo waveform (min/max пары) как в Reaper
+    /// Генерация stereo waveform (min/max пары) с высоким разрешением
     /// Возвращает массив пар [min, max, min, max, ...]
     static func generateFullResolutionPeaks(
         from url: URL,
-        baseBucketSize: Int = 32  // Детализация: меньше = больше деталей
+        baseBucketSize: Int = 8  // УМЕНЬШЕНО: с 32 до 8 для 4x детализации
     ) throws -> [Float] {
 
         let asset = AVURLAsset(url: url)
@@ -33,7 +33,9 @@ struct WaveformGenerator {
         reader.add(output)
         reader.startReading()
 
-        var values: [Float] = []  // Чередование [min, max, min, max, ...]
+        var values: [Float] = []
+        values.reserveCapacity(10000) // Предварительная аллокация
+        
         var maxPeak: Float = 0
         var minPeak: Float = 0
         var count: Int = 0
@@ -69,7 +71,6 @@ struct WaveformGenerator {
                 count += 1
 
                 if count >= baseBucketSize {
-                    // Сохраняем min и max для stereo-отображения
                     values.append(minPeak)
                     values.append(maxPeak)
                     
@@ -95,26 +96,24 @@ struct WaveformGenerator {
         var levels: [[Float]] = [base]
         var current = base
 
-        // Создаём уровни с сохранением min/max пар
-        while current.count > 100 {
+        // Создаём больше уровней для плавного зума
+        while current.count > 50 {  // УМЕНЬШЕНО: с 100 до 50
             var next: [Float] = []
             next.reserveCapacity(current.count / 2)
 
             var i = 0
             while i < current.count {
-                // Берём 2 пары (4 значения): min1, max1, min2, max2
                 let end = min(i + 4, current.count)
                 let slice = current[i..<end]
                 
                 if slice.count >= 2 {
-                    // Находим общий min и max из всех значений
                     let minVal = slice.enumerated()
-                        .filter { $0.offset % 2 == 0 }  // Только min значения
+                        .filter { $0.offset % 2 == 0 }
                         .map { $0.element }
                         .min() ?? 0
                     
                     let maxVal = slice.enumerated()
-                        .filter { $0.offset % 2 == 1 }  // Только max значения
+                        .filter { $0.offset % 2 == 1 }
                         .map { $0.element }
                         .max() ?? 0
                     
@@ -141,12 +140,9 @@ struct WaveformGenerator {
     private static func normalize(_ values: [Float]) -> [Float] {
         guard !values.isEmpty else { return values }
         
-        // Находим максимальное абсолютное значение
         let maxAbs = values.map { abs($0) }.max() ?? 1.0
-        
         guard maxAbs > 0 else { return values }
         
-        // Нормализуем, сохраняя знак
         return values.map { $0 / maxAbs }
     }
 }
