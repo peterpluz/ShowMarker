@@ -241,9 +241,7 @@ struct TimelineScreen: View {
             hasAudio: viewModel.audio != nil,
             onAddAudio: { isPickerPresented = true },
             onSeek: { viewModel.seek(to: $0) },
-            onPreviewMoveMarker: { _, _ in
-                // Preview теперь внутри TimelineBarView
-            },
+            onPreviewMoveMarker: { _, _ in },
             onCommitMoveMarker: { id, time in
                 if let marker = viewModel.markers.first(where: { $0.id == id }) {
                     viewModel.moveMarker(marker, to: time)

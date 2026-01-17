@@ -28,13 +28,30 @@ struct WaveformCache {
         return try? JSONDecoder().decode(CachedWaveform.self, from: data)
     }
 
+    /// Выбор оптимального уровня детализации на основе зума и ширины экрана
     static func bestLevel(
         from cached: CachedWaveform,
-        targetSamples: Int
+        targetSamples: Int,
+        zoomScale: CGFloat
     ) -> [Float] {
-        return cached.mipmaps.min {
-            abs($0.count - targetSamples) < abs($1.count - targetSamples)
-        } ?? []
+        
+        // При большом зуме используем более детальные уровни
+        let adjustedTarget = Int(Double(targetSamples) * Double(zoomScale))
+        
+        // Находим ближайший уровень, который больше или равен target
+        // Это даёт нам максимальную детализацию без потери производительности
+        let level = cached.mipmaps.min { a, b in
+            let diffA = abs(a.count - adjustedTarget)
+            let diffB = abs(b.count - adjustedTarget)
+            
+            // Предпочитаем уровень с большим количеством сэмплов при равной разнице
+            if diffA == diffB {
+                return a.count > b.count
+            }
+            return diffA < diffB
+        }
+        
+        return level ?? cached.mipmaps.last ?? []
     }
 
     // MARK: - Private

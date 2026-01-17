@@ -20,6 +20,7 @@ struct TimelineBarView: View {
     
     @State private var zoomScale: CGFloat = 1.0
     @State private var isPinching: Bool = false
+    @State private var lastMagnification: CGFloat = 1.0
     
     // MARK: - Constants
 
@@ -31,7 +32,10 @@ struct TimelineBarView: View {
     
     // Zoom limits
     private static let minZoom: CGFloat = 0.5
-    private static let maxZoom: CGFloat = 10.0
+    private static let maxZoom: CGFloat = 20.0
+    
+    // Timeline indicator
+    private static let indicatorHeight: CGFloat = 6
 
     // MARK: - Local state для smooth preview
     
@@ -50,10 +54,10 @@ struct TimelineBarView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             
-            // Zoom indicator
-            zoomIndicator
+            // Timeline overview indicator
+            timelineOverviewIndicator
             
             // Timeline bar
             GeometryReader { geo in
@@ -67,79 +71,45 @@ struct TimelineBarView: View {
         }
     }
     
-    // MARK: - Zoom Indicator
+    // MARK: - Timeline Overview Indicator (DAW-style)
     
-    private var zoomIndicator: some View {
-        HStack(spacing: 12) {
-            
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    zoomScale = max(Self.minZoom, zoomScale - 0.5)
-                }
-            } label: {
-                Image(systemName: "minus.magnifyingglass")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(zoomScale > Self.minZoom ? .primary : .secondary)
-                    .frame(width: 32, height: 32)
-            }
-            .disabled(zoomScale <= Self.minZoom)
-            
-            // Zoom scale indicator
-            ZStack {
+    private var timelineOverviewIndicator: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                
+                // Background track
                 Capsule()
                     .fill(Color.secondary.opacity(0.15))
-                    .frame(width: 120, height: 6)
+                    .frame(height: Self.indicatorHeight)
                 
-                GeometryReader { geo in
-                    let progress = (zoomScale - Self.minZoom) / (Self.maxZoom - Self.minZoom)
-                    let width = geo.size.width * progress
-                    
-                    Capsule()
-                        .fill(Color.accentColor)
-                        .frame(width: max(6, width), height: 6)
-                }
-                .frame(height: 6)
-            }
-            .frame(width: 120, height: 6)
-            
-            Text("\(Int(zoomScale * 100))%")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
-                .frame(width: 50)
-            
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    zoomScale = min(Self.maxZoom, zoomScale + 0.5)
-                }
-            } label: {
-                Image(systemName: "plus.magnifyingglass")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(zoomScale < Self.maxZoom ? .primary : .secondary)
-                    .frame(width: 32, height: 32)
-            }
-            .disabled(zoomScale >= Self.maxZoom)
-            
-            Spacer()
-            
-            // Reset button
-            if zoomScale != 1.0 {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        zoomScale = 1.0
-                    }
-                } label: {
-                    Text("100%")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.accentColor)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(Color.accentColor.opacity(0.15))
-                        )
-                }
+                // Visible region capsule
+                let visibleRatio = 1.0 / zoomScale
+                let visibleWidth = geo.size.width * visibleRatio
+                
+                // Position based on currentTime
+                let timeRatio = duration > 0 ? currentTime / duration : 0
+                let centerOffset = geo.size.width * timeRatio
+                let xOffset = max(0, min(geo.size.width - visibleWidth, centerOffset - visibleWidth / 2))
+                
+                Capsule()
+                    .fill(Color.accentColor.opacity(0.6))
+                    .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
+                    .offset(x: xOffset)
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.accentColor, lineWidth: 1)
+                            .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
+                            .offset(x: xOffset)
+                    )
+                
+                // Playhead indicator line
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(width: 2, height: Self.indicatorHeight + 4)
+                    .offset(x: centerOffset - 1)
             }
         }
+        .frame(height: Self.indicatorHeight)
         .padding(.horizontal, 4)
     }
     
@@ -222,12 +192,20 @@ struct TimelineBarView: View {
     private func pinchGesture() -> some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                isPinching = true
-                let newScale = zoomScale * value
+                if !isPinching {
+                    isPinching = true
+                    lastMagnification = 1.0
+                }
+                
+                // Incremental scaling for 1:1 feel
+                let delta = value / lastMagnification
+                let newScale = zoomScale * delta
                 zoomScale = min(max(newScale, Self.minZoom), Self.maxZoom)
+                lastMagnification = value
             }
             .onEnded { _ in
                 isPinching = false
+                lastMagnification = 1.0
             }
     }
 

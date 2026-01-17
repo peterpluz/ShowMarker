@@ -19,8 +19,8 @@ final class TimelineViewModel: ObservableObject {
     @Published private(set) var visibleWaveform: [Float] = []
     @Published private(set) var visibleMarkers: [TimelineMarker] = []
     
-    // НОВОЕ: Error handling
-    @Published var error: AppError?
+    // Zoom state
+    @Published var zoomScale: CGFloat = 1.0
 
     // MARK: - Derived
 
@@ -36,12 +36,9 @@ final class TimelineViewModel: ObservableObject {
     private let repository: ProjectRepository
     private let timelineID: UUID
 
-    private let baseSamples = 150
+    private let baseSamples = 300  // Увеличено для лучшей базовой детализации
     private var cachedWaveform: WaveformCache.CachedWaveform?
     private var loadedAudioID: UUID?
-    
-    // НОВОЕ: Cancellation для async операций
-    private var waveformTask: Task<Void, Never>?
 
     // MARK: - Init
 
@@ -54,15 +51,9 @@ final class TimelineViewModel: ObservableObject {
 
         bindPlayer()
         bindRepository()
+        bindZoom()
         syncTimelineState()
         syncAudioIfNeeded()
-    }
-    
-    // НОВОЕ: Cleanup при уничтожении
-    deinit {
-        waveformTask?.cancel()
-        // Не можем вызывать @MainActor методы из deinit
-        // player.stop() будет вызван автоматически при деинициализации player
     }
 
     // MARK: - Player binding
@@ -83,6 +74,18 @@ final class TimelineViewModel: ObservableObject {
         repository.$project
             .sink { [weak self] _ in
                 self?.syncTimelineState()
+            }
+            .store(in: &cancellables)
+    }
+    
+    // MARK: - Zoom binding
+    
+    private func bindZoom() {
+        $zoomScale
+            .removeDuplicates()
+            .debounce(for: .milliseconds(50), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateVisibleContent()
             }
             .store(in: &cancellables)
     }
@@ -112,44 +115,22 @@ final class TimelineViewModel: ObservableObject {
         
         let audioURL = manager.audioFileURL(fileName: fileName)
         
-        guard manager.audioFileExists(fileName: fileName) else {
-            error = .audioFileNotFound(fileName)
-            return
-        }
+        guard manager.audioFileExists(fileName: fileName) else { return }
         
         player.load(url: audioURL)
         loadedAudioID = audio.id
 
-        // ИСПРАВЛЕНО: Cancellable waveform generation
-        waveformTask?.cancel()
-        waveformTask = Task { [weak self] in
-            guard let self else { return }
-            
-            if let cached = WaveformCache.load(cacheKey: fileName) {
-                await MainActor.run {
-                    self.cachedWaveform = cached
-                    self.updateVisibleContent()
-                }
-            } else {
-                do {
-                    let cached = try WaveformCache.generateAndCache(
-                        audioURL: audioURL,
-                        cacheKey: fileName
-                    )
-                    
-                    guard !Task.isCancelled else { return }
-                    
-                    await MainActor.run {
-                        self.cachedWaveform = cached
-                        self.updateVisibleContent()
-                    }
-                } catch {
-                    await MainActor.run {
-                        self.error = .waveformGenerationFailed(error)
-                    }
-                }
-            }
+        // Загружаем или генерируем детализированную waveform
+        if let cached = WaveformCache.load(cacheKey: fileName) {
+            cachedWaveform = cached
+        } else {
+            cachedWaveform = try? WaveformCache.generateAndCache(
+                audioURL: audioURL,
+                cacheKey: fileName
+            )
         }
+
+        updateVisibleContent()
     }
 
     // MARK: - Visible content
@@ -174,9 +155,11 @@ final class TimelineViewModel: ObservableObject {
             return
         }
 
+        // Выбираем уровень детализации на основе зума
         let level = WaveformCache.bestLevel(
             from: cachedWaveform,
-            targetSamples: baseSamples
+            targetSamples: baseSamples,
+            zoomScale: zoomScale
         )
 
         visibleWaveform = level
@@ -241,47 +224,40 @@ final class TimelineViewModel: ObservableObject {
         repository.removeMarker(timelineID: timelineID, markerID: marker.id)
     }
 
-    // MARK: - Audio (ИСПРАВЛЕНО: Error handling)
+    // MARK: - Audio
 
     func addAudio(
         sourceData: Data,
         originalFileName: String,
         fileExtension: String,
         duration: Double
-    ) {
-        do {
-            try repository.addAudioFile(
-                timelineID: timelineID,
-                sourceData: sourceData,
-                originalFileName: originalFileName,
-                fileExtension: fileExtension,
-                duration: duration
-            )
+    ) throws {
+        try repository.addAudioFile(
+            timelineID: timelineID,
+            sourceData: sourceData,
+            originalFileName: originalFileName,
+            fileExtension: fileExtension,
+            duration: duration
+        )
 
-            loadedAudioID = nil
-            syncTimelineState()
-            syncAudioIfNeeded()
-        } catch {
-            self.error = .audioImportFailed(error)
-        }
+        loadedAudioID = nil
+        cachedWaveform = nil
+        syncTimelineState()
+        syncAudioIfNeeded()
     }
 
     func removeAudio() {
-        waveformTask?.cancel()
         player.stop()
 
-        do {
-            try repository.removeAudioFile(timelineID: timelineID)
-            
-            loadedAudioID = nil
-            audio = nil
-            visibleWaveform = []
-            visibleMarkers = []
-            currentTime = 0
-            isPlaying = false
-        } catch {
-            self.error = .audioRemovalFailed(error)
-        }
+        try? repository.removeAudioFile(timelineID: timelineID)
+
+        loadedAudioID = nil
+        cachedWaveform = nil
+        audio = nil
+        visibleWaveform = []
+        visibleMarkers = []
+        currentTime = 0
+        isPlaying = false
     }
 
     // MARK: - Timecode
@@ -297,47 +273,5 @@ final class TimelineViewModel: ObservableObject {
             format: "%02d:%02d:%02d:%02d",
             hours, minutes, seconds, frames
         )
-    }
-}
-
-// MARK: - Error Types
-
-enum AppError: LocalizedError, Identifiable {
-    case audioFileNotFound(String)
-    case audioImportFailed(Error)
-    case audioRemovalFailed(Error)
-    case waveformGenerationFailed(Error)
-    
-    var id: String {
-        switch self {
-        case .audioFileNotFound(let name): return "audioFileNotFound_\(name)"
-        case .audioImportFailed: return "audioImportFailed"
-        case .audioRemovalFailed: return "audioRemovalFailed"
-        case .waveformGenerationFailed: return "waveformGenerationFailed"
-        }
-    }
-    
-    var errorDescription: String? {
-        switch self {
-        case .audioFileNotFound(let name):
-            return "Аудиофайл '\(name)' не найден"
-        case .audioImportFailed(let error):
-            return "Не удалось импортировать аудио: \(error.localizedDescription)"
-        case .audioRemovalFailed(let error):
-            return "Не удалось удалить аудио: \(error.localizedDescription)"
-        case .waveformGenerationFailed(let error):
-            return "Ошибка генерации waveform: \(error.localizedDescription)"
-        }
-    }
-    
-    var recoverySuggestion: String? {
-        switch self {
-        case .audioFileNotFound:
-            return "Попробуйте переимпортировать аудиофайл"
-        case .audioImportFailed, .audioRemovalFailed:
-            return "Проверьте доступ к файлам и повторите попытку"
-        case .waveformGenerationFailed:
-            return "Waveform будет недоступен, но воспроизведение работает"
-        }
     }
 }
