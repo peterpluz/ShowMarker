@@ -26,11 +26,31 @@ struct WaveformCache {
         audioURL: URL,
         cacheKey: String
     ) async throws -> CachedWaveformData {
-        
+
+        // ✅ Adaptive bucket size based on file duration
+        let asset = AVURLAsset(url: audioURL)
+        let duration = try await asset.load(.duration)
+        let durationSeconds = CMTimeGetSeconds(duration)
+
+        // Use larger buckets for longer files to reduce memory usage
+        let bucketSize: Int
+        switch durationSeconds {
+        case 0..<60:        // < 1 minute
+            bucketSize = 256
+        case 60..<300:      // 1-5 minutes
+            bucketSize = 512
+        case 300..<900:     // 5-15 minutes
+            bucketSize = 1024
+        default:            // > 15 minutes
+            bucketSize = 2048
+        }
+
+        print("🌊 Using adaptive bucket size: \(bucketSize) for \(durationSeconds)s audio")
+
         // ✅ ИСПРАВЛЕНО: вызываем async функции напрямую
         let peaks = try await WaveformGenerator.generateFullResolutionPeaks(
             from: audioURL,
-            baseBucketSize: 256
+            baseBucketSize: bucketSize
         )
         
         print("✅ Raw peaks generated: \(peaks.count) samples")

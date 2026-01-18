@@ -38,14 +38,20 @@ final class ProjectRepository: ObservableObject {
         // Удаляем аудиофайлы перед удалением таймлайнов
         if let docURL = documentURL {
             let manager = AudioFileManager(documentURL: docURL)
-            
+
             for index in offsets {
                 if let audio = project.timelines[index].audio {
-                    try? manager.deleteAudioFile(fileName: audio.relativePath)
+                    do {
+                        try manager.deleteAudioFile(fileName: audio.relativePath)
+                        print("✅ Audio file deleted: \(audio.relativePath)")
+                    } catch {
+                        print("⚠️ Failed to delete audio file: \(error.localizedDescription)")
+                        // Continue with timeline deletion even if file deletion fails
+                    }
                 }
             }
         }
-        
+
         project.timelines.remove(atOffsets: offsets)
     }
     

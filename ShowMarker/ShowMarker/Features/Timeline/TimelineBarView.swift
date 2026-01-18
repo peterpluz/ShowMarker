@@ -225,9 +225,12 @@ struct TimelineBarView: View {
                 .offset(x: centerX - timelineOffset(contentWidth))
 
             ForEach(markers) { marker in
-                let displayTime = (draggedMarkerID == marker.id && draggedMarkerPreviewTime != nil)
-                    ? draggedMarkerPreviewTime!
-                    : marker.timeSeconds
+                let displayTime: Double = {
+                    if draggedMarkerID == marker.id, let previewTime = draggedMarkerPreviewTime {
+                        return previewTime
+                    }
+                    return marker.timeSeconds
+                }()
                 
                 let normalizedPosition = displayTime / max(duration, 0.0001)
                 let markerX = centerX - timelineOffset(contentWidth) + (normalizedPosition * contentWidth)
