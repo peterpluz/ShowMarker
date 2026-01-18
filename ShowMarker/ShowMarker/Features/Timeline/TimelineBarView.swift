@@ -366,25 +366,20 @@ struct TimelineBarView: View {
 
                 let centerY = Self.barHeight / 2
 
-                // ✅ CRITICAL: Use size.width from Canvas, not parameter
+                // ✅ CRITICAL FIX: Use size.width from Canvas for accuracy
                 let canvasWidth = size.width
 
-                // ✅ ИСПРАВЛЕНО: адаптивная детализация под зум
-                let targetPoints = Int(canvasWidth / 2) // Достаточно для плавности
-                let step = max(1, pairCount / targetPoints)
-                let pixelsPerSample = canvasWidth / CGFloat(min(pairCount, targetPoints))
-
-                // ✅ ИСПРАВЛЕНО: фиксированная полная амплитуда
+                // ✅ CRITICAL: Fixed amplitude scale
                 let amplitudeScale: CGFloat = 0.85
 
                 var upperPath = Path()
                 var lowerPath = Path()
 
-                var isFirstPoint = true
-                var pointIndex = 0
+                // ✅ CRITICAL FIX: Remove double downsampling
+                // Draw each sample directly using normalized position
+                // This ensures waveform matches playhead/marker coordinate space
 
-                var i = 0
-                while i < pairCount {
+                for i in 0..<pairCount {
                     let minIndex = i * 2
                     let maxIndex = i * 2 + 1
 
@@ -393,30 +388,25 @@ struct TimelineBarView: View {
                     let minValue = waveform[minIndex]
                     let maxValue = waveform[maxIndex]
 
-                    let x = CGFloat(pointIndex) * pixelsPerSample
+                    // ✅ Use same normalization as markers/playhead
+                    let normalizedPosition = Double(i) / Double(max(pairCount - 1, 1))
+                    let x = normalizedPosition * canvasWidth
 
-                    // ✅ ИСПРАВЛЕНО: симметричное отображение верх/низ
+                    // ✅ Symmetric display top/bottom
                     let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
                     let bottomY = centerY - CGFloat(minValue) * (Self.barHeight / 2) * amplitudeScale
 
-                    if isFirstPoint {
+                    if i == 0 {
                         upperPath.move(to: CGPoint(x: x, y: centerY))
                         lowerPath.move(to: CGPoint(x: x, y: centerY))
-                        isFirstPoint = false
                     }
 
                     upperPath.addLine(to: CGPoint(x: x, y: topY))
                     lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
-
-                    i += step
-                    pointIndex += 1
                 }
 
-                if pointIndex > 0 {
-                    let lastX = canvasWidth
-                    upperPath.addLine(to: CGPoint(x: lastX, y: centerY))
-                    lowerPath.addLine(to: CGPoint(x: lastX, y: centerY))
-                }
+                upperPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
+                lowerPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
 
                 upperPath.closeSubpath()
                 lowerPath.closeSubpath()
