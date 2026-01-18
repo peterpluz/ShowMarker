@@ -74,13 +74,8 @@ final class AudioPlayerService: ObservableObject {
         let session = AVAudioSession.sharedInstance()
 
         do {
-            // ✅ ИСПРАВЛЕНО: убран .defaultToSpeaker для .playback
-            // .defaultToSpeaker работает только с .playAndRecord
-            try session.setCategory(
-                .playback,
-                mode: .default,
-                options: [.allowBluetoothA2DP, .allowAirPlay]
-            )
+            // ✅ ИСПРАВЛЕНО: минимальная конфигурация без проблемных опций
+            try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
         } catch {
             print("⚠️ AudioSession error:", error)

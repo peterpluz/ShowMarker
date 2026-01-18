@@ -25,11 +25,6 @@ struct TimelineBarView: View {
     
     @State private var capsuleDragStart: CGFloat?
     
-    // MARK: - ✅ НОВОЕ: Кэширование Canvas
-    @State private var renderedWaveform: Image?
-    @State private var lastRenderedWidth: CGFloat?
-    @State private var lastRenderedZoom: CGFloat?
-    
     // MARK: - Constants
 
     private static let barHeight: CGFloat = 140
@@ -349,47 +344,12 @@ struct TimelineBarView: View {
 
     @ViewBuilder
     private func cachedWaveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
-        let shouldRerender = renderedWaveform == nil
-            || lastRenderedWidth != width
-            || abs((lastRenderedZoom ?? 1.0) - zoomScale) > 0.5
-        
-        if shouldRerender {
-            Color.clear
-                .onAppear {
-                    renderWaveformToCache(width: width, geoWidth: geoWidth)
-                }
-        } else if let cached = renderedWaveform {
-            cached
-                .frame(width: width, height: Self.barHeight)
-        } else {
-            waveformPlaceholder(width: width)
-        }
+        // ✅ ИСПРАВЛЕНО: показываем waveform напрямую без кэширования
+        // Кэширование в Image вызывало проблемы с отображением
+        directWaveformView(width: width, geoWidth: geoWidth)
     }
     
-    private func waveformPlaceholder(width: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 12)
-            .fill(Color.secondary.opacity(0.12))
-            .frame(width: width, height: Self.barHeight)
-    }
-    
-    // ✅ КРИТИЧНО: Рендерим waveform ОДИН РАЗ в фоне
-    private func renderWaveformToCache(width: CGFloat, geoWidth: CGFloat) {
-        Task { @MainActor in
-            let renderer = ImageRenderer(
-                content: directWaveformView(width: width, geoWidth: geoWidth)
-            )
-            renderer.scale = 2.0 // Retina
-            
-            // ✅ Рендер на MainActor
-            if let uiImage = renderer.uiImage {
-                self.renderedWaveform = Image(uiImage: uiImage)
-                self.lastRenderedWidth = width
-                self.lastRenderedZoom = zoomScale
-            }
-        }
-    }
-    
-    // ✅ ПРЯМОЙ рендер waveform для кэша
+    // ✅ ПРЯМОЙ рендер waveform
     private func directWaveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
@@ -402,9 +362,10 @@ struct TimelineBarView: View {
                 
                 let centerY = Self.barHeight / 2
                 
-                // ✅ КРИТИЧНО: Ограничиваем число точек
-                let maxPoints = Int(width / 2) // Не больше чем пикселей
+                // ✅ КРИТИЧНО: Ограничиваем число точек для производительности
+                let maxPoints = Int(width / 1.5)
                 let step = max(1, pairCount / maxPoints)
+                let pixelsPerSample = width / CGFloat(pairCount / step)
                 
                 let amplitudeScale: CGFloat = {
                     if zoomScale < 2.0 {
@@ -420,6 +381,7 @@ struct TimelineBarView: View {
                 var lowerPath = Path()
                 
                 var isFirstPoint = true
+                var pointIndex = 0
                 
                 var i = 0
                 while i < pairCount {
@@ -431,7 +393,7 @@ struct TimelineBarView: View {
                     let minValue = waveform[minIndex]
                     let maxValue = waveform[maxIndex]
                     
-                    let x = CGFloat(i / step) * (width / CGFloat(maxPoints))
+                    let x = CGFloat(pointIndex) * pixelsPerSample
                     
                     let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
                     let bottomY = centerY + CGFloat(abs(minValue)) * (Self.barHeight / 2) * amplitudeScale
@@ -446,6 +408,7 @@ struct TimelineBarView: View {
                     lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
                     
                     i += step
+                    pointIndex += 1
                 }
                 
                 if pairCount > 0 {
