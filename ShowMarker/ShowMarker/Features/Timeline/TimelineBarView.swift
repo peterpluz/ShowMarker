@@ -32,7 +32,7 @@ struct TimelineBarView: View {
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
     
-    // Zoom limits - МАКРО-УРОВЕНЬ
+    // Zoom limits
     private static let minZoom: CGFloat = 1.0
     private static let maxZoom: CGFloat = 500.0
     
@@ -51,11 +51,9 @@ struct TimelineBarView: View {
     var body: some View {
         VStack(spacing: 8) {
             
-            // Timeline overview indicator
-            timelineOverviewIndicator
-            
-            // Time ruler
+            // ИСПРАВЛЕНО: индикатор видим только если есть аудио
             if hasAudio {
+                timelineOverviewIndicator
                 timeRuler
             }
             
@@ -84,9 +82,11 @@ struct TimelineBarView: View {
                 let visibleRatio = 1.0 / zoomScale
                 let visibleWidth = geo.size.width * visibleRatio
                 
+                // ИСПРАВЛЕНО: правильный расчет позиции при экстремальном зуме
                 let timeRatio = duration > 0 ? currentTime / duration : 0
                 let centerOffset = geo.size.width * timeRatio
                 
+                // Фиксируем позицию playhead в центре капсулы
                 let idealOffset = centerOffset - visibleWidth / 2
                 let xOffset = max(0, min(geo.size.width - visibleWidth, idealOffset))
                 
@@ -120,10 +120,11 @@ struct TimelineBarView: View {
                             }
                     )
                 
+                // ИСПРАВЛЕНО: playhead всегда в центре капсулы
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
-                    .offset(x: centerOffset - 1)
+                    .offset(x: xOffset + visibleWidth / 2 - 1)
                     .allowsHitTesting(false)
             }
         }
@@ -143,12 +144,19 @@ struct TimelineBarView: View {
                 let interval = timeInterval(for: zoomScale)
                 let smallInterval = interval / 5.0
                 
-                var time: Double = 0
-                while time <= duration {
-                    // ИСПРАВЛЕНО: правильный расчёт позиции
+                // ИСПРАВЛЕНО: вычисляем видимый диапазон времени
+                let visibleStartTime = max(0, (currentTime - (duration / zoomScale) / 2))
+                let visibleEndTime = min(duration, (currentTime + (duration / zoomScale) / 2))
+                
+                // Начинаем с округленного значения для красоты
+                let startTime = floor(visibleStartTime / smallInterval) * smallInterval
+                
+                var time = startTime
+                while time <= visibleEndTime + smallInterval {
                     let normalizedPosition = time / duration
                     let x = centerX - offset + (normalizedPosition * contentWidth)
                     
+                    // Пропускаем метки за пределами видимости
                     guard x >= -20 && x <= size.width + 20 else {
                         time += smallInterval
                         continue
@@ -184,7 +192,6 @@ struct TimelineBarView: View {
         .frame(height: Self.rulerHeight)
     }
     
-    // ИСПРАВЛЕНО: макро-интервалы для экстремального зума
     private func timeInterval(for zoom: CGFloat) -> Double {
         switch zoom {
         case 0...1.5: return 10.0
@@ -196,12 +203,11 @@ struct TimelineBarView: View {
         case 50...100: return 0.1
         case 100...200: return 0.05
         case 200...350: return 0.02
-        default: return 0.01  // 10ms интервалы на макро-уровне
+        default: return 0.01
         }
     }
     
     private func formatTime(_ seconds: Double) -> String {
-        // Для макро-зума показываем миллисекунды
         if zoomScale > 100 {
             let ms = Int((seconds - floor(seconds)) * 1000)
             let totalSeconds = Int(seconds)
@@ -227,7 +233,6 @@ struct TimelineBarView: View {
             waveformView(width: contentWidth, geoWidth: geo.size.width)
                 .offset(x: centerX - timelineOffset(contentWidth))
 
-            // ИСПРАВЛЕНО: правильный расчёт позиций маркеров
             ForEach(markers) { marker in
                 let displayTime = (draggedMarkerID == marker.id && draggedMarkerPreviewTime != nil)
                     ? draggedMarkerPreviewTime!
@@ -312,7 +317,7 @@ struct TimelineBarView: View {
             }
     }
 
-    // MARK: - Marker gesture - ИСПРАВЛЕНО
+    // MARK: - Marker gesture
 
     private func markerGesture(
         marker: TimelineMarker,
@@ -366,8 +371,16 @@ struct TimelineBarView: View {
                 let centerY = Self.barHeight / 2
                 let pixelsPerSample = width / CGFloat(pairCount)
                 
-                // ИСПРАВЛЕНО: Уменьшаем амплитуду для читаемости
-                let amplitudeScale: CGFloat = 0.7 // 70% от максимума
+                // ИСПРАВЛЕНО: динамическая амплитуда в зависимости от зума
+                let amplitudeScale: CGFloat = {
+                    if zoomScale < 2.0 {
+                        return 0.4  // Минимальный зум - меньше амплитуда
+                    } else if zoomScale < 10.0 {
+                        return 0.6  // Средний зум
+                    } else {
+                        return 0.8  // Максимальный зум - полная амплитуда
+                    }
+                }()
                 
                 var upperPath = Path()
                 var lowerPath = Path()
@@ -385,7 +398,6 @@ struct TimelineBarView: View {
                     
                     let x = CGFloat(i) * pixelsPerSample
                     
-                    // ИСПРАВЛЕНО: применяем amplitudeScale
                     let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
                     let bottomY = centerY + CGFloat(abs(minValue)) * (Self.barHeight / 2) * amplitudeScale
                     
@@ -408,12 +420,10 @@ struct TimelineBarView: View {
                 upperPath.closeSubpath()
                 lowerPath.closeSubpath()
                 
-                // ИСПРАВЛЕНО: используем системный цвет
                 let fillColor = Color.secondary.opacity(0.4)
                 context.fill(upperPath, with: .color(fillColor))
                 context.fill(lowerPath, with: .color(fillColor))
                 
-                // ИСПРАВЛЕНО: контур в цвете интерфейса
                 let strokeColor = Color.secondary.opacity(0.8)
                 context.stroke(upperPath, with: .color(strokeColor), lineWidth: 1.0)
                 context.stroke(lowerPath, with: .color(strokeColor), lineWidth: 1.0)

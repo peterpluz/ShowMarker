@@ -6,12 +6,13 @@ struct WaveformCache {
         let mipmaps: [[Float]]
     }
 
+    // ИСПРАВЛЕНО: сделали async
     static func generateAndCache(
         audioURL: URL,
         cacheKey: String
-    ) throws -> CachedWaveform {
+    ) async throws -> CachedWaveform {
 
-        let base = try WaveformGenerator.generateFullResolutionPeaks(from: audioURL)
+        let base = try await WaveformGenerator.generateFullResolutionPeaks(from: audioURL)
         let mipmaps = WaveformGenerator.buildMipmaps(from: base)
         let cached = CachedWaveform(mipmaps: mipmaps)
 
@@ -39,12 +40,10 @@ struct WaveformCache {
         let adjustedTarget = Int(Double(targetSamples) * Double(zoomScale))
         
         // Находим ближайший уровень, который больше или равен target
-        // Это даёт нам максимальную детализацию без потери производительности
         let level = cached.mipmaps.min { a, b in
             let diffA = abs(a.count - adjustedTarget)
             let diffB = abs(b.count - adjustedTarget)
             
-            // Предпочитаем уровень с большим количеством сэмплов при равной разнице
             if diffA == diffB {
                 return a.count > b.count
             }

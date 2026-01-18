@@ -10,6 +10,7 @@ extension UTType {
 
 // MARK: - Document
 
+@MainActor
 struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.smark] }
@@ -52,7 +53,7 @@ struct ShowMarkerDocument: FileDocument {
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let snapshot = repository.snapshot()
+        let snapshot = repository.project
         
         let encoder = JSONEncoder()
         let projectData = try encoder.encode(snapshot)

@@ -31,6 +31,11 @@ struct TimelineScreen: View {
             wrappedValue: Self.makeViewModel(repository: repository, timelineID: timelineID)
         )
     }
+    
+    // НОВОЕ: проверка наличия аудио
+    private var hasAudio: Bool {
+        viewModel.audio != nil
+    }
 
     var body: some View {
         mainContent
@@ -100,6 +105,8 @@ struct TimelineScreen: View {
         MarkerCard(marker: marker, fps: viewModel.fps)
             .contentShape(Rectangle())
             .onTapGesture {
+                // ИСПРАВЛЕНО: seek только если есть аудио
+                guard hasAudio else { return }
                 viewModel.seek(to: marker.timeSeconds)
             }
             .contextMenu {
@@ -177,19 +184,22 @@ struct TimelineScreen: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
             Menu {
-                Button {
-                    isPickerPresented = true
-                } label: {
-                    Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
-                }
+                // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
+                if hasAudio {
+                    Button {
+                        isPickerPresented = true
+                    } label: {
+                        Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
+                    }
 
-                Button(role: .destructive) {
-                    viewModel.removeAudio()
-                } label: {
-                    Label("Удалить аудиофайл", systemImage: "trash")
-                }
+                    Button(role: .destructive) {
+                        viewModel.removeAudio()
+                    } label: {
+                        Label("Удалить аудиофайл", systemImage: "trash")
+                    }
 
-                Divider()
+                    Divider()
+                }
 
                 Button {
                     renameText = viewModel.name
@@ -219,8 +229,13 @@ struct TimelineScreen: View {
     private var bottomPanel: some View {
         VStack(spacing: 16) {
             timelineBar
-            timecode
-            playbackControls
+            
+            // ИСПРАВЛЕНО: тайм и контролы видимы только с аудио
+            if hasAudio {
+                timecode
+                playbackControls
+            }
+            
             addMarkerButton
         }
         .padding(.horizontal, 24)
@@ -238,7 +253,7 @@ struct TimelineScreen: View {
             currentTime: viewModel.currentTime,
             waveform: viewModel.visibleWaveform,
             markers: viewModel.visibleMarkers,
-            hasAudio: viewModel.audio != nil,
+            hasAudio: hasAudio,
             onAddAudio: { isPickerPresented = true },
             onSeek: { viewModel.seek(to: $0) },
             onZoomChange: { viewModel.zoomScale = $0 },
@@ -289,8 +304,8 @@ struct TimelineScreen: View {
                     Capsule().fill(Color.accentColor)
                 )
         }
-        .disabled(viewModel.audio == nil)
-        .opacity(viewModel.audio == nil ? 0.4 : 1)
+        .disabled(!hasAudio)
+        .opacity(hasAudio ? 1 : 0.4)
     }
 
     // MARK: - Helpers
@@ -307,35 +322,46 @@ struct TimelineScreen: View {
             let url = urls.first
         else { return }
 
-        guard url.startAccessingSecurityScopedResource() else { return }
+        guard url.startAccessingSecurityScopedResource() else {
+            print("❌ Failed to access security scoped resource")
+            return
+        }
         defer { url.stopAccessingSecurityScopedResource() }
 
         do {
             let data = try Data(contentsOf: url)
+            print("✅ Audio data loaded: \(data.count) bytes")
 
             let tmpURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension(url.pathExtension)
 
             try data.write(to: tmpURL, options: .atomic)
+            print("✅ Wrote to temp: \(tmpURL)")
 
             let vm = viewModel
 
             Task { @MainActor in
-                let asset = AVURLAsset(url: tmpURL)
-                let d = try? await asset.load(.duration)
+                do {
+                    let asset = AVURLAsset(url: tmpURL)
+                    let d = try await asset.load(.duration)
+                    print("✅ Audio duration: \(d.seconds)s")
 
-                try? vm.addAudio(
-                    sourceData: data,
-                    originalFileName: url.lastPathComponent,
-                    fileExtension: url.pathExtension,
-                    duration: d?.seconds ?? 0
-                )
+                    try vm.addAudio(
+                        sourceData: data,
+                        originalFileName: url.lastPathComponent,
+                        fileExtension: url.pathExtension,
+                        duration: d.seconds
+                    )
+                    print("✅ Audio added successfully")
 
-                try? FileManager.default.removeItem(at: tmpURL)
+                    try? FileManager.default.removeItem(at: tmpURL)
+                } catch {
+                    print("❌ Audio import error: \(error)")
+                }
             }
         } catch {
-            print("Audio import failed:", error)
+            print("❌ Audio file reading error: \(error)")
         }
     }
 }
