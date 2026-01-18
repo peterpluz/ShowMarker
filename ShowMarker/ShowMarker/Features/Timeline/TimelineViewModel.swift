@@ -38,7 +38,14 @@ final class TimelineViewModel: ObservableObject {
     var visibleWaveform: [Float] {
         guard !cachedWaveform.isEmpty else { return [] }
         
-        // ✅ КРИТИЧНО: Агрессивный downsample
+        // ✅ ИСПРАВЛЕНО: используем исходные данные при большом зуме
+        // При зуме > 10x нужна максимальная детализация
+        if zoomScale > 10.0 {
+            // Возвращаем полные данные, Canvas сам оптимизирует
+            return cachedWaveform
+        }
+        
+        // ✅ Для малого зума - агрессивный downsample
         let targetSamples = zoomScale < 2.0 ? 400 : 800
         let adjustedTarget = targetSamples * 2 // min/max пары
         
@@ -46,7 +53,7 @@ final class TimelineViewModel: ObservableObject {
             return cachedWaveform
         }
         
-        // ✅ Простой decimation вместо сложного алгоритма
+        // Простой decimation
         let step = cachedWaveform.count / adjustedTarget
         var result: [Float] = []
         result.reserveCapacity(adjustedTarget)
@@ -114,10 +121,9 @@ final class TimelineViewModel: ObservableObject {
         self.waveformCacheKey = cacheKey
         
         if let cached = WaveformCache.load(cacheKey: cacheKey) {
-            // ✅ Выбираем средний уровень детализации для баланса
-            let levelIndex = min(2, cached.mipmaps.count - 1)
-            self.cachedWaveform = cached.mipmaps[levelIndex]
-            print("✅ Waveform loaded from cache: \(self.cachedWaveform.count) samples (level \(levelIndex))")
+            // ✅ ИСПРАВЛЕНО: используем МАКСИМАЛЬНУЮ детализацию (первый уровень)
+            self.cachedWaveform = cached.mipmaps.first ?? []
+            print("✅ Waveform loaded from cache: \(self.cachedWaveform.count) samples (level 0 - highest detail)")
             return
         }
         
@@ -140,9 +146,9 @@ final class TimelineViewModel: ObservableObject {
             print("✅ Waveform generated: \(cached.mipmaps.count) levels")
             
             await MainActor.run {
-                let levelIndex = min(2, cached.mipmaps.count - 1)
-                self.cachedWaveform = cached.mipmaps[levelIndex]
-                print("✅ Waveform cached: \(self.cachedWaveform.count) samples (level \(levelIndex))")
+                // ✅ ИСПРАВЛЕНО: используем МАКСИМАЛЬНУЮ детализацию
+                self.cachedWaveform = cached.mipmaps.first ?? []
+                print("✅ Waveform cached: \(self.cachedWaveform.count) samples (level 0 - highest detail)")
             }
         } catch {
             print("⚠️ Waveform generation failed:", error)

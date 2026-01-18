@@ -132,9 +132,12 @@ struct TimelineBarView: View {
                 let interval = timeInterval(for: zoomScale)
                 let smallInterval = interval / 5.0
                 
-                let visibleStartTime = max(0, (currentTime - (duration / zoomScale) / 2))
-                let visibleEndTime = min(duration, (currentTime + (duration / zoomScale) / 2))
+                // ✅ ИСПРАВЛЕНО: расчет видимого диапазона с учетом полной ширины
+                let visibleWidthSeconds = duration / zoomScale
+                let visibleStartTime = max(0, currentTime - visibleWidthSeconds / 2)
+                let visibleEndTime = min(duration, currentTime + visibleWidthSeconds / 2)
                 
+                // Начинаем с округленного значения
                 let startTime = floor(visibleStartTime / smallInterval) * smallInterval
                 
                 var time = startTime
@@ -142,7 +145,8 @@ struct TimelineBarView: View {
                     let normalizedPosition = time / duration
                     let x = centerX - offset + (normalizedPosition * contentWidth)
                     
-                    guard x >= -20 && x <= size.width + 20 else {
+                    // ✅ ИСПРАВЛЕНО: расширенная область отрисовки
+                    guard x >= -50 && x <= size.width + 50 else {
                         time += smallInterval
                         continue
                     }
@@ -178,17 +182,18 @@ struct TimelineBarView: View {
     }
     
     private func timeInterval(for zoom: CGFloat) -> Double {
+        // ✅ ИСПРАВЛЕНО: более плавные переходы интервалов
         switch zoom {
-        case 0...1.5: return 10.0
-        case 1.5...3: return 5.0
-        case 3...6: return 2.0
-        case 6...12: return 1.0
-        case 12...25: return 0.5
-        case 25...50: return 0.2
-        case 50...100: return 0.1
-        case 100...200: return 0.05
-        case 200...350: return 0.02
-        default: return 0.01
+        case 0...1.2: return 30.0
+        case 1.2...2.0: return 10.0
+        case 2.0...4.0: return 5.0
+        case 4.0...8.0: return 2.0
+        case 8.0...15: return 1.0
+        case 15...30: return 0.5
+        case 30...60: return 0.2
+        case 60...120: return 0.1
+        case 120...250: return 0.05
+        default: return 0.02
         }
     }
     
@@ -362,20 +367,13 @@ struct TimelineBarView: View {
                 
                 let centerY = Self.barHeight / 2
                 
-                // ✅ КРИТИЧНО: Ограничиваем число точек для производительности
-                let maxPoints = Int(width / 1.5)
-                let step = max(1, pairCount / maxPoints)
-                let pixelsPerSample = width / CGFloat(pairCount / step)
+                // ✅ ИСПРАВЛЕНО: адаптивная детализация под зум
+                let targetPoints = Int(width / 2) // Достаточно для плавности
+                let step = max(1, pairCount / targetPoints)
+                let pixelsPerSample = width / CGFloat(min(pairCount, targetPoints))
                 
-                let amplitudeScale: CGFloat = {
-                    if zoomScale < 2.0 {
-                        return 0.4
-                    } else if zoomScale < 10.0 {
-                        return 0.6
-                    } else {
-                        return 0.8
-                    }
-                }()
+                // ✅ ИСПРАВЛЕНО: фиксированная полная амплитуда
+                let amplitudeScale: CGFloat = 0.85
                 
                 var upperPath = Path()
                 var lowerPath = Path()
@@ -395,8 +393,9 @@ struct TimelineBarView: View {
                     
                     let x = CGFloat(pointIndex) * pixelsPerSample
                     
+                    // ✅ ИСПРАВЛЕНО: симметричное отображение верх/низ
                     let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
-                    let bottomY = centerY + CGFloat(abs(minValue)) * (Self.barHeight / 2) * amplitudeScale
+                    let bottomY = centerY - CGFloat(minValue) * (Self.barHeight / 2) * amplitudeScale
                     
                     if isFirstPoint {
                         upperPath.move(to: CGPoint(x: x, y: centerY))
@@ -411,7 +410,7 @@ struct TimelineBarView: View {
                     pointIndex += 1
                 }
                 
-                if pairCount > 0 {
+                if pointIndex > 0 {
                     let lastX = width
                     upperPath.addLine(to: CGPoint(x: lastX, y: centerY))
                     lowerPath.addLine(to: CGPoint(x: lastX, y: centerY))
@@ -428,6 +427,7 @@ struct TimelineBarView: View {
                 context.stroke(upperPath, with: .color(strokeColor), lineWidth: 1.0)
                 context.stroke(lowerPath, with: .color(strokeColor), lineWidth: 1.0)
                 
+                // Центральная линия
                 var centerLine = Path()
                 centerLine.move(to: CGPoint(x: 0, y: centerY))
                 centerLine.addLine(to: CGPoint(x: width, y: centerY))
