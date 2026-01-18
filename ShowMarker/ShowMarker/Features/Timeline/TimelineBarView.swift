@@ -126,15 +126,20 @@ struct TimelineBarView: View {
             let offset = timelineOffset(contentWidth)
 
             Canvas { context, size in
-                let interval = timeInterval(for: zoomScale)
-                let smallInterval = interval / 5.0
+                guard duration > 0 else { return }
 
-                // ✅ ИСПРАВЛЕНО: расчет видимого диапазона с учетом полной ширины
-                let visibleWidthSeconds = duration / zoomScale
+                // ✅ CRITICAL FIX: Calculate adaptive interval based on pixel density
+                let secondsPerPixel = duration / Double(contentWidth)
+                let interval = adaptiveTimeInterval(secondsPerPixel: secondsPerPixel)
+                let subdivisions = getSubdivisions(for: interval)
+                let smallInterval = interval / Double(subdivisions)
+
+                // ✅ Calculate visible time range accurately
+                let visibleWidthSeconds = Double(geo.size.width) * secondsPerPixel
                 let visibleStartTime = max(0, currentTime - visibleWidthSeconds / 2)
                 let visibleEndTime = min(duration, currentTime + visibleWidthSeconds / 2)
 
-                // Начинаем с округленного значения
+                // Start from rounded value
                 let startTime = floor(visibleStartTime / smallInterval) * smallInterval
 
                 var time = startTime
@@ -142,21 +147,22 @@ struct TimelineBarView: View {
                     let normalizedPosition = time / duration
                     let x = centerX - offset + (normalizedPosition * contentWidth)
 
-                    // ✅ ИСПРАВЛЕНО: расширенная область отрисовки
+                    // Only draw if in visible area
                     guard x >= -50 && x <= size.width + 50 else {
                         time += smallInterval
                         continue
                     }
 
-                    let isMajor = abs(time.truncatingRemainder(dividingBy: interval)) < 0.001
+                    let isMajor = abs(time.truncatingRemainder(dividingBy: interval)) < 0.0001
 
                     if isMajor {
+                        // Major tick with time label
                         var path = Path()
                         path.move(to: CGPoint(x: x, y: size.height - 12))
                         path.addLine(to: CGPoint(x: x, y: size.height))
-                        context.stroke(path, with: .color(.secondary.opacity(0.6)), lineWidth: 1.5)
+                        context.stroke(path, with: .color(.secondary.opacity(0.7)), lineWidth: 1.5)
 
-                        let timeText = formatTime(time)
+                        let timeText = formatTime(time, interval: interval)
                         context.draw(
                             Text(timeText)
                                 .font(.system(size: 10, weight: .medium))
@@ -164,6 +170,7 @@ struct TimelineBarView: View {
                             at: CGPoint(x: x, y: 6)
                         )
                     } else {
+                        // Minor tick
                         var path = Path()
                         path.move(to: CGPoint(x: x, y: size.height - 6))
                         path.addLine(to: CGPoint(x: x, y: size.height))
@@ -177,35 +184,96 @@ struct TimelineBarView: View {
         }
         .frame(height: Self.rulerHeight)
     }
-    
-    private func timeInterval(for zoom: CGFloat) -> Double {
-        // ✅ ИСПРАВЛЕНО: более плавные переходы интервалов
-        switch zoom {
-        case 0...1.2: return 30.0
-        case 1.2...2.0: return 10.0
-        case 2.0...4.0: return 5.0
-        case 4.0...8.0: return 2.0
-        case 8.0...15: return 1.0
-        case 15...30: return 0.5
-        case 30...60: return 0.2
-        case 60...120: return 0.1
-        case 120...250: return 0.05
-        default: return 0.02
+
+    /// Calculate optimal time interval based on pixel density (like Pro Tools/Premiere)
+    /// Target: 60-120 pixels between major marks
+    private func adaptiveTimeInterval(secondsPerPixel: Double) -> Double {
+        let targetPixelSpacing: Double = 80.0  // Optimal spacing
+        let targetSeconds = secondsPerPixel * targetPixelSpacing
+
+        // Find nearest "nice" interval: 1, 2, 5, 10, 20, 30, 60, 120, 300, 600...
+        let niceIntervals: [Double] = [
+            0.001, 0.002, 0.005, 0.01, 0.02, 0.05,  // Milliseconds
+            0.1, 0.2, 0.5,                           // Sub-second
+            1, 2, 5, 10, 15, 30,                     // Seconds
+            60, 120, 300, 600, 900, 1800, 3600       // Minutes/Hours
+        ]
+
+        // Find closest nice interval
+        var bestInterval = niceIntervals[0]
+        var minDiff = abs(targetSeconds - bestInterval)
+
+        for interval in niceIntervals {
+            let diff = abs(targetSeconds - interval)
+            if diff < minDiff {
+                minDiff = diff
+                bestInterval = interval
+            }
+        }
+
+        return bestInterval
+    }
+
+    /// Get number of subdivisions for an interval (2, 5, or 10)
+    private func getSubdivisions(for interval: Double) -> Int {
+        // Intervals ending in 1 or 10: divide by 10 (e.g., 1s → 10 parts)
+        // Intervals ending in 2: divide by 2 (e.g., 2s → 2 parts)
+        // Intervals ending in 5: divide by 5 (e.g., 5s → 5 parts)
+        // Intervals ending in 15/30/60: divide by 5 or 10
+
+        if interval < 0.01 {
+            return 10
+        } else if interval < 0.1 {
+            return interval == 0.02 || interval == 0.05 ? 5 : 10
+        } else if interval < 1 {
+            return interval == 0.2 || interval == 0.5 ? 5 : 10
+        } else if interval < 10 {
+            return interval == 2.0 ? 2 : (interval == 5.0 ? 5 : 10)
+        } else if interval == 15 || interval == 30 {
+            return 5
+        } else if interval == 60 || interval == 120 {
+            return 10
+        } else {
+            return 5
         }
     }
     
-    private func formatTime(_ seconds: Double) -> String {
-        if zoomScale > 100 {
-            let ms = Int((seconds - floor(seconds)) * 1000)
-            let totalSeconds = Int(seconds)
-            let minutes = totalSeconds / 60
-            let secs = totalSeconds % 60
-            return String(format: "%d:%02d.%03d", minutes, secs, ms)
-        } else {
-            let totalSeconds = Int(seconds)
-            let minutes = totalSeconds / 60
-            let secs = totalSeconds % 60
+    /// Format time based on interval (adaptive precision like Pro Tools)
+    private func formatTime(_ seconds: Double, interval: Double) -> String {
+        let totalSeconds = Int(seconds)
+        let minutes = totalSeconds / 60
+        let secs = totalSeconds % 60
+        let hours = minutes / 60
+        let mins = minutes % 60
+
+        // Choose format based on interval
+        if interval >= 3600 {
+            // Hours: "1h", "2h"
+            return "\(hours)h"
+        } else if interval >= 60 {
+            // Minutes: "1:00", "2:30"
+            if hours > 0 {
+                return String(format: "%d:%02d:%02d", hours, mins, secs)
+            }
             return String(format: "%d:%02d", minutes, secs)
+        } else if interval >= 1 {
+            // Seconds: "0:05", "1:30"
+            if hours > 0 {
+                return String(format: "%d:%02d:%02d", hours, mins, secs)
+            }
+            return String(format: "%d:%02d", minutes, secs)
+        } else if interval >= 0.1 {
+            // Tenths of second: "0:00.5", "0:01.2"
+            let tenths = Int((seconds - floor(seconds)) * 10)
+            return String(format: "%d:%02d.%01d", minutes, secs, tenths)
+        } else if interval >= 0.01 {
+            // Centiseconds: "0:00.05", "0:00.12"
+            let centis = Int((seconds - floor(seconds)) * 100)
+            return String(format: "%d:%02d.%02d", minutes, secs, centis)
+        } else {
+            // Milliseconds: "0:00.125", "0:00.250"
+            let ms = Int((seconds - floor(seconds)) * 1000)
+            return String(format: "%d:%02d.%03d", minutes, secs, ms)
         }
     }
     
