@@ -12,12 +12,21 @@ struct WaveformGenerator {
     ) async throws -> [Float] {
 
         let asset = AVURLAsset(url: url)
-        
+
         // ✅ ИСПРАВЛЕНО: используем async API для iOS 15+
         let tracks = try await asset.loadTracks(withMediaType: .audio)
         guard let track = tracks.first else {
             return []
         }
+
+        // ✅ Estimate memory requirements based on audio duration
+        let duration = try await asset.load(.duration)
+        let durationSeconds = CMTimeGetSeconds(duration)
+        let sampleRate: Double = 44100 // Typical sample rate
+        let estimatedSamples = Int(durationSeconds * sampleRate)
+        let estimatedPeaks = (estimatedSamples / baseBucketSize) * 2 // min/max pairs
+
+        print("🌊 Audio duration: \(durationSeconds)s, estimated peaks: \(estimatedPeaks)")
 
         return try await withCheckedThrowingContinuation { continuation in
             do {
@@ -38,7 +47,10 @@ struct WaveformGenerator {
                 reader.startReading()
 
                 var values: [Float] = []
-                values.reserveCapacity(10000)
+                // ✅ Better memory pre-allocation based on estimated size
+                let capacityEstimate = min(estimatedPeaks, 100_000) // Cap at 100k peaks
+                values.reserveCapacity(capacityEstimate)
+                print("🌊 Reserved capacity: \(capacityEstimate) peaks")
                 
                 var maxPeak: Float = 0
                 var minPeak: Float = 0
@@ -53,20 +65,35 @@ struct WaveformGenerator {
                     let length = CMBlockBufferGetDataLength(bb)
                     var data = Data(count: length)
 
-                    _ = data.withUnsafeMutableBytes { dest in
-                        CMBlockBufferCopyDataBytes(
+                    let copyResult = data.withUnsafeMutableBytes { dest -> Bool in
+                        guard let baseAddress = dest.baseAddress else { return false }
+                        let status = CMBlockBufferCopyDataBytes(
                             bb,
                             atOffset: 0,
                             dataLength: length,
-                            destination: dest.baseAddress!
+                            destination: baseAddress
+                        )
+                        return status == noErr
+                    }
+
+                    guard copyResult else {
+                        CMSampleBufferInvalidate(sb)
+                        continue
+                    }
+
+                    let samples: UnsafeBufferPointer<Float>? = data.withUnsafeBytes { bytes in
+                        guard let baseAddress = bytes.bindMemory(to: Float.self).baseAddress else {
+                            return nil
+                        }
+                        return UnsafeBufferPointer<Float>(
+                            start: baseAddress,
+                            count: length / MemoryLayout<Float>.size
                         )
                     }
 
-                    let samples = data.withUnsafeBytes {
-                        UnsafeBufferPointer<Float>(
-                            start: $0.bindMemory(to: Float.self).baseAddress!,
-                            count: length / MemoryLayout<Float>.size
-                        )
+                    guard let samples = samples else {
+                        CMSampleBufferInvalidate(sb)
+                        continue
                     }
 
                     for s in samples {

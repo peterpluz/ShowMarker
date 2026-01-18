@@ -7,27 +7,45 @@ final class TimelineViewModel: ObservableObject {
 
     private let repository: ProjectRepository
     private let timelineID: UUID
-    
+
     private let audioPlayer = AudioPlayerService()
-    
-    @Published private(set) var name: String = ""
-    @Published private(set) var fps: Int = 30
-    @Published private(set) var audio: TimelineAudio?
-    @Published private(set) var markers: [TimelineMarker] = []
-    
+
+    // MARK: - Published State (Only ViewModel-specific data)
+
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var currentTime: Double = 0
     @Published private(set) var duration: Double = 0
-    
+
     @Published var zoomScale: CGFloat = 1.0
-    
+    @Published private(set) var debouncedZoomScale: CGFloat = 1.0
+
     @Published private(set) var cachedWaveform: [Float] = []
+    private var waveformMipmaps: [[Float]] = []
     private var waveformCacheKey: String?
-    
+
     private var cancellables = Set<AnyCancellable>()
-    
-    // ✅ НОВОЕ: Throttle для currentTime
-    private var currentTimeSubject = PassthroughSubject<Double, Never>()
+
+    // MARK: - Computed Properties (Single Source of Truth from Repository)
+
+    var timeline: Timeline? {
+        repository.project.timelines.first(where: { $0.id == timelineID })
+    }
+
+    var name: String {
+        timeline?.name ?? ""
+    }
+
+    var fps: Int {
+        timeline?.fps ?? 30
+    }
+
+    var audio: TimelineAudio? {
+        timeline?.audio
+    }
+
+    var markers: [TimelineMarker] {
+        timeline?.markers ?? []
+    }
     
     // MARK: - Computed
     
@@ -36,75 +54,74 @@ final class TimelineViewModel: ObservableObject {
     }
     
     var visibleWaveform: [Float] {
-        guard !cachedWaveform.isEmpty else { return [] }
-        
-        // ✅ ИСПРАВЛЕНО: используем исходные данные при большом зуме
-        // При зуме > 10x нужна максимальная детализация
-        if zoomScale > 10.0 {
-            // Возвращаем полные данные, Canvas сам оптимизирует
-            return cachedWaveform
+        guard !waveformMipmaps.isEmpty else { return [] }
+
+        // Use debounced zoom scale for mipmap selection to avoid excessive switching
+        let mipmapLevel = selectMipmapLevel(for: debouncedZoomScale)
+
+        guard mipmapLevel < waveformMipmaps.count else {
+            return waveformMipmaps.first ?? []
         }
-        
-        // ✅ Для малого зума - агрессивный downsample
-        let targetSamples = zoomScale < 2.0 ? 400 : 800
-        let adjustedTarget = targetSamples * 2 // min/max пары
-        
-        if cachedWaveform.count <= adjustedTarget {
-            return cachedWaveform
+
+        return waveformMipmaps[mipmapLevel]
+    }
+
+    private func selectMipmapLevel(for zoom: CGFloat) -> Int {
+        // Choose mipmap level based on zoom:
+        // Level 0: highest detail (zoom >= 10x)
+        // Level 1: high detail (zoom >= 5x)
+        // Level 2: medium detail (zoom >= 2x)
+        // Level 3+: low detail (zoom < 2x)
+
+        switch zoom {
+        case 10...:
+            return 0  // Maximum detail
+        case 5..<10:
+            return min(1, waveformMipmaps.count - 1)
+        case 2..<5:
+            return min(2, waveformMipmaps.count - 1)
+        default:
+            return min(3, waveformMipmaps.count - 1)  // Lowest detail
         }
-        
-        // Простой decimation
-        let step = cachedWaveform.count / adjustedTarget
-        var result: [Float] = []
-        result.reserveCapacity(adjustedTarget)
-        
-        for i in stride(from: 0, to: cachedWaveform.count, by: step) {
-            if i < cachedWaveform.count {
-                result.append(cachedWaveform[i])
-            }
-            if result.count >= adjustedTarget {
-                break
-            }
-        }
-        
-        return result
     }
     
     // MARK: - Init
-    
+
     init(repository: ProjectRepository, timelineID: UUID) {
         self.repository = repository
         self.timelineID = timelineID
-        
-        loadTimeline()
+
         setupBindings()
-        
-        if let audio = audio, let docURL = repository.documentURL {
-            loadWaveformCache(for: audio, documentURL: docURL)
+        setupRepositoryObserver()
+
+        // Load initial duration from timeline
+        if let timelineAudio = timeline?.audio {
+            self.duration = timelineAudio.duration
+            if let docURL = repository.documentURL {
+                loadWaveformCache(for: timelineAudio, documentURL: docURL)
+            }
         }
     }
-    
-    private func loadTimeline() {
-        guard let timeline = repository.project.timelines.first(where: { $0.id == timelineID }) else {
-            return
-        }
-        
-        name = timeline.name
-        fps = timeline.fps
-        audio = timeline.audio
-        markers = timeline.markers
-        duration = timeline.audio?.duration ?? 0
+
+    private func setupRepositoryObserver() {
+        // Subscribe to repository changes to trigger UI updates
+        repository.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
     
     private func setupBindings() {
         audioPlayer.$isPlaying
             .assign(to: &$isPlaying)
-        
+
         // ✅ КРИТИЧНО: Throttle currentTime updates
         audioPlayer.$currentTime
             .throttle(for: .milliseconds(32), scheduler: RunLoop.main, latest: true)
             .assign(to: &$currentTime)
-        
+
         audioPlayer.$duration
             .sink { [weak self] d in
                 if d > 0 {
@@ -112,6 +129,11 @@ final class TimelineViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        // ✅ Debounce zoom scale updates for performance
+        $zoomScale
+            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
+            .assign(to: &$debouncedZoomScale)
     }
     
     // MARK: - Waveform Cache
@@ -119,36 +141,44 @@ final class TimelineViewModel: ObservableObject {
     private func loadWaveformCache(for audio: TimelineAudio, documentURL: URL) {
         let cacheKey = "\(timelineID.uuidString)_\(audio.id.uuidString)"
         self.waveformCacheKey = cacheKey
-        
+
         if let cached = WaveformCache.load(cacheKey: cacheKey) {
-            // ✅ ИСПРАВЛЕНО: используем МАКСИМАЛЬНУЮ детализацию (первый уровень)
+            // Load all mipmap levels for adaptive rendering
+            self.waveformMipmaps = cached.mipmaps
             self.cachedWaveform = cached.mipmaps.first ?? []
-            print("✅ Waveform loaded from cache: \(self.cachedWaveform.count) samples (level 0 - highest detail)")
+            print("✅ Waveform loaded from cache: \(cached.mipmaps.count) mipmap levels")
+            for (idx, level) in cached.mipmaps.enumerated() {
+                print("   Level \(idx): \(level.count) samples")
+            }
             return
         }
-        
+
         print("🌊 No waveform cache found, will generate...")
         Task {
             await generateWaveformCache(audio: audio, documentURL: documentURL, cacheKey: cacheKey)
         }
     }
-    
+
     private func generateWaveformCache(audio: TimelineAudio, documentURL: URL, cacheKey: String) async {
         print("🌊 generateWaveformCache started")
         do {
             let audioURL = documentURL.appendingPathComponent(audio.relativePath)
             print("🌊 Audio URL: \(audioURL)")
-            
+
             let cached = try await WaveformCache.generateAndCache(
                 audioURL: audioURL,
                 cacheKey: cacheKey
             )
-            print("✅ Waveform generated: \(cached.mipmaps.count) levels")
-            
+            print("✅ Waveform generated: \(cached.mipmaps.count) mipmap levels")
+
             await MainActor.run {
-                // ✅ ИСПРАВЛЕНО: используем МАКСИМАЛЬНУЮ детализацию
+                // Store all mipmap levels for adaptive rendering
+                self.waveformMipmaps = cached.mipmaps
                 self.cachedWaveform = cached.mipmaps.first ?? []
-                print("✅ Waveform cached: \(self.cachedWaveform.count) samples (level 0 - highest detail)")
+                print("✅ Waveform cached with \(cached.mipmaps.count) mipmap levels:")
+                for (idx, level) in cached.mipmaps.enumerated() {
+                    print("   Level \(idx): \(level.count) samples")
+                }
             }
         } catch {
             print("⚠️ Waveform generation failed:", error)
@@ -161,51 +191,51 @@ final class TimelineViewModel: ObservableObject {
         sourceData: Data,
         originalFileName: String,
         fileExtension: String,
-        duration: Double
+        duration audioDuration: Double
     ) throws {
-        print("🎵 addAudio called: \(originalFileName), duration: \(duration)s")
-        
+        print("🎵 addAudio called: \(originalFileName), duration: \(audioDuration)s")
+
         guard let docURL = repository.documentURL else {
             print("❌ documentURL is nil")
             throw NSError(domain: "Timeline", code: 1)
         }
-        
+
         print("✅ documentURL: \(docURL)")
-        
+
         let manager = AudioFileManager(documentURL: docURL)
         let fileName = "\(UUID().uuidString).\(fileExtension)"
-        
+
         print("🎵 Adding audio file: \(fileName)")
         try manager.addAudioFile(sourceData: sourceData, fileName: fileName)
         print("✅ Audio file written")
-        
+
         let relativePath = "Audio/\(fileName)"
         let newAudio = TimelineAudio(
             relativePath: relativePath,
             originalFileName: originalFileName,
-            duration: duration
+            duration: audioDuration
         )
-        
+
         print("🎵 Updating timeline audio...")
-        
+
         if let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) {
             repository.project.timelines[idx].audio = newAudio
             print("✅ Timeline audio updated in repository")
         } else {
             print("❌ Timeline not found in repository")
         }
-        
-        audio = newAudio
-        self.duration = duration
-        
+
+        // Update ViewModel-specific state
+        self.duration = audioDuration
+
         print("🎵 Loading audio into player...")
         let audioURL = docURL.appendingPathComponent(newAudio.relativePath)
         audioPlayer.load(url: audioURL)
         print("✅ Audio loaded into player: \(audioURL)")
-        
+
         let cacheKey = "\(timelineID.uuidString)_\(newAudio.id.uuidString)"
         self.waveformCacheKey = cacheKey
-        
+
         print("🎵 Starting waveform generation...")
         Task {
             await generateWaveformCache(audio: newAudio, documentURL: docURL, cacheKey: cacheKey)
@@ -215,25 +245,37 @@ final class TimelineViewModel: ObservableObject {
     
     func removeAudio() {
         guard
-            let audio = audio,
+            let audioFile = audio,
             let docURL = repository.documentURL
-        else { return }
-        
+        else {
+            print("⚠️ Cannot remove audio: audio or documentURL is nil")
+            return
+        }
+
         let manager = AudioFileManager(documentURL: docURL)
-        try? manager.deleteAudioFile(fileName: audio.relativePath)
-        
+
+        do {
+            try manager.deleteAudioFile(fileName: audioFile.relativePath)
+            print("✅ Audio file deleted: \(audioFile.relativePath)")
+        } catch {
+            print("⚠️ Failed to delete audio file: \(error.localizedDescription)")
+            // Continue with removing audio reference even if file deletion fails
+        }
+
         if let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) {
             repository.project.timelines[idx].audio = nil
+            print("✅ Audio reference removed from timeline")
         }
-        
-        self.audio = nil
+
+        // Clear ViewModel-specific state
         self.duration = 0
         self.currentTime = 0
-        
         self.cachedWaveform = []
+        self.waveformMipmaps = []
         self.waveformCacheKey = nil
-        
+
         audioPlayer.stop()
+        print("✅ Audio player stopped and state cleared")
     }
     
     // MARK: - Playback
@@ -262,46 +304,29 @@ final class TimelineViewModel: ObservableObject {
             timeSeconds: currentTime,
             name: "Marker \(markers.count + 1)"
         )
-        
         repository.addMarker(timelineID: timelineID, marker: marker)
-        markers.append(marker)
     }
-    
+
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
-        if let timelineIdx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }),
-           let markerIdx = repository.project.timelines[timelineIdx].markers.firstIndex(where: { $0.id == marker.id }) {
-            repository.project.timelines[timelineIdx].markers[markerIdx].timeSeconds = newTime
-        }
-        
-        if let idx = markers.firstIndex(where: { $0.id == marker.id }) {
-            markers[idx].timeSeconds = newTime
-        }
+        var updatedMarker = marker
+        updatedMarker.timeSeconds = newTime
+        repository.updateMarker(timelineID: timelineID, marker: updatedMarker)
     }
-    
+
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
-        if let timelineIdx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }),
-           let markerIdx = repository.project.timelines[timelineIdx].markers.firstIndex(where: { $0.id == marker.id }) {
-            repository.project.timelines[timelineIdx].markers[markerIdx].name = newName
-        }
-        
-        if let idx = markers.firstIndex(where: { $0.id == marker.id }) {
-            markers[idx].name = newName
-        }
+        var updatedMarker = marker
+        updatedMarker.name = newName
+        repository.updateMarker(timelineID: timelineID, marker: updatedMarker)
     }
-    
+
     func deleteMarker(_ marker: TimelineMarker) {
-        if let timelineIdx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) {
-            repository.project.timelines[timelineIdx].markers.removeAll { $0.id == marker.id }
-        }
-        
-        markers.removeAll { $0.id == marker.id }
+        repository.removeMarker(timelineID: timelineID, markerID: marker.id)
     }
     
     // MARK: - Timeline
-    
+
     func renameTimeline(to newName: String) {
         repository.renameTimeline(id: timelineID, newName: newName)
-        name = newName
     }
     
     // MARK: - Timecode
