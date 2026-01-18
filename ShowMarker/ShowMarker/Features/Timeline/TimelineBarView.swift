@@ -41,141 +41,135 @@ struct TimelineBarView: View {
     @State private var dragStartTime: Double?
 
     var body: some View {
-        VStack(spacing: 8) {
-            
-            if hasAudio {
-                timelineOverviewIndicator
-                timeRuler
-            }
-            
-            GeometryReader { geo in
+        GeometryReader { mainGeo in
+            VStack(spacing: 8) {
+                if hasAudio {
+                    timelineOverviewIndicator(width: mainGeo.size.width)
+                    timeRuler(width: mainGeo.size.width)
+                }
+
                 if !hasAudio {
                     addAudioButton
+                        .frame(height: Self.barHeight)
                 } else {
-                    timelineContent(geo: geo)
+                    timelineContent(width: mainGeo.size.width)
+                        .frame(height: Self.barHeight)
                 }
             }
-            .frame(height: Self.barHeight)
         }
     }
     
     // MARK: - Timeline Overview Indicator
-    
-    private var timelineOverviewIndicator: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                
-                Capsule()
-                    .fill(Color.secondary.opacity(0.15))
-                    .frame(height: Self.indicatorHeight)
-                
-                let visibleRatio = 1.0 / zoomScale
-                let visibleWidth = geo.size.width * visibleRatio
-                
-                let timeRatio = duration > 0 ? currentTime / duration : 0
-                let centerOffset = geo.size.width * timeRatio
-                
-                let idealOffset = centerOffset - visibleWidth / 2
-                let xOffset = max(0, min(geo.size.width - visibleWidth, idealOffset))
-                
-                Capsule()
-                    .fill(Color.accentColor.opacity(0.6))
-                    .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
-                    .offset(x: xOffset)
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.accentColor, lineWidth: 1)
-                            .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
-                            .offset(x: xOffset)
-                    )
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                if capsuleDragStart == nil {
-                                    capsuleDragStart = xOffset
-                                }
-                                
-                                guard let startOffset = capsuleDragStart else { return }
-                                
-                                let newX = startOffset + value.translation.width
-                                let clampedX = max(0, min(geo.size.width - visibleWidth, newX))
-                                
-                                let newTimeRatio = (clampedX + visibleWidth / 2) / geo.size.width
-                                onSeek(duration * newTimeRatio)
+
+    private func timelineOverviewIndicator(width: CGFloat) -> some View {
+        let visibleRatio = 1.0 / zoomScale
+        let visibleWidth = width * visibleRatio
+
+        let timeRatio = duration > 0 ? currentTime / duration : 0
+        let centerOffset = width * timeRatio
+
+        let idealOffset = centerOffset - visibleWidth / 2
+        let xOffset = max(0, min(width - visibleWidth, idealOffset))
+
+        return ZStack(alignment: .leading) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.15))
+                .frame(height: Self.indicatorHeight)
+
+            Capsule()
+                .fill(Color.accentColor.opacity(0.6))
+                .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
+                .offset(x: xOffset)
+                .overlay(
+                    Capsule()
+                        .stroke(Color.accentColor, lineWidth: 1)
+                        .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
+                        .offset(x: xOffset)
+                )
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            if capsuleDragStart == nil {
+                                capsuleDragStart = xOffset
                             }
-                            .onEnded { _ in
-                                capsuleDragStart = nil
-                            }
-                    )
-                
-                Rectangle()
-                    .fill(Color.white)
-                    .frame(width: 2, height: Self.indicatorHeight + 4)
-                    .offset(x: xOffset + visibleWidth / 2 - 1)
-                    .allowsHitTesting(false)
-            }
+
+                            guard let startOffset = capsuleDragStart else { return }
+
+                            let newX = startOffset + value.translation.width
+                            let clampedX = max(0, min(width - visibleWidth, newX))
+
+                            let newTimeRatio = (clampedX + visibleWidth / 2) / width
+                            onSeek(duration * newTimeRatio)
+                        }
+                        .onEnded { _ in
+                            capsuleDragStart = nil
+                        }
+                )
+
+            Rectangle()
+                .fill(Color.white)
+                .frame(width: 2, height: Self.indicatorHeight + 4)
+                .offset(x: xOffset + visibleWidth / 2 - 1)
+                .allowsHitTesting(false)
         }
         .frame(height: Self.indicatorHeight)
         .padding(.horizontal, 4)
     }
     
     // MARK: - Time Ruler
-    
-    private var timeRuler: some View {
-        GeometryReader { geo in
-            let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
-            let centerX = geo.size.width / 2
-            let offset = timelineOffset(contentWidth)
-            
-            Canvas { context, size in
-                let interval = timeInterval(for: zoomScale)
-                let smallInterval = interval / 5.0
-                
-                // ✅ ИСПРАВЛЕНО: расчет видимого диапазона с учетом полной ширины
-                let visibleWidthSeconds = duration / zoomScale
-                let visibleStartTime = max(0, currentTime - visibleWidthSeconds / 2)
-                let visibleEndTime = min(duration, currentTime + visibleWidthSeconds / 2)
-                
-                // Начинаем с округленного значения
-                let startTime = floor(visibleStartTime / smallInterval) * smallInterval
-                
-                var time = startTime
-                while time <= visibleEndTime + smallInterval {
-                    let normalizedPosition = time / duration
-                    let x = centerX - offset + (normalizedPosition * contentWidth)
-                    
-                    // ✅ ИСПРАВЛЕНО: расширенная область отрисовки
-                    guard x >= -50 && x <= size.width + 50 else {
-                        time += smallInterval
-                        continue
-                    }
-                    
-                    let isMajor = abs(time.truncatingRemainder(dividingBy: interval)) < 0.001
-                    
-                    if isMajor {
-                        var path = Path()
-                        path.move(to: CGPoint(x: x, y: size.height - 12))
-                        path.addLine(to: CGPoint(x: x, y: size.height))
-                        context.stroke(path, with: .color(.secondary.opacity(0.6)), lineWidth: 1.5)
-                        
-                        let timeText = formatTime(time)
-                        context.draw(
-                            Text(timeText)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.secondary),
-                            at: CGPoint(x: x, y: 6)
-                        )
-                    } else {
-                        var path = Path()
-                        path.move(to: CGPoint(x: x, y: size.height - 6))
-                        path.addLine(to: CGPoint(x: x, y: size.height))
-                        context.stroke(path, with: .color(.secondary.opacity(0.3)), lineWidth: 1)
-                    }
-                    
+
+    private func timeRuler(width: CGFloat) -> some View {
+        let contentWidth = max(width * zoomScale, width)
+        let centerX = width / 2
+        let offset = timelineOffset(contentWidth)
+
+        return Canvas { context, size in
+            let interval = timeInterval(for: zoomScale)
+            let smallInterval = interval / 5.0
+
+            // ✅ ИСПРАВЛЕНО: расчет видимого диапазона с учетом полной ширины
+            let visibleWidthSeconds = duration / zoomScale
+            let visibleStartTime = max(0, currentTime - visibleWidthSeconds / 2)
+            let visibleEndTime = min(duration, currentTime + visibleWidthSeconds / 2)
+
+            // Начинаем с округленного значения
+            let startTime = floor(visibleStartTime / smallInterval) * smallInterval
+
+            var time = startTime
+            while time <= visibleEndTime + smallInterval {
+                let normalizedPosition = time / duration
+                let x = centerX - offset + (normalizedPosition * contentWidth)
+
+                // ✅ ИСПРАВЛЕНО: расширенная область отрисовки
+                guard x >= -50 && x <= size.width + 50 else {
                     time += smallInterval
+                    continue
                 }
+
+                let isMajor = abs(time.truncatingRemainder(dividingBy: interval)) < 0.001
+
+                if isMajor {
+                    var path = Path()
+                    path.move(to: CGPoint(x: x, y: size.height - 12))
+                    path.addLine(to: CGPoint(x: x, y: size.height))
+                    context.stroke(path, with: .color(.secondary.opacity(0.6)), lineWidth: 1.5)
+
+                    let timeText = formatTime(time)
+                    context.draw(
+                        Text(timeText)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary),
+                        at: CGPoint(x: x, y: 6)
+                    )
+                } else {
+                    var path = Path()
+                    path.move(to: CGPoint(x: x, y: size.height - 6))
+                    path.addLine(to: CGPoint(x: x, y: size.height))
+                    context.stroke(path, with: .color(.secondary.opacity(0.3)), lineWidth: 1)
+                }
+
+                time += smallInterval
             }
-            .frame(height: Self.rulerHeight)
         }
         .frame(height: Self.rulerHeight)
     }
@@ -213,14 +207,14 @@ struct TimelineBarView: View {
     
     // MARK: - Timeline Content
     
-    private func timelineContent(geo: GeometryProxy) -> some View {
-        let centerX = geo.size.width / 2
-        let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
+    private func timelineContent(width: CGFloat) -> some View {
+        let centerX = width / 2
+        let contentWidth = max(width * zoomScale, width)
         let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
 
         return ZStack {
             // ✅ КРИТИЧНО: Кэшированная waveform view
-            cachedWaveformView(width: contentWidth, geoWidth: geo.size.width)
+            cachedWaveformView(width: contentWidth)
                 .offset(x: centerX - timelineOffset(contentWidth))
 
             ForEach(markers) { marker in
@@ -230,10 +224,10 @@ struct TimelineBarView: View {
                     }
                     return marker.timeSeconds
                 }()
-                
+
                 let normalizedPosition = displayTime / max(duration, 0.0001)
                 let markerX = centerX - timelineOffset(contentWidth) + (normalizedPosition * contentWidth)
-                
+
                 Rectangle()
                     .fill(Color.orange)
                     .frame(width: Self.markerLineWidth, height: Self.barHeight)
@@ -349,14 +343,14 @@ struct TimelineBarView: View {
     // MARK: - ✅ КРИТИЧНО: Кэшированная WAVEFORM
 
     @ViewBuilder
-    private func cachedWaveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
+    private func cachedWaveformView(width: CGFloat) -> some View {
         // ✅ ИСПРАВЛЕНО: показываем waveform напрямую без кэширования
         // Кэширование в Image вызывало проблемы с отображением
-        directWaveformView(width: width, geoWidth: geoWidth)
+        directWaveformView(width: width)
     }
-    
+
     // ✅ ПРЯМОЙ рендер waveform
-    private func directWaveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
+    private func directWaveformView(width: CGFloat) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.secondary.opacity(0.12))
@@ -365,58 +359,61 @@ struct TimelineBarView: View {
             Canvas { context, size in
                 let pairCount = waveform.count / 2
                 guard pairCount > 0 else { return }
-                
+
                 let centerY = Self.barHeight / 2
-                
+
+                // ✅ CRITICAL: Use size.width from Canvas, not parameter
+                let canvasWidth = size.width
+
                 // ✅ ИСПРАВЛЕНО: адаптивная детализация под зум
-                let targetPoints = Int(width / 2) // Достаточно для плавности
+                let targetPoints = Int(canvasWidth / 2) // Достаточно для плавности
                 let step = max(1, pairCount / targetPoints)
-                let pixelsPerSample = width / CGFloat(min(pairCount, targetPoints))
-                
+                let pixelsPerSample = canvasWidth / CGFloat(min(pairCount, targetPoints))
+
                 // ✅ ИСПРАВЛЕНО: фиксированная полная амплитуда
                 let amplitudeScale: CGFloat = 0.85
-                
+
                 var upperPath = Path()
                 var lowerPath = Path()
-                
+
                 var isFirstPoint = true
                 var pointIndex = 0
-                
+
                 var i = 0
                 while i < pairCount {
                     let minIndex = i * 2
                     let maxIndex = i * 2 + 1
-                    
+
                     guard maxIndex < waveform.count else { break }
-                    
+
                     let minValue = waveform[minIndex]
                     let maxValue = waveform[maxIndex]
-                    
+
                     let x = CGFloat(pointIndex) * pixelsPerSample
-                    
+
                     // ✅ ИСПРАВЛЕНО: симметричное отображение верх/низ
                     let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
                     let bottomY = centerY - CGFloat(minValue) * (Self.barHeight / 2) * amplitudeScale
-                    
+
                     if isFirstPoint {
                         upperPath.move(to: CGPoint(x: x, y: centerY))
                         lowerPath.move(to: CGPoint(x: x, y: centerY))
                         isFirstPoint = false
                     }
-                    
+
                     upperPath.addLine(to: CGPoint(x: x, y: topY))
                     lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
-                    
+
                     i += step
                     pointIndex += 1
                 }
-                
+
                 if pointIndex > 0 {
-                    let lastX = width
+                    let lastX = canvasWidth
                     upperPath.addLine(to: CGPoint(x: lastX, y: centerY))
                     lowerPath.addLine(to: CGPoint(x: lastX, y: centerY))
                 }
-                
+
                 upperPath.closeSubpath()
                 lowerPath.closeSubpath()
 
