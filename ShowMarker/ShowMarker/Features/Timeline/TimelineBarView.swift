@@ -12,14 +12,13 @@ struct TimelineBarView: View {
 
     let onAddAudio: () -> Void
     let onSeek: (Double) -> Void
-    let onZoomChange: (CGFloat) -> Void
 
     let onPreviewMoveMarker: (UUID, Double) -> Void
     let onCommitMoveMarker: (UUID, Double) -> Void
 
-    // MARK: - Zoom state
-    
-    @State private var zoomScale: CGFloat = 1.0
+    // MARK: - Zoom state (Binding to ViewModel for synchronization)
+
+    @Binding var zoomScale: CGFloat
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
     
@@ -301,8 +300,7 @@ struct TimelineBarView: View {
                 let delta = value / lastMagnification
                 let newScale = zoomScale * delta
                 let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
-                zoomScale = clamped
-                onZoomChange(clamped)
+                zoomScale = clamped  // Binding automatically updates ViewModel
                 lastMagnification = value
             }
             .onEnded { _ in
@@ -421,14 +419,11 @@ struct TimelineBarView: View {
                 
                 upperPath.closeSubpath()
                 lowerPath.closeSubpath()
-                
-                let fillColor = Color.secondary.opacity(0.4)
+
+                // Fill waveform areas
+                let fillColor = Color.secondary.opacity(0.5)
                 context.fill(upperPath, with: .color(fillColor))
                 context.fill(lowerPath, with: .color(fillColor))
-                
-                let strokeColor = Color.secondary.opacity(0.8)
-                context.stroke(upperPath, with: .color(strokeColor), lineWidth: 1.0)
-                context.stroke(lowerPath, with: .color(strokeColor), lineWidth: 1.0)
             }
             .frame(width: width, height: Self.barHeight)
         }
