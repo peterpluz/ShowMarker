@@ -1,18 +1,19 @@
 import Foundation
 import AVFoundation
 
+// ✅ ИСПРАВЛЕНО: nonisolated + async API
 struct WaveformGenerator {
 
     /// Генерация stereo waveform (min/max пары) с высоким разрешением
     /// Возвращает массив пар [min, max, min, max, ...]
-    static func generateFullResolutionPeaks(
+    nonisolated static func generateFullResolutionPeaks(
         from url: URL,
-        baseBucketSize: Int = 8
+        baseBucketSize: Int = 256
     ) async throws -> [Float] {
 
         let asset = AVURLAsset(url: url)
         
-        // ИСПРАВЛЕНО: используем async API
+        // ✅ ИСПРАВЛЕНО: используем async API для iOS 15+
         let tracks = try await asset.loadTracks(withMediaType: .audio)
         guard let track = tracks.first else {
             return []
@@ -99,7 +100,7 @@ struct WaveformGenerator {
     }
 
     /// Создание mipmap pyramid для разных уровней зума
-    static func buildMipmaps(from base: [Float]) -> [[Float]] {
+    nonisolated static func buildMipmaps(from base: [Float]) -> [[Float]] {
         var levels: [[Float]] = [base]
         var current = base
 
@@ -143,7 +144,7 @@ struct WaveformGenerator {
 
     // MARK: - Private
 
-    private static func normalize(_ values: [Float]) -> [Float] {
+    nonisolated private static func normalize(_ values: [Float]) -> [Float] {
         guard !values.isEmpty else { return values }
         
         let maxAbs = values.map { abs($0) }.max() ?? 1.0

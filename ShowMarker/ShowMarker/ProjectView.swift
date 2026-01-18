@@ -4,7 +4,7 @@ struct ProjectView: View {
 
     @Binding var document: ShowMarkerDocument
     
-    // НОВОЕ: Прямой доступ к repository
+    // ✅ ИСПРАВЛЕНО: ObservedObject для nonisolated repository
     @ObservedObject private var repository: ProjectRepository
 
     @State private var searchText = ""
@@ -21,6 +21,7 @@ struct ProjectView: View {
 
     init(document: Binding<ShowMarkerDocument>) {
         _document = document
+        // ✅ КРИТИЧНО: безопасное извлечение repository
         _repository = ObservedObject(wrappedValue: document.wrappedValue.repository)
     }
 

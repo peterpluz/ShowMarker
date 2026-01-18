@@ -9,14 +9,15 @@ extension UTType {
 }
 
 // MARK: - Document
+// ✅ ИСПРАВЛЕНО: убран @MainActor для совместимости с FileDocument
 
-@MainActor
 struct ShowMarkerDocument: FileDocument {
 
     static var readableContentTypes: [UTType] { [.smark] }
     static var writableContentTypes: [UTType] { [.smark] }
 
-    var repository: ProjectRepository
+    // ✅ КРИТИЧНО: repository должен быть nonisolated
+    nonisolated(unsafe) var repository: ProjectRepository
     
     var project: Project {
         get { repository.project }

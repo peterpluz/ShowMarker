@@ -12,11 +12,7 @@ final class AudioPlayerService: ObservableObject {
     private var player: AVPlayer?
     private var timeObserver: Any?
 
-    // MARK: - Lifecycle
-    
     deinit {
-        // ИСПРАВЛЕНО: Гарантированная очистка observer
-        // deinit не может вызывать async/MainActor методы
         // Очистка происходит в stop()
     }
 
@@ -78,14 +74,12 @@ final class AudioPlayerService: ObservableObject {
         let session = AVAudioSession.sharedInstance()
 
         do {
+            // ✅ ИСПРАВЛЕНО: убран .defaultToSpeaker для .playback
+            // .defaultToSpeaker работает только с .playAndRecord
             try session.setCategory(
                 .playback,
                 mode: .default,
-                options: [
-                    .defaultToSpeaker,
-                    .allowBluetoothHFP,
-                    .allowAirPlay
-                ]
+                options: [.allowBluetoothA2DP, .allowAirPlay]
             )
             try session.setActive(true)
         } catch {
@@ -111,7 +105,6 @@ final class AudioPlayerService: ObservableObject {
         }
     }
     
-    // ИСПРАВЛЕНО: Выделен отдельный метод для cleanup
     private func cleanupObserver() {
         if let player, let obs = timeObserver {
             player.removeTimeObserver(obs)

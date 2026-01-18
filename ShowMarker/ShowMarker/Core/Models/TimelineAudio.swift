@@ -1,6 +1,7 @@
 import Foundation
 
-struct TimelineAudio: Codable, Identifiable {
+// ✅ ИСПРАВЛЕНО: добавлен Sendable
+struct TimelineAudio: Codable, Identifiable, Sendable {
     let id: UUID
     let relativePath: String      // Audio/xxxx.ext
     let originalFileName: String

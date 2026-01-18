@@ -1,6 +1,7 @@
 import Foundation
 
-struct Timeline: Codable, Identifiable {
+// ✅ ИСПРАВЛЕНО: добавлен Sendable
+struct Timeline: Codable, Identifiable, Sendable {
     let id: UUID
     var name: String
     let createdAt: Date

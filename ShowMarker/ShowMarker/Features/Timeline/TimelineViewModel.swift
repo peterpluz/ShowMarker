@@ -21,11 +21,13 @@ final class TimelineViewModel: ObservableObject {
     
     @Published var zoomScale: CGFloat = 1.0
     
-    // НОВОЕ: Кэш waveform
     @Published private(set) var cachedWaveform: [Float] = []
     private var waveformCacheKey: String?
     
     private var cancellables = Set<AnyCancellable>()
+    
+    // ✅ НОВОЕ: Throttle для currentTime
+    private var currentTimeSubject = PassthroughSubject<Double, Never>()
     
     // MARK: - Computed
     
@@ -34,45 +36,28 @@ final class TimelineViewModel: ObservableObject {
     }
     
     var visibleWaveform: [Float] {
-        // ИСПРАВЛЕНО: используем кэшированную waveform
         guard !cachedWaveform.isEmpty else { return [] }
         
-        // Выбираем оптимальный уровень детализации
-        let targetSamples = Int(800 * 2) // ~800pt ширина экрана iPhone
+        // ✅ КРИТИЧНО: Агрессивный downsample
+        let targetSamples = zoomScale < 2.0 ? 400 : 800
+        let adjustedTarget = targetSamples * 2 // min/max пары
         
-        // При минимальном зуме используем более агрессивное сжатие
-        let adjustedTarget = zoomScale < 2.0 ? targetSamples / 4 : targetSamples
-        
-        if cachedWaveform.count <= adjustedTarget * 2 {
+        if cachedWaveform.count <= adjustedTarget {
             return cachedWaveform
         }
         
-        // Downsampling для производительности
-        let step = max(1, cachedWaveform.count / (adjustedTarget * 2))
+        // ✅ Простой decimation вместо сложного алгоритма
+        let step = cachedWaveform.count / adjustedTarget
         var result: [Float] = []
-        result.reserveCapacity(adjustedTarget * 2)
+        result.reserveCapacity(adjustedTarget)
         
-        var i = 0
-        while i < cachedWaveform.count - 1 {
-            let end = min(i + step * 2, cachedWaveform.count)
-            let slice = cachedWaveform[i..<end]
-            
-            if slice.count >= 2 {
-                let minVal = slice.enumerated()
-                    .filter { $0.offset % 2 == 0 }
-                    .map { $0.element }
-                    .min() ?? 0
-                
-                let maxVal = slice.enumerated()
-                    .filter { $0.offset % 2 == 1 }
-                    .map { $0.element }
-                    .max() ?? 0
-                
-                result.append(minVal)
-                result.append(maxVal)
+        for i in stride(from: 0, to: cachedWaveform.count, by: step) {
+            if i < cachedWaveform.count {
+                result.append(cachedWaveform[i])
             }
-            
-            i += step * 2
+            if result.count >= adjustedTarget {
+                break
+            }
         }
         
         return result
@@ -87,7 +72,6 @@ final class TimelineViewModel: ObservableObject {
         loadTimeline()
         setupBindings()
         
-        // ИСПРАВЛЕНО: загружаем waveform из кэша при инициализации
         if let audio = audio, let docURL = repository.documentURL {
             loadWaveformCache(for: audio, documentURL: docURL)
         }
@@ -109,7 +93,9 @@ final class TimelineViewModel: ObservableObject {
         audioPlayer.$isPlaying
             .assign(to: &$isPlaying)
         
+        // ✅ КРИТИЧНО: Throttle currentTime updates
         audioPlayer.$currentTime
+            .throttle(for: .milliseconds(32), scheduler: RunLoop.main, latest: true)
             .assign(to: &$currentTime)
         
         audioPlayer.$duration
@@ -121,22 +107,21 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    // MARK: - Waveform Cache - НОВОЕ
+    // MARK: - Waveform Cache
     
     private func loadWaveformCache(for audio: TimelineAudio, documentURL: URL) {
         let cacheKey = "\(timelineID.uuidString)_\(audio.id.uuidString)"
         self.waveformCacheKey = cacheKey
         
-        // Пробуем загрузить из кэша
         if let cached = WaveformCache.load(cacheKey: cacheKey) {
-            // Используем самый детальный уровень
-            self.cachedWaveform = cached.mipmaps.first ?? []
-            print("✅ Waveform loaded from cache: \(self.cachedWaveform.count) samples")
+            // ✅ Выбираем средний уровень детализации для баланса
+            let levelIndex = min(2, cached.mipmaps.count - 1)
+            self.cachedWaveform = cached.mipmaps[levelIndex]
+            print("✅ Waveform loaded from cache: \(self.cachedWaveform.count) samples (level \(levelIndex))")
             return
         }
         
         print("🌊 No waveform cache found, will generate...")
-        // Если кэша нет - генерируем асинхронно
         Task {
             await generateWaveformCache(audio: audio, documentURL: documentURL, cacheKey: cacheKey)
         }
@@ -145,7 +130,6 @@ final class TimelineViewModel: ObservableObject {
     private func generateWaveformCache(audio: TimelineAudio, documentURL: URL, cacheKey: String) async {
         print("🌊 generateWaveformCache started")
         do {
-            // ИСПРАВЛЕНО: используем relativePath напрямую
             let audioURL = documentURL.appendingPathComponent(audio.relativePath)
             print("🌊 Audio URL: \(audioURL)")
             
@@ -156,8 +140,9 @@ final class TimelineViewModel: ObservableObject {
             print("✅ Waveform generated: \(cached.mipmaps.count) levels")
             
             await MainActor.run {
-                self.cachedWaveform = cached.mipmaps.first ?? []
-                print("✅ Waveform cached: \(self.cachedWaveform.count) samples")
+                let levelIndex = min(2, cached.mipmaps.count - 1)
+                self.cachedWaveform = cached.mipmaps[levelIndex]
+                print("✅ Waveform cached: \(self.cachedWaveform.count) samples (level \(levelIndex))")
             }
         } catch {
             print("⚠️ Waveform generation failed:", error)
@@ -182,14 +167,12 @@ final class TimelineViewModel: ObservableObject {
         print("✅ documentURL: \(docURL)")
         
         let manager = AudioFileManager(documentURL: docURL)
-        // ИСПРАВЛЕНО: убрали "Audio/" - AudioFileManager сам добавляет путь
         let fileName = "\(UUID().uuidString).\(fileExtension)"
         
         print("🎵 Adding audio file: \(fileName)")
         try manager.addAudioFile(sourceData: sourceData, fileName: fileName)
         print("✅ Audio file written")
         
-        // ИСПРАВЛЕНО: relativePath должен содержать "Audio/" для правильного пути в модели
         let relativePath = "Audio/\(fileName)"
         let newAudio = TimelineAudio(
             relativePath: relativePath,
@@ -199,7 +182,6 @@ final class TimelineViewModel: ObservableObject {
         
         print("🎵 Updating timeline audio...")
         
-        // ИСПРАВЛЕНО: прямое изменение через project
         if let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) {
             repository.project.timelines[idx].audio = newAudio
             print("✅ Timeline audio updated in repository")
@@ -211,12 +193,10 @@ final class TimelineViewModel: ObservableObject {
         self.duration = duration
         
         print("🎵 Loading audio into player...")
-        // ИСПРАВЛЕНО: используем relativePath (уже содержит Audio/)
         let audioURL = docURL.appendingPathComponent(newAudio.relativePath)
         audioPlayer.load(url: audioURL)
         print("✅ Audio loaded into player: \(audioURL)")
         
-        // ИСПРАВЛЕНО: генерируем waveform сразу при импорте
         let cacheKey = "\(timelineID.uuidString)_\(newAudio.id.uuidString)"
         self.waveformCacheKey = cacheKey
         
@@ -236,7 +216,6 @@ final class TimelineViewModel: ObservableObject {
         let manager = AudioFileManager(documentURL: docURL)
         try? manager.deleteAudioFile(fileName: audio.relativePath)
         
-        // ИСПРАВЛЕНО: прямое изменение через project
         if let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) {
             repository.project.timelines[idx].audio = nil
         }
@@ -245,7 +224,6 @@ final class TimelineViewModel: ObservableObject {
         self.duration = 0
         self.currentTime = 0
         
-        // ИСПРАВЛЕНО: очищаем waveform кэш
         self.cachedWaveform = []
         self.waveformCacheKey = nil
         
@@ -284,7 +262,6 @@ final class TimelineViewModel: ObservableObject {
     }
     
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
-        // ИСПРАВЛЕНО: прямое изменение через project
         if let timelineIdx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }),
            let markerIdx = repository.project.timelines[timelineIdx].markers.firstIndex(where: { $0.id == marker.id }) {
             repository.project.timelines[timelineIdx].markers[markerIdx].timeSeconds = newTime
@@ -296,7 +273,6 @@ final class TimelineViewModel: ObservableObject {
     }
     
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
-        // ИСПРАВЛЕНО: прямое изменение через project
         if let timelineIdx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }),
            let markerIdx = repository.project.timelines[timelineIdx].markers.firstIndex(where: { $0.id == marker.id }) {
             repository.project.timelines[timelineIdx].markers[markerIdx].name = newName
@@ -308,7 +284,6 @@ final class TimelineViewModel: ObservableObject {
     }
     
     func deleteMarker(_ marker: TimelineMarker) {
-        // ИСПРАВЛЕНО: прямое изменение через project
         if let timelineIdx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) {
             repository.project.timelines[timelineIdx].markers.removeAll { $0.id == marker.id }
         }

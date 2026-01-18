@@ -1,6 +1,7 @@
 import Foundation
 
-struct TimelineMarker: Codable, Identifiable {
+// ✅ ИСПРАВЛЕНО: добавлен Sendable
+struct TimelineMarker: Codable, Identifiable, Sendable {
     let id: UUID
     var timeSeconds: Double      // БАЗОВОЕ хранение
     var name: String

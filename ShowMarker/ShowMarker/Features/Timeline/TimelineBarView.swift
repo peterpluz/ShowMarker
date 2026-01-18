@@ -23,8 +23,12 @@ struct TimelineBarView: View {
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
     
-    // Drag state для капсулы
     @State private var capsuleDragStart: CGFloat?
+    
+    // MARK: - ✅ НОВОЕ: Кэширование Canvas
+    @State private var renderedWaveform: Image?
+    @State private var lastRenderedWidth: CGFloat?
+    @State private var lastRenderedZoom: CGFloat?
     
     // MARK: - Constants
 
@@ -32,18 +36,12 @@ struct TimelineBarView: View {
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
     
-    // Zoom limits
     private static let minZoom: CGFloat = 1.0
     private static let maxZoom: CGFloat = 500.0
     
-    // Timeline indicator
     private static let indicatorHeight: CGFloat = 6
-    
-    // Time ruler
     private static let rulerHeight: CGFloat = 24
 
-    // MARK: - Local state для smooth preview
-    
     @State private var draggedMarkerID: UUID?
     @State private var draggedMarkerPreviewTime: Double?
     @State private var dragStartTime: Double?
@@ -51,13 +49,11 @@ struct TimelineBarView: View {
     var body: some View {
         VStack(spacing: 8) {
             
-            // ИСПРАВЛЕНО: индикатор видим только если есть аудио
             if hasAudio {
                 timelineOverviewIndicator
                 timeRuler
             }
             
-            // Timeline bar
             GeometryReader { geo in
                 if !hasAudio {
                     addAudioButton
@@ -69,7 +65,7 @@ struct TimelineBarView: View {
         }
     }
     
-    // MARK: - Timeline Overview Indicator (DAW-style)
+    // MARK: - Timeline Overview Indicator
     
     private var timelineOverviewIndicator: some View {
         GeometryReader { geo in
@@ -82,11 +78,9 @@ struct TimelineBarView: View {
                 let visibleRatio = 1.0 / zoomScale
                 let visibleWidth = geo.size.width * visibleRatio
                 
-                // ИСПРАВЛЕНО: правильный расчет позиции при экстремальном зуме
                 let timeRatio = duration > 0 ? currentTime / duration : 0
                 let centerOffset = geo.size.width * timeRatio
                 
-                // Фиксируем позицию playhead в центре капсулы
                 let idealOffset = centerOffset - visibleWidth / 2
                 let xOffset = max(0, min(geo.size.width - visibleWidth, idealOffset))
                 
@@ -120,7 +114,6 @@ struct TimelineBarView: View {
                             }
                     )
                 
-                // ИСПРАВЛЕНО: playhead всегда в центре капсулы
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
@@ -132,7 +125,7 @@ struct TimelineBarView: View {
         .padding(.horizontal, 4)
     }
     
-    // MARK: - Time Ruler - ИСПРАВЛЕНО
+    // MARK: - Time Ruler
     
     private var timeRuler: some View {
         GeometryReader { geo in
@@ -144,11 +137,9 @@ struct TimelineBarView: View {
                 let interval = timeInterval(for: zoomScale)
                 let smallInterval = interval / 5.0
                 
-                // ИСПРАВЛЕНО: вычисляем видимый диапазон времени
                 let visibleStartTime = max(0, (currentTime - (duration / zoomScale) / 2))
                 let visibleEndTime = min(duration, (currentTime + (duration / zoomScale) / 2))
                 
-                // Начинаем с округленного значения для красоты
                 let startTime = floor(visibleStartTime / smallInterval) * smallInterval
                 
                 var time = startTime
@@ -156,7 +147,6 @@ struct TimelineBarView: View {
                     let normalizedPosition = time / duration
                     let x = centerX - offset + (normalizedPosition * contentWidth)
                     
-                    // Пропускаем метки за пределами видимости
                     guard x >= -20 && x <= size.width + 20 else {
                         time += smallInterval
                         continue
@@ -230,7 +220,8 @@ struct TimelineBarView: View {
         let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
 
         return ZStack {
-            waveformView(width: contentWidth, geoWidth: geo.size.width)
+            // ✅ КРИТИЧНО: Кэшированная waveform view
+            cachedWaveformView(width: contentWidth, geoWidth: geo.size.width)
                 .offset(x: centerX - timelineOffset(contentWidth))
 
             ForEach(markers) { marker in
@@ -317,8 +308,6 @@ struct TimelineBarView: View {
             }
     }
 
-    // MARK: - Marker gesture
-
     private func markerGesture(
         marker: TimelineMarker,
         centerX: CGFloat,
@@ -356,9 +345,52 @@ struct TimelineBarView: View {
             }
     }
 
-    // MARK: - WAVEFORM - ИСПРАВЛЕНО
+    // MARK: - ✅ КРИТИЧНО: Кэшированная WAVEFORM
 
-    private func waveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
+    @ViewBuilder
+    private func cachedWaveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
+        let shouldRerender = renderedWaveform == nil
+            || lastRenderedWidth != width
+            || abs((lastRenderedZoom ?? 1.0) - zoomScale) > 0.5
+        
+        if shouldRerender {
+            Color.clear
+                .onAppear {
+                    renderWaveformToCache(width: width, geoWidth: geoWidth)
+                }
+        } else if let cached = renderedWaveform {
+            cached
+                .frame(width: width, height: Self.barHeight)
+        } else {
+            waveformPlaceholder(width: width)
+        }
+    }
+    
+    private func waveformPlaceholder(width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(Color.secondary.opacity(0.12))
+            .frame(width: width, height: Self.barHeight)
+    }
+    
+    // ✅ КРИТИЧНО: Рендерим waveform ОДИН РАЗ в фоне
+    private func renderWaveformToCache(width: CGFloat, geoWidth: CGFloat) {
+        Task { @MainActor in
+            let renderer = ImageRenderer(
+                content: directWaveformView(width: width, geoWidth: geoWidth)
+            )
+            renderer.scale = 2.0 // Retina
+            
+            // ✅ Рендер на MainActor
+            if let uiImage = renderer.uiImage {
+                self.renderedWaveform = Image(uiImage: uiImage)
+                self.lastRenderedWidth = width
+                self.lastRenderedZoom = zoomScale
+            }
+        }
+    }
+    
+    // ✅ ПРЯМОЙ рендер waveform для кэша
+    private func directWaveformView(width: CGFloat, geoWidth: CGFloat) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.secondary.opacity(0.12))
@@ -369,16 +401,18 @@ struct TimelineBarView: View {
                 guard pairCount > 0 else { return }
                 
                 let centerY = Self.barHeight / 2
-                let pixelsPerSample = width / CGFloat(pairCount)
                 
-                // ИСПРАВЛЕНО: динамическая амплитуда в зависимости от зума
+                // ✅ КРИТИЧНО: Ограничиваем число точек
+                let maxPoints = Int(width / 2) // Не больше чем пикселей
+                let step = max(1, pairCount / maxPoints)
+                
                 let amplitudeScale: CGFloat = {
                     if zoomScale < 2.0 {
-                        return 0.4  // Минимальный зум - меньше амплитуда
+                        return 0.4
                     } else if zoomScale < 10.0 {
-                        return 0.6  // Средний зум
+                        return 0.6
                     } else {
-                        return 0.8  // Максимальный зум - полная амплитуда
+                        return 0.8
                     }
                 }()
                 
@@ -387,7 +421,8 @@ struct TimelineBarView: View {
                 
                 var isFirstPoint = true
                 
-                for i in 0..<pairCount {
+                var i = 0
+                while i < pairCount {
                     let minIndex = i * 2
                     let maxIndex = i * 2 + 1
                     
@@ -396,7 +431,7 @@ struct TimelineBarView: View {
                     let minValue = waveform[minIndex]
                     let maxValue = waveform[maxIndex]
                     
-                    let x = CGFloat(i) * pixelsPerSample
+                    let x = CGFloat(i / step) * (width / CGFloat(maxPoints))
                     
                     let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
                     let bottomY = centerY + CGFloat(abs(minValue)) * (Self.barHeight / 2) * amplitudeScale
@@ -409,10 +444,12 @@ struct TimelineBarView: View {
                     
                     upperPath.addLine(to: CGPoint(x: x, y: topY))
                     lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
+                    
+                    i += step
                 }
                 
                 if pairCount > 0 {
-                    let lastX = CGFloat(pairCount - 1) * pixelsPerSample
+                    let lastX = width
                     upperPath.addLine(to: CGPoint(x: lastX, y: centerY))
                     lowerPath.addLine(to: CGPoint(x: lastX, y: centerY))
                 }
@@ -428,7 +465,6 @@ struct TimelineBarView: View {
                 context.stroke(upperPath, with: .color(strokeColor), lineWidth: 1.0)
                 context.stroke(lowerPath, with: .color(strokeColor), lineWidth: 1.0)
                 
-                // Центральная линия
                 var centerLine = Path()
                 centerLine.move(to: CGPoint(x: 0, y: centerY))
                 centerLine.addLine(to: CGPoint(x: width, y: centerY))

@@ -1,7 +1,7 @@
 import Foundation
 
-// ИСПРАВЛЕНО: убрали Sendable, чтобы избежать проблем с MainActor
-struct Project: Codable, Identifiable {
+// ✅ ИСПРАВЛЕНО: добавлен Sendable для Swift 6
+struct Project: Codable, Identifiable, Sendable {
     static let currentFormatVersion = 1
     
     let formatVersion: Int
