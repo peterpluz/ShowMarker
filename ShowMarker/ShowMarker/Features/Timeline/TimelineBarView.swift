@@ -429,12 +429,6 @@ struct TimelineBarView: View {
                 let strokeColor = Color.secondary.opacity(0.8)
                 context.stroke(upperPath, with: .color(strokeColor), lineWidth: 1.0)
                 context.stroke(lowerPath, with: .color(strokeColor), lineWidth: 1.0)
-                
-                // Центральная линия
-                var centerLine = Path()
-                centerLine.move(to: CGPoint(x: 0, y: centerY))
-                centerLine.addLine(to: CGPoint(x: width, y: centerY))
-                context.stroke(centerLine, with: .color(.secondary.opacity(0.25)), lineWidth: 0.5)
             }
             .frame(width: width, height: Self.barHeight)
         }

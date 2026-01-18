@@ -17,7 +17,6 @@ final class TimelineViewModel: ObservableObject {
     @Published private(set) var duration: Double = 0
 
     @Published var zoomScale: CGFloat = 1.0
-    @Published private(set) var debouncedZoomScale: CGFloat = 1.0
 
     @Published private(set) var cachedWaveform: [Float] = []
     private var waveformMipmaps: [[Float]] = []
@@ -56,8 +55,8 @@ final class TimelineViewModel: ObservableObject {
     var visibleWaveform: [Float] {
         guard !waveformMipmaps.isEmpty else { return [] }
 
-        // Use debounced zoom scale for mipmap selection to avoid excessive switching
-        let mipmapLevel = selectMipmapLevel(for: debouncedZoomScale)
+        // Use immediate zoom scale for visual synchronization (not debounced)
+        let mipmapLevel = selectMipmapLevel(for: zoomScale)
 
         guard mipmapLevel < waveformMipmaps.count else {
             return waveformMipmaps.first ?? []
@@ -94,12 +93,16 @@ final class TimelineViewModel: ObservableObject {
         setupBindings()
         setupRepositoryObserver()
 
-        // Load initial duration from timeline
-        if let timelineAudio = timeline?.audio {
+        // Load initial audio and duration from timeline
+        if let timelineAudio = timeline?.audio, let docURL = repository.documentURL {
             self.duration = timelineAudio.duration
-            if let docURL = repository.documentURL {
-                loadWaveformCache(for: timelineAudio, documentURL: docURL)
-            }
+
+            // ✅ CRITICAL FIX: Load audio into player on initialization
+            let audioURL = docURL.appendingPathComponent(timelineAudio.relativePath)
+            audioPlayer.load(url: audioURL)
+            print("✅ Audio loaded into player on init: \(audioURL)")
+
+            loadWaveformCache(for: timelineAudio, documentURL: docURL)
         }
     }
 
@@ -129,11 +132,6 @@ final class TimelineViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-
-        // ✅ Debounce zoom scale updates for performance
-        $zoomScale
-            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
-            .assign(to: &$debouncedZoomScale)
     }
     
     // MARK: - Waveform Cache
