@@ -69,7 +69,17 @@ struct TimelineBarView: View {
             let visibleRatio = 1.0 / zoomScale
             let visibleWidth = geo.size.width * visibleRatio
 
-            let timeRatio = duration > 0 ? currentTime / duration : 0
+            // ✅ FIX: Use dragCurrentTime during and after drag until currentTime syncs
+            let timeToUse: Double
+            if isTimelineDragging {
+                timeToUse = dragCurrentTime
+            } else if abs(dragCurrentTime - currentTime) > 0.05 {
+                timeToUse = dragCurrentTime
+            } else {
+                timeToUse = currentTime
+            }
+
+            let timeRatio = duration > 0 ? timeToUse / duration : 0
             let centerOffset = geo.size.width * timeRatio
 
             let idealOffset = centerOffset - visibleWidth / 2
@@ -504,8 +514,21 @@ struct TimelineBarView: View {
 
     private func timelineOffset(_ contentWidth: CGFloat) -> CGFloat {
         guard duration > 0 else { return 0 }
-        // ✅ FIX: Use dragCurrentTime during active drag for smooth 1:1 feedback
-        let timeToUse = isTimelineDragging ? dragCurrentTime : currentTime
+
+        // ✅ FIX: Continue using dragCurrentTime until throttled currentTime catches up
+        let timeToUse: Double
+        if isTimelineDragging {
+            // During active drag, always use dragCurrentTime
+            timeToUse = dragCurrentTime
+        } else if abs(dragCurrentTime - currentTime) > 0.05 {
+            // After drag ends, keep using dragCurrentTime until currentTime syncs
+            // This prevents playhead jump when releasing finger
+            timeToUse = dragCurrentTime
+        } else {
+            // Use throttled currentTime when synced
+            timeToUse = currentTime
+        }
+
         return CGFloat(timeToUse / duration) * contentWidth
     }
 
