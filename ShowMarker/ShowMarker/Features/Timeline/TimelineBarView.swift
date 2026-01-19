@@ -43,6 +43,7 @@ struct TimelineBarView: View {
     // MARK: - Timeline Drag State
     @State private var isTimelineDragging: Bool = false
     @State private var dragCurrentTime: Double = 0
+    @State private var dragEndTime: Date?
 
     var body: some View {
         VStack(spacing: 8) {
@@ -352,6 +353,7 @@ struct TimelineBarView: View {
                     dragStartTime = currentTime
                     dragCurrentTime = currentTime
                     isTimelineDragging = true
+                    dragEndTime = nil  // Clear any previous drag end time
                 }
                 guard let start = dragStartTime else { return }
 
@@ -365,6 +367,7 @@ struct TimelineBarView: View {
             .onEnded { _ in
                 dragStartTime = nil
                 isTimelineDragging = false
+                dragEndTime = Date()  // Mark when drag ended
             }
     }
     
@@ -508,14 +511,17 @@ struct TimelineBarView: View {
         if isTimelineDragging {
             // During active drag, always use dragCurrentTime
             return dragCurrentTime
-        } else if abs(dragCurrentTime - currentTime) > 0.05 {
-            // After drag ends, keep using dragCurrentTime until currentTime syncs
-            // This prevents playhead jump when releasing finger
-            return dragCurrentTime
-        } else {
-            // Use throttled currentTime when synced
-            return currentTime
+        } else if let endTime = dragEndTime {
+            // After drag ends, keep using dragCurrentTime for smooth transition (100ms)
+            let timeSinceDragEnd = Date().timeIntervalSince(endTime)
+            if timeSinceDragEnd < 0.1 && abs(dragCurrentTime - currentTime) > 0.05 {
+                // Still within transition period and not synced yet
+                return dragCurrentTime
+            }
         }
+
+        // Use throttled currentTime (normal state or after transition)
+        return currentTime
     }
 
     private func timelineOffset(_ contentWidth: CGFloat) -> CGFloat {
