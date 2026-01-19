@@ -164,8 +164,8 @@ final class TimelineViewModel: ObservableObject {
                         // Trigger flash effect for this marker
                         self.flashingMarkerID = marker.id
 
-                        // Reset after a short delay to allow animation to complete
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        // Reset after animation completes (0.5s effect + 0.1s buffer)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                             self.flashingMarkerID = nil
                         }
 

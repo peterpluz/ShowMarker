@@ -60,16 +60,12 @@ struct MarkerCard: View {
     }
 
     private func triggerFlashEffect() {
-        // Quick attack: rise to full opacity in 0.1 seconds
-        withAnimation(.easeOut(duration: 0.1)) {
-            flashOpacity = 1.0
-        }
+        // Instant attack: immediately set to full opacity (no animation)
+        flashOpacity = 1.0
 
-        // Slow decay: fade out over 0.4 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            withAnimation(.easeIn(duration: 0.4)) {
-                flashOpacity = 0
-            }
+        // Smooth decay: fade out over 0.5 seconds
+        withAnimation(.easeOut(duration: 0.5)) {
+            flashOpacity = 0
         }
     }
 }
