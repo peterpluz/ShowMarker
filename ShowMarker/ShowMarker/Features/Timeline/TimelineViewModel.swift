@@ -120,9 +120,12 @@ final class TimelineViewModel: ObservableObject {
         audioPlayer.$isPlaying
             .assign(to: &$isPlaying)
 
-        // ✅ КРИТИЧНО: Throttle currentTime updates
+        // ✅ FIX: Use DispatchQueue.main instead of RunLoop.main
+        // RunLoop.main gets blocked during List scroll gestures,
+        // causing timeline UI to freeze while audio continues playing.
+        // DispatchQueue.main.async dispatches work that executes even during scroll.
         audioPlayer.$currentTime
-            .throttle(for: .milliseconds(32), scheduler: RunLoop.main, latest: true)
+            .throttle(for: .milliseconds(32), scheduler: DispatchQueue.main, latest: true)
             .assign(to: &$currentTime)
 
         audioPlayer.$duration
