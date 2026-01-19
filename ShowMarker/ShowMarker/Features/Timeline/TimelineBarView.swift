@@ -69,17 +69,8 @@ struct TimelineBarView: View {
             let visibleRatio = 1.0 / zoomScale
             let visibleWidth = geo.size.width * visibleRatio
 
-            // ✅ FIX: Use dragCurrentTime during and after drag until currentTime syncs
-            let timeToUse: Double
-            if isTimelineDragging {
-                timeToUse = dragCurrentTime
-            } else if abs(dragCurrentTime - currentTime) > 0.05 {
-                timeToUse = dragCurrentTime
-            } else {
-                timeToUse = currentTime
-            }
-
-            let timeRatio = duration > 0 ? timeToUse / duration : 0
+            // ✅ FIX: Use effectiveCurrentTime for smooth 1:1 feedback
+            let timeRatio = duration > 0 ? effectiveCurrentTime() / duration : 0
             let centerOffset = geo.size.width * timeRatio
 
             let idealOffset = centerOffset - visibleWidth / 2
@@ -512,24 +503,24 @@ struct TimelineBarView: View {
 
     // MARK: - Helpers
 
-    private func timelineOffset(_ contentWidth: CGFloat) -> CGFloat {
-        guard duration > 0 else { return 0 }
-
-        // ✅ FIX: Continue using dragCurrentTime until throttled currentTime catches up
-        let timeToUse: Double
+    /// Returns current time to use for visual display, accounting for drag state
+    private func effectiveCurrentTime() -> Double {
         if isTimelineDragging {
             // During active drag, always use dragCurrentTime
-            timeToUse = dragCurrentTime
+            return dragCurrentTime
         } else if abs(dragCurrentTime - currentTime) > 0.05 {
             // After drag ends, keep using dragCurrentTime until currentTime syncs
             // This prevents playhead jump when releasing finger
-            timeToUse = dragCurrentTime
+            return dragCurrentTime
         } else {
             // Use throttled currentTime when synced
-            timeToUse = currentTime
+            return currentTime
         }
+    }
 
-        return CGFloat(timeToUse / duration) * contentWidth
+    private func timelineOffset(_ contentWidth: CGFloat) -> CGFloat {
+        guard duration > 0 else { return 0 }
+        return CGFloat(effectiveCurrentTime() / duration) * contentWidth
     }
 
     private func clamp(_ t: Double) -> Double {
