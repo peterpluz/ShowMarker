@@ -72,29 +72,34 @@ struct TimelineBarView: View {
 
     private var timelineOverviewIndicator: some View {
         GeometryReader { geo in
+            let totalWidth = geo.size.width
             let visibleRatio = 1.0 / zoomScale
-            let visibleWidth = geo.size.width * visibleRatio
-
-            // ✅ FIX: Use effectiveCurrentTime for smooth 1:1 feedback
+            let visibleWidth = max(20, totalWidth * visibleRatio)
+            
+            // Normalized playhead position (0...1)
             let timeRatio = duration > 0 ? effectiveCurrentTime() / duration : 0
-            let centerOffset = geo.size.width * timeRatio
-
-            let idealOffset = centerOffset - visibleWidth / 2
-            let xOffset = max(0, min(geo.size.width - visibleWidth, idealOffset))
+            
+            // Capsule position - centered on playhead, clamped to edges
+            let capsuleCenterIdeal = totalWidth * timeRatio
+            let halfCapsule = visibleWidth / 2
+            let capsuleCenter = max(halfCapsule, min(totalWidth - halfCapsule, capsuleCenterIdeal))
+            let xOffset = capsuleCenter - halfCapsule
 
             ZStack(alignment: .leading) {
+                // Background track
                 Capsule()
                     .fill(Color.secondary.opacity(0.15))
                     .frame(height: Self.indicatorHeight)
 
+                // Visible area capsule
                 Capsule()
                     .fill(Color.accentColor.opacity(0.6))
-                    .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
+                    .frame(width: visibleWidth, height: Self.indicatorHeight)
                     .offset(x: xOffset)
                     .overlay(
                         Capsule()
                             .stroke(Color.accentColor, lineWidth: 1)
-                            .frame(width: max(20, visibleWidth), height: Self.indicatorHeight)
+                            .frame(width: visibleWidth, height: Self.indicatorHeight)
                             .offset(x: xOffset)
                     )
                     .gesture(
@@ -110,15 +115,12 @@ struct TimelineBarView: View {
                                 guard let startOffset = capsuleDragStart else { return }
 
                                 let newX = startOffset + value.translation.width
-                                let clampedX = max(0, min(geo.size.width - visibleWidth, newX))
+                                let clampedX = max(0, min(totalWidth - visibleWidth, newX))
 
-                                let newTimeRatio = (clampedX + visibleWidth / 2) / geo.size.width
+                                let newTimeRatio = (clampedX + halfCapsule) / totalWidth
                                 let newTime = duration * newTimeRatio
 
-                                // ✅ FIX: Store local drag time immediately for smooth visual feedback
                                 capsuleDragTime = newTime
-
-                                // Update audio playback (throttled)
                                 onSeek(newTime)
                             }
                             .onEnded { _ in
@@ -128,16 +130,20 @@ struct TimelineBarView: View {
                             }
                     )
 
+                // Mini playhead
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
                     .offset(x: {
-                        // ✅ FIX: Mini playhead shows relative position within visible capsule
-                        // When playhead is in middle of timeline and capsule centered: playhead in center of capsule
-                        // When playhead at start/end and capsule clamped: playhead at edge of capsule
-                        let playheadIdealX = geo.size.width * timeRatio
-                        let playheadX = max(xOffset, min(xOffset + visibleWidth, playheadIdealX))
-                        return playheadX - 1 // -1 for centering 2px width line
+                        let playheadAbsoluteX = totalWidth * timeRatio
+                        let idealCapsuleCenter = totalWidth * timeRatio
+                        let actualCapsuleCenter = capsuleCenter
+                        let capsuleShift = actualCapsuleCenter - idealCapsuleCenter
+                        let miniPlayheadX = actualCapsuleCenter - capsuleShift
+                        let minX = xOffset + 1
+                        let maxX = xOffset + visibleWidth - 1
+                        let clampedX = max(minX, min(maxX, miniPlayheadX))
+                        return clampedX - 1
                     }())
                     .allowsHitTesting(false)
             }
@@ -146,163 +152,219 @@ struct TimelineBarView: View {
         .padding(.horizontal, 4)
     }
     
-    // MARK: - Time Ruler
+    // MARK: - Time Ruler (Completely Rewritten)
 
     private var timeRuler: some View {
         GeometryReader { geo in
-            let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
-            let centerX = geo.size.width / 2
-            let offset = timelineOffset(contentWidth)
-
+            let viewportWidth = geo.size.width
+            let contentWidth = viewportWidth * zoomScale
+            let effectiveTime = effectiveCurrentTime()
+            
+            // Calculate visible time range
+            let secondsPerPixel = duration / contentWidth
+            let visibleDuration = viewportWidth * secondsPerPixel
+            let visibleStartTime = max(0, effectiveTime - visibleDuration / 2)
+            let visibleEndTime = min(duration, effectiveTime + visibleDuration / 2)
+            
+            // Choose optimal interval based on pixel density
+            let (majorInterval, minorPerMajor) = chooseTimeInterval(
+                secondsPerPixel: secondsPerPixel,
+                viewportWidth: viewportWidth
+            )
+            let minorInterval = majorInterval / Double(minorPerMajor)
+            
             Canvas { context, size in
                 guard duration > 0 else { return }
-
-                // ✅ CRITICAL FIX: Calculate adaptive interval based on pixel density
-                let secondsPerPixel = duration / Double(contentWidth)
-                let interval = adaptiveTimeInterval(secondsPerPixel: secondsPerPixel)
-                let subdivisions = getSubdivisions(for: interval)
-                let smallInterval = interval / Double(subdivisions)
-
-                // ✅ Calculate visible time range accurately
-                let visibleWidthSeconds = Double(geo.size.width) * secondsPerPixel
-                let visibleStartTime = max(0, currentTime - visibleWidthSeconds / 2)
-                let visibleEndTime = min(duration, currentTime + visibleWidthSeconds / 2)
-
-                // Start from rounded value
-                let startTime = floor(visibleStartTime / smallInterval) * smallInterval
-
-                var time = startTime
-                while time <= visibleEndTime + smallInterval {
-                    let normalizedPosition = time / duration
-                    let x = centerX - offset + (normalizedPosition * contentWidth)
-
-                    // Only draw if in visible area
-                    guard x >= -50 && x <= size.width + 50 else {
-                        time += smallInterval
-                        continue
+                
+                // Calculate the offset for positioning
+                // Center of viewport = effectiveTime
+                let centerX = size.width / 2
+                
+                // Function to convert time to X coordinate
+                func timeToX(_ time: Double) -> CGFloat {
+                    let deltaTime = time - effectiveTime
+                    let deltaPixels = deltaTime / secondsPerPixel
+                    return centerX + deltaPixels
+                }
+                
+                // Extend range slightly for smooth scrolling
+                let drawStartTime = floor((visibleStartTime - majorInterval) / minorInterval) * minorInterval
+                let drawEndTime = ceil((visibleEndTime + majorInterval) / minorInterval) * minorInterval
+                
+                // Collect all major tick positions first to check for label overlap
+                var majorTicks: [(time: Double, x: CGFloat)] = []
+                var time = ceil(max(0, drawStartTime) / majorInterval) * majorInterval
+                while time <= min(duration, drawEndTime) {
+                    let x = timeToX(time)
+                    majorTicks.append((time, x))
+                    time += majorInterval
+                }
+                
+                // Calculate minimum label spacing (based on typical label width)
+                let minLabelSpacing: CGFloat = 50  // Minimum pixels between label centers
+                
+                // Filter labels to prevent overlap
+                var visibleLabels: [(time: Double, x: CGFloat)] = []
+                for tick in majorTicks {
+                    // Check if this label would overlap with the last visible label
+                    if let lastLabel = visibleLabels.last {
+                        if tick.x - lastLabel.x < minLabelSpacing {
+                            continue  // Skip this label
+                        }
                     }
-
-                    let isMajor = abs(time.truncatingRemainder(dividingBy: interval)) < 0.0001
-
-                    if isMajor {
-                        // Major tick with time label
+                    // Check if label is within viewport (with padding for partial visibility)
+                    let labelHalfWidth: CGFloat = 25
+                    if tick.x >= -labelHalfWidth && tick.x <= size.width + labelHalfWidth {
+                        visibleLabels.append(tick)
+                    }
+                }
+                
+                // Draw minor ticks
+                time = max(0, floor(drawStartTime / minorInterval) * minorInterval)
+                while time <= min(duration, drawEndTime) {
+                    let x = timeToX(time)
+                    
+                    // Only draw if within viewport
+                    if x >= -1 && x <= size.width + 1 {
+                        // Check if this is a major tick position
+                        let isMajor = isNearMajorTick(time: time, majorInterval: majorInterval)
+                        
+                        if !isMajor {
+                            // Draw minor tick
+                            var path = Path()
+                            path.move(to: CGPoint(x: x, y: size.height - 5))
+                            path.addLine(to: CGPoint(x: x, y: size.height))
+                            context.stroke(path, with: .color(.secondary.opacity(0.3)), lineWidth: 1)
+                        }
+                    }
+                    time += minorInterval
+                }
+                
+                // Draw major ticks and labels
+                for tick in majorTicks {
+                    let x = tick.x
+                    
+                    // Only draw tick if within viewport
+                    if x >= -1 && x <= size.width + 1 {
                         var path = Path()
-                        path.move(to: CGPoint(x: x, y: size.height - 12))
+                        path.move(to: CGPoint(x: x, y: size.height - 10))
                         path.addLine(to: CGPoint(x: x, y: size.height))
                         context.stroke(path, with: .color(.secondary.opacity(0.7)), lineWidth: 1.5)
-
-                        let timeText = formatTime(time, interval: interval)
-                        context.draw(
-                            Text(timeText)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.secondary),
-                            at: CGPoint(x: x, y: 6)
-                        )
-                    } else {
-                        // Minor tick
-                        var path = Path()
-                        path.move(to: CGPoint(x: x, y: size.height - 6))
-                        path.addLine(to: CGPoint(x: x, y: size.height))
-                        context.stroke(path, with: .color(.secondary.opacity(0.3)), lineWidth: 1)
                     }
-
-                    time += smallInterval
+                }
+                
+                // Draw labels only for non-overlapping positions
+                for label in visibleLabels {
+                    let timeText = formatTimeLabel(label.time, interval: majorInterval)
+                    context.draw(
+                        Text(timeText)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary),
+                        at: CGPoint(x: label.x, y: 6)
+                    )
                 }
             }
             .frame(height: Self.rulerHeight)
         }
         .frame(height: Self.rulerHeight)
     }
-
-    /// Calculate optimal time interval based on pixel density (like Pro Tools/Premiere)
-    /// Target: 60-120 pixels between major marks
-    private func adaptiveTimeInterval(secondsPerPixel: Double) -> Double {
-        let targetPixelSpacing: Double = 80.0  // Optimal spacing
-        let targetSeconds = secondsPerPixel * targetPixelSpacing
-
-        // Find nearest "nice" interval: 1, 2, 5, 10, 20, 30, 60, 120, 300, 600...
-        let niceIntervals: [Double] = [
-            0.001, 0.002, 0.005, 0.01, 0.02, 0.05,  // Milliseconds
-            0.1, 0.2, 0.5,                           // Sub-second
-            1, 2, 5, 10, 15, 30,                     // Seconds
-            60, 120, 300, 600, 900, 1800, 3600       // Minutes/Hours
+    
+    /// Choose optimal time interval based on zoom level
+    /// Returns (majorInterval in seconds, number of minor ticks per major)
+    private func chooseTimeInterval(secondsPerPixel: Double, viewportWidth: CGFloat) -> (Double, Int) {
+        // Target: 80-150 pixels between major ticks
+        let targetMajorSpacing: CGFloat = 100
+        let targetSecondsPerMajor = Double(targetMajorSpacing) * secondsPerPixel
+        
+        // Predefined "nice" intervals with subdivisions
+        // Format: (interval in seconds, subdivisions)
+        let intervals: [(Double, Int)] = [
+            // Frames/milliseconds (for very high zoom)
+            (0.01, 10),    // 10ms, 10 subdivisions = 1ms minor
+            (0.02, 10),    // 20ms
+            (0.05, 5),     // 50ms, 5 subdivisions = 10ms minor
+            (0.1, 10),     // 100ms
+            (0.2, 10),     // 200ms
+            (0.5, 5),      // 500ms
+            // Seconds
+            (1, 10),       // 1s, 10 subdivisions = 100ms minor
+            (2, 10),       // 2s
+            (5, 5),        // 5s
+            (10, 10),      // 10s
+            (15, 3),       // 15s
+            (30, 6),       // 30s
+            // Minutes
+            (60, 6),       // 1min, 6 subdivisions = 10s minor
+            (120, 4),      // 2min
+            (300, 5),      // 5min
+            (600, 10),     // 10min
+            // Hours
+            (1800, 6),     // 30min
+            (3600, 6),     // 1h
         ]
-
-        // Find closest nice interval
-        var bestInterval = niceIntervals[0]
-        var minDiff = abs(targetSeconds - bestInterval)
-
-        for interval in niceIntervals {
-            let diff = abs(targetSeconds - interval)
-            if diff < minDiff {
-                minDiff = diff
+        
+        // Find the interval closest to target
+        var bestInterval = intervals[0]
+        var bestDiff = Double.infinity
+        
+        for interval in intervals {
+            let diff = abs(interval.0 - targetSecondsPerMajor)
+            if diff < bestDiff {
+                bestDiff = diff
                 bestInterval = interval
             }
         }
-
+        
+        // Verify spacing won't cause overlap
+        let pixelsPerMajor = bestInterval.0 / secondsPerPixel
+        if pixelsPerMajor < 50 {
+            // Need larger interval - find next one up
+            for interval in intervals where interval.0 > bestInterval.0 {
+                let spacing = interval.0 / secondsPerPixel
+                if spacing >= 50 {
+                    return interval
+                }
+            }
+        }
+        
         return bestInterval
     }
-
-    /// Get number of subdivisions for an interval (2, 5, or 10)
-    private func getSubdivisions(for interval: Double) -> Int {
-        // Intervals ending in 1 or 10: divide by 10 (e.g., 1s → 10 parts)
-        // Intervals ending in 2: divide by 2 (e.g., 2s → 2 parts)
-        // Intervals ending in 5: divide by 5 (e.g., 5s → 5 parts)
-        // Intervals ending in 15/30/60: divide by 5 or 10
-
-        if interval < 0.01 {
-            return 10
-        } else if interval < 0.1 {
-            return interval == 0.02 || interval == 0.05 ? 5 : 10
-        } else if interval < 1 {
-            return interval == 0.2 || interval == 0.5 ? 5 : 10
-        } else if interval < 10 {
-            return interval == 2.0 ? 2 : (interval == 5.0 ? 5 : 10)
-        } else if interval == 15 || interval == 30 {
-            return 5
-        } else if interval == 60 || interval == 120 {
-            return 10
-        } else {
-            return 5
-        }
+    
+    /// Check if time is near a major tick position
+    private func isNearMajorTick(time: Double, majorInterval: Double) -> Bool {
+        let remainder = time.truncatingRemainder(dividingBy: majorInterval)
+        let threshold = majorInterval * 0.001  // 0.1% tolerance
+        return remainder < threshold || (majorInterval - remainder) < threshold
     }
     
-    /// Format time based on interval (adaptive precision like Pro Tools)
-    private func formatTime(_ seconds: Double, interval: Double) -> String {
+    /// Format time label based on the interval scale
+    private func formatTimeLabel(_ seconds: Double, interval: Double) -> String {
         let totalSeconds = Int(seconds)
         let minutes = totalSeconds / 60
         let secs = totalSeconds % 60
         let hours = minutes / 60
         let mins = minutes % 60
-
-        // Choose format based on interval
+        
         if interval >= 3600 {
-            // Hours: "1h", "2h"
+            // Hours scale
             return "\(hours)h"
         } else if interval >= 60 {
-            // Minutes: "1:00", "2:30"
+            // Minutes scale
             if hours > 0 {
                 return String(format: "%d:%02d:%02d", hours, mins, secs)
             }
             return String(format: "%d:%02d", minutes, secs)
         } else if interval >= 1 {
-            // Seconds: "0:05", "1:30"
-            if hours > 0 {
-                return String(format: "%d:%02d:%02d", hours, mins, secs)
-            }
+            // Seconds scale
             return String(format: "%d:%02d", minutes, secs)
         } else if interval >= 0.1 {
-            // Tenths of second: "0:00.5", "0:01.2"
+            // Tenths scale
             let tenths = Int((seconds - floor(seconds)) * 10)
-            return String(format: "%d:%02d.%01d", minutes, secs, tenths)
-        } else if interval >= 0.01 {
-            // Centiseconds: "0:00.05", "0:00.12"
+            return String(format: "%d:%02d.%d", minutes, secs, tenths)
+        } else {
+            // Centiseconds/milliseconds scale
             let centis = Int((seconds - floor(seconds)) * 100)
             return String(format: "%d:%02d.%02d", minutes, secs, centis)
-        } else {
-            // Milliseconds: "0:00.125", "0:00.250"
-            let ms = Int((seconds - floor(seconds)) * 1000)
-            return String(format: "%d:%02d.%03d", minutes, secs, ms)
         }
     }
     
@@ -315,7 +377,6 @@ struct TimelineBarView: View {
         let offset = timelineOffset(contentWidth)
 
         return ZStack {
-            // ✅ КРИТИЧНО: Кэшированная waveform view
             cachedWaveformView(width: contentWidth)
                 .offset(x: centerX - offset)
 
@@ -376,21 +437,18 @@ struct TimelineBarView: View {
                     dragStartTime = currentTime
                     dragCurrentTime = currentTime
                     isTimelineDragging = true
-                    dragEndTime = nil  // Clear any previous drag end time
+                    dragEndTime = nil
                 }
                 guard let start = dragStartTime else { return }
 
-                // ✅ FIX: Calculate new time directly from translation
                 let delta = Double(value.translation.width) * secondsPerPixel * -1
                 dragCurrentTime = clamp(start + delta)
-
-                // Update audio playback (throttled, but visual uses dragCurrentTime)
                 onSeek(dragCurrentTime)
             }
             .onEnded { _ in
                 dragStartTime = nil
                 isTimelineDragging = false
-                dragEndTime = Date()  // Mark when drag ended
+                dragEndTime = Date()
             }
     }
     
@@ -405,7 +463,7 @@ struct TimelineBarView: View {
                 let delta = value / lastMagnification
                 let newScale = zoomScale * delta
                 let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
-                zoomScale = clamped  // Binding automatically updates ViewModel
+                zoomScale = clamped
                 lastMagnification = value
             }
             .onEnded { _ in
@@ -451,16 +509,13 @@ struct TimelineBarView: View {
             }
     }
 
-    // MARK: - ✅ КРИТИЧНО: Кэшированная WAVEFORM
+    // MARK: - Waveform
 
     @ViewBuilder
     private func cachedWaveformView(width: CGFloat) -> some View {
-        // ✅ ИСПРАВЛЕНО: показываем waveform напрямую без кэширования
-        // Кэширование в Image вызывало проблемы с отображением
         directWaveformView(width: width)
     }
 
-    // ✅ ПРЯМОЙ рендер waveform
     private func directWaveformView(width: CGFloat) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
@@ -472,19 +527,11 @@ struct TimelineBarView: View {
                 guard pairCount > 0 else { return }
 
                 let centerY = Self.barHeight / 2
-
-                // ✅ CRITICAL FIX: Use size.width from Canvas for accuracy
                 let canvasWidth = size.width
-
-                // ✅ CRITICAL: Fixed amplitude scale
                 let amplitudeScale: CGFloat = 0.85
 
                 var upperPath = Path()
                 var lowerPath = Path()
-
-                // ✅ CRITICAL FIX: Remove double downsampling
-                // Draw each sample directly using normalized position
-                // This ensures waveform matches playhead/marker coordinate space
 
                 for i in 0..<pairCount {
                     let minIndex = i * 2
@@ -495,11 +542,9 @@ struct TimelineBarView: View {
                     let minValue = waveform[minIndex]
                     let maxValue = waveform[maxIndex]
 
-                    // ✅ Use same normalization as markers/playhead
                     let normalizedPosition = Double(i) / Double(max(pairCount - 1, 1))
                     let x = normalizedPosition * canvasWidth
 
-                    // ✅ Symmetric display top/bottom
                     let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
                     let bottomY = centerY - CGFloat(minValue) * (Self.barHeight / 2) * amplitudeScale
 
@@ -518,7 +563,6 @@ struct TimelineBarView: View {
                 upperPath.closeSubpath()
                 lowerPath.closeSubpath()
 
-                // Fill waveform areas
                 let fillColor = Color.secondary.opacity(0.5)
                 context.fill(upperPath, with: .color(fillColor))
                 context.fill(lowerPath, with: .color(fillColor))
@@ -529,9 +573,7 @@ struct TimelineBarView: View {
 
     // MARK: - Helpers
 
-    /// Returns current time to use for visual display, accounting for drag state
     private func effectiveCurrentTime() -> Double {
-        // ✅ FIX: Capsule drag takes priority
         if isCapsuleDragging {
             return capsuleDragTime
         } else if let endTime = capsuleDragEndTime {
@@ -541,7 +583,6 @@ struct TimelineBarView: View {
             }
         }
 
-        // Timeline drag
         if isTimelineDragging {
             return dragCurrentTime
         } else if let endTime = dragEndTime {
@@ -551,7 +592,6 @@ struct TimelineBarView: View {
             }
         }
 
-        // Use throttled currentTime (normal state or after transition)
         return currentTime
     }
 

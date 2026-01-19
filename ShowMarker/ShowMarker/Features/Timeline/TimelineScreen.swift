@@ -16,6 +16,9 @@ struct TimelineScreen: View {
     @State private var exportData: Data?
     @State private var isExportPresented = false
 
+    // ✅ FIX: Force timeline redraw during List scroll
+    @State private var timelineRedrawTrigger: Bool = false
+
     private static func makeViewModel(
         repository: ProjectRepository,
         timelineID: UUID
@@ -39,6 +42,10 @@ struct TimelineScreen: View {
 
     var body: some View {
         mainContent
+            .onReceive(viewModel.$currentTime) { _ in
+                // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
+                timelineRedrawTrigger.toggle()
+            }
             .sheet(item: $timePickerMarker) { marker in
                 timecodePickerSheet(for: marker)
             }
@@ -245,11 +252,6 @@ struct TimelineScreen: View {
             RoundedRectangle(cornerRadius: 20)
                 .fill(.regularMaterial)
         )
-        .transaction { transaction in
-            // ✅ FIX: Prevent List scroll gesture from blocking timeline updates
-            transaction.animation = nil
-            transaction.disablesAnimations = true
-        }
     }
 
     private var timelineBar: some View {
@@ -269,11 +271,13 @@ struct TimelineScreen: View {
             },
             zoomScale: $viewModel.zoomScale
         )
+        .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)  // ✅ FIX: Force redraw on trigger toggle
     }
 
     private var timecode: some View {
         Text(viewModel.timecode())
             .font(.system(size: 32, weight: .bold))
+            .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)  // ✅ FIX: Force redraw on trigger toggle
     }
 
     private var playbackControls: some View {
