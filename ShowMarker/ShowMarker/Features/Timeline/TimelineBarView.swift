@@ -132,22 +132,12 @@ struct TimelineBarView: View {
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
                     .offset(x: {
-                        // ✅ FIX: Mini playhead positioning logic
-                        // When capsule is NOT clamped (centered on playhead): mini playhead in center
-                        // When capsule IS clamped (at edges): mini playhead shows real position
-
-                        let idealOffset = centerOffset - visibleWidth / 2
+                        // ✅ FIX: Mini playhead shows relative position within visible capsule
+                        // When playhead is in middle of timeline and capsule centered: playhead in center of capsule
+                        // When playhead at start/end and capsule clamped: playhead at edge of capsule
                         let playheadIdealX = geo.size.width * timeRatio
-
-                        // Check if capsule is clamped
-                        if abs(idealOffset - xOffset) < 0.1 {
-                            // Not clamped - playhead always in center
-                            return xOffset + visibleWidth / 2 - 1
-                        } else {
-                            // Clamped at edge - show real playhead position within capsule
-                            let playheadX = max(xOffset, min(xOffset + visibleWidth, playheadIdealX))
-                            return playheadX - 1
-                        }
+                        let playheadX = max(xOffset, min(xOffset + visibleWidth, playheadIdealX))
+                        return playheadX - 1 // -1 for centering 2px width line
                     }())
                     .allowsHitTesting(false)
             }
