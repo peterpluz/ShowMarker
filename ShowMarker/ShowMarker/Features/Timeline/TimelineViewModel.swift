@@ -22,6 +22,17 @@ final class TimelineViewModel: ObservableObject {
     private var waveformMipmaps: [[Float]] = []
     private var waveformCacheKey: String?
 
+    // MARK: - Marker Crossing Detection
+
+    struct FlashEvent: Equatable {
+        let markerID: UUID
+        let eventID: UUID
+    }
+
+    @Published var flashEvent: FlashEvent?
+    private var previousTime: Double = 0
+    private let crossingThreshold: Double = 0.2 // Maximum time delta to consider as continuous playback
+
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Computed Properties (Single Source of Truth from Repository)
@@ -133,6 +144,42 @@ final class TimelineViewModel: ObservableObject {
                 if d > 0 {
                     self?.duration = d
                 }
+            }
+            .store(in: &cancellables)
+
+        // MARK: - Marker Crossing Detection
+        // Detect when playhead crosses a marker during forward playback
+        $currentTime
+            .sink { [weak self] newTime in
+                guard let self = self else { return }
+
+                let timeDelta = newTime - self.previousTime
+
+                // Only trigger on forward movement within threshold (continuous playback)
+                // Ignore backward scrubbing, seeks/jumps, and pauses
+                guard timeDelta > 0 && timeDelta < self.crossingThreshold else {
+                    self.previousTime = newTime
+                    return
+                }
+
+                // Find markers that were crossed in this time interval
+                for marker in self.markers {
+                    // Crossing condition: marker is between previous and current time
+                    if self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime {
+                        // Trigger flash effect for this marker with unique event ID
+                        self.flashEvent = FlashEvent(markerID: marker.id, eventID: UUID())
+
+                        // Reset after animation completes (0.5s effect + 0.1s buffer)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            self.flashEvent = nil
+                        }
+
+                        // Only flash one marker per update (the first crossed)
+                        break
+                    }
+                }
+
+                self.previousTime = newTime
             }
             .store(in: &cancellables)
     }

@@ -4,6 +4,9 @@ struct MarkerCard: View {
 
     let marker: TimelineMarker
     let fps: Int
+    let flashEvent: TimelineViewModel.FlashEvent?
+
+    @State private var flashOpacity: Double = 0
 
     var body: some View {
         HStack(spacing: 12) {
@@ -33,6 +36,17 @@ struct MarkerCard: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8) // ⬅️ ключевое уменьшение высоты
         .contentShape(Rectangle())
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.accentColor.opacity(flashOpacity * 0.3))
+                .allowsHitTesting(false)
+        )
+        .onChange(of: flashEvent) { event in
+            // Trigger flash only if this event is for this marker
+            if let event = event, event.markerID == marker.id {
+                triggerFlashEffect()
+            }
+        }
     }
 
     private func timecode() -> String {
@@ -45,5 +59,17 @@ struct MarkerCard: View {
         let hours = totalMinutes / 60
 
         return String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
+    }
+
+    private func triggerFlashEffect() {
+        // Instant attack: immediately set to full opacity (no animation)
+        flashOpacity = 1.0
+
+        // Smooth decay: fade out over 0.5 seconds (on next runloop to ensure instant flash is visible)
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.5)) {
+                flashOpacity = 0
+            }
+        }
     }
 }

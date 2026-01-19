@@ -109,19 +109,23 @@ struct TimelineScreen: View {
     // MARK: - Marker Row
 
     private func markerRow(_ marker: TimelineMarker) -> some View {
-        MarkerCard(marker: marker, fps: viewModel.fps)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                // ИСПРАВЛЕНО: seek только если есть аудио
-                guard hasAudio else { return }
-                viewModel.seek(to: marker.timeSeconds)
-            }
-            .contextMenu {
-                markerContextMenu(for: marker)
-            }
-            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                markerSwipeActions(for: marker)
-            }
+        MarkerCard(
+            marker: marker,
+            fps: viewModel.fps,
+            flashEvent: viewModel.flashEvent
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // ИСПРАВЛЕНО: seek только если есть аудио
+            guard hasAudio else { return }
+            viewModel.seek(to: marker.timeSeconds)
+        }
+        .contextMenu {
+            markerContextMenu(for: marker)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            markerSwipeActions(for: marker)
+        }
     }
 
     @ViewBuilder
