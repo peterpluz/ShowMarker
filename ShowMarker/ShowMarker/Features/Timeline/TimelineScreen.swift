@@ -229,13 +229,13 @@ struct TimelineScreen: View {
     private var bottomPanel: some View {
         VStack(spacing: 16) {
             timelineBar
-            
+
             // ИСПРАВЛЕНО: тайм и контролы видимы только с аудио
             if hasAudio {
                 timecode
                 playbackControls
             }
-            
+
             addMarkerButton
         }
         .padding(.horizontal, 24)
@@ -245,6 +245,11 @@ struct TimelineScreen: View {
             RoundedRectangle(cornerRadius: 20)
                 .fill(.regularMaterial)
         )
+        .transaction { transaction in
+            // ✅ FIX: Prevent List scroll gesture from blocking timeline updates
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
     }
 
     private var timelineBar: some View {

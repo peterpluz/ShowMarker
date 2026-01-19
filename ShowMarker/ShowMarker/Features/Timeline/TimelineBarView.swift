@@ -21,18 +21,18 @@ struct TimelineBarView: View {
     @Binding var zoomScale: CGFloat
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
-    
+
     @State private var capsuleDragStart: CGFloat?
-    
+
     // MARK: - Constants
 
     private static let barHeight: CGFloat = 140
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
-    
+
     private static let minZoom: CGFloat = 1.0
     private static let maxZoom: CGFloat = 500.0
-    
+
     private static let indicatorHeight: CGFloat = 6
     private static let rulerHeight: CGFloat = 24
 
@@ -44,6 +44,11 @@ struct TimelineBarView: View {
     @State private var isTimelineDragging: Bool = false
     @State private var dragCurrentTime: Double = 0
     @State private var dragEndTime: Date?
+
+    // MARK: - Capsule Drag State
+    @State private var isCapsuleDragging: Bool = false
+    @State private var capsuleDragTime: Double = 0
+    @State private var capsuleDragEndTime: Date?
 
     var body: some View {
         VStack(spacing: 8) {
@@ -97,6 +102,9 @@ struct TimelineBarView: View {
                             .onChanged { value in
                                 if capsuleDragStart == nil {
                                     capsuleDragStart = xOffset
+                                    capsuleDragTime = effectiveCurrentTime()
+                                    isCapsuleDragging = true
+                                    capsuleDragEndTime = nil
                                 }
 
                                 guard let startOffset = capsuleDragStart else { return }
@@ -105,17 +113,32 @@ struct TimelineBarView: View {
                                 let clampedX = max(0, min(geo.size.width - visibleWidth, newX))
 
                                 let newTimeRatio = (clampedX + visibleWidth / 2) / geo.size.width
-                                onSeek(duration * newTimeRatio)
+                                let newTime = duration * newTimeRatio
+
+                                // ✅ FIX: Store local drag time immediately for smooth visual feedback
+                                capsuleDragTime = newTime
+
+                                // Update audio playback (throttled)
+                                onSeek(newTime)
                             }
                             .onEnded { _ in
                                 capsuleDragStart = nil
+                                isCapsuleDragging = false
+                                capsuleDragEndTime = Date()
                             }
                     )
 
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
-                    .offset(x: xOffset + visibleWidth / 2 - 1)
+                    .offset(x: {
+                        // ✅ FIX: Mini playhead shows relative position within visible capsule
+                        // When playhead is in middle of timeline and capsule centered: playhead in center of capsule
+                        // When playhead at start/end and capsule clamped: playhead at edge of capsule
+                        let playheadIdealX = geo.size.width * timeRatio
+                        let playheadX = max(xOffset, min(xOffset + visibleWidth, playheadIdealX))
+                        return playheadX - 1 // -1 for centering 2px width line
+                    }())
                     .allowsHitTesting(false)
             }
         }
@@ -508,14 +531,22 @@ struct TimelineBarView: View {
 
     /// Returns current time to use for visual display, accounting for drag state
     private func effectiveCurrentTime() -> Double {
+        // ✅ FIX: Capsule drag takes priority
+        if isCapsuleDragging {
+            return capsuleDragTime
+        } else if let endTime = capsuleDragEndTime {
+            let timeSinceDragEnd = Date().timeIntervalSince(endTime)
+            if timeSinceDragEnd < 0.1 && abs(capsuleDragTime - currentTime) > 0.05 {
+                return capsuleDragTime
+            }
+        }
+
+        // Timeline drag
         if isTimelineDragging {
-            // During active drag, always use dragCurrentTime
             return dragCurrentTime
         } else if let endTime = dragEndTime {
-            // After drag ends, keep using dragCurrentTime for smooth transition (100ms)
             let timeSinceDragEnd = Date().timeIntervalSince(endTime)
             if timeSinceDragEnd < 0.1 && abs(dragCurrentTime - currentTime) > 0.05 {
-                // Still within transition period and not synced yet
                 return dragCurrentTime
             }
         }
