@@ -93,6 +93,7 @@ struct TimelineScreen: View {
             }
         }
         .listStyle(.insetGrouped)
+        .animation(nil, value: viewModel.currentTime)  // ✅ FIX: Prevent List animation from blocking timeline
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
@@ -269,11 +270,14 @@ struct TimelineScreen: View {
             },
             zoomScale: $viewModel.zoomScale
         )
+        .drawingGroup()  // ✅ FIX: Force independent rendering to prevent scroll blocking
+        .id(viewModel.currentTime)  // ✅ FIX: Force update even during List scroll
     }
 
     private var timecode: some View {
         Text(viewModel.timecode())
             .font(.system(size: 32, weight: .bold))
+            .id(viewModel.currentTime)  // ✅ FIX: Force update even during List scroll
     }
 
     private var playbackControls: some View {
