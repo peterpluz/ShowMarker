@@ -85,17 +85,14 @@ struct TimelineScreen: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
+        List {
+            Section {
                 ForEach(viewModel.markers) { marker in
                     markerRow(marker)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
                 }
             }
-            .padding(.top, 16)
         }
-        .background(Color(UIColor.systemGroupedBackground))
+        .listStyle(.insetGrouped)
         .navigationTitle(viewModel.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
@@ -248,6 +245,11 @@ struct TimelineScreen: View {
             RoundedRectangle(cornerRadius: 20)
                 .fill(.regularMaterial)
         )
+        .transaction { transaction in
+            // ✅ FIX: Prevent List scroll gesture from blocking timeline updates
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
     }
 
     private var timelineBar: some View {
