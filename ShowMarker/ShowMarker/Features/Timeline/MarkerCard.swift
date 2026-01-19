@@ -36,9 +36,10 @@ struct MarkerCard: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8) // ⬅️ ключевое уменьшение высоты
         .contentShape(Rectangle())
-        .background(
+        .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.accentColor.opacity(flashOpacity * 0.3))
+                .allowsHitTesting(false)
         )
         .onChange(of: flashEvent) { event in
             // Trigger flash only if this event is for this marker
