@@ -40,6 +40,10 @@ struct TimelineBarView: View {
     @State private var draggedMarkerPreviewTime: Double?
     @State private var dragStartTime: Double?
 
+    // MARK: - Timeline Drag State
+    @State private var isTimelineDragging: Bool = false
+    @State private var timelineDragOffset: CGFloat = 0
+
     var body: some View {
         VStack(spacing: 8) {
             if hasAudio {
@@ -123,7 +127,10 @@ struct TimelineBarView: View {
         GeometryReader { geo in
             let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
             let centerX = geo.size.width / 2
-            let offset = timelineOffset(contentWidth)
+
+            // ✅ FIX: Use local drag offset during dragging for smooth visual feedback
+            let baseOffset = timelineOffset(contentWidth)
+            let offset = isTimelineDragging ? baseOffset + timelineDragOffset : baseOffset
 
             Canvas { context, size in
                 guard duration > 0 else { return }
@@ -284,10 +291,14 @@ struct TimelineBarView: View {
         let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
         let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
 
+        // ✅ FIX: Use local drag offset during dragging for smooth visual feedback
+        let baseOffset = timelineOffset(contentWidth)
+        let actualOffset = isTimelineDragging ? baseOffset + timelineDragOffset : baseOffset
+
         return ZStack {
             // ✅ КРИТИЧНО: Кэшированная waveform view
             cachedWaveformView(width: contentWidth)
-                .offset(x: centerX - timelineOffset(contentWidth))
+                .offset(x: centerX - actualOffset)
 
             ForEach(markers) { marker in
                 let displayTime: Double = {
@@ -298,7 +309,7 @@ struct TimelineBarView: View {
                 }()
 
                 let normalizedPosition = displayTime / max(duration, 0.0001)
-                let markerX = centerX - timelineOffset(contentWidth) + (normalizedPosition * contentWidth)
+                let markerX = centerX - actualOffset + (normalizedPosition * contentWidth)
 
                 Rectangle()
                     .fill(Color.orange)
@@ -344,14 +355,24 @@ struct TimelineBarView: View {
 
                 if dragStartTime == nil {
                     dragStartTime = currentTime
+                    isTimelineDragging = true
                 }
                 guard let start = dragStartTime else { return }
 
+                // ✅ FIX: Calculate local offset immediately for smooth drag
                 let delta = Double(value.translation.width) * secondsPerPixel * -1
-                onSeek(clamp(start + delta))
+                let newTime = clamp(start + delta)
+
+                // Store local drag offset (no throttling)
+                timelineDragOffset = CGFloat(-value.translation.width)
+
+                // Update actual time (for audio playback)
+                onSeek(newTime)
             }
             .onEnded { _ in
                 dragStartTime = nil
+                isTimelineDragging = false
+                timelineDragOffset = 0
             }
     }
     
