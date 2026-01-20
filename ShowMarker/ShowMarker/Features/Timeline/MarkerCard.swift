@@ -4,7 +4,7 @@ struct MarkerCard: View {
 
     let marker: TimelineMarker
     let fps: Int
-    let flashEvent: TimelineViewModel.FlashEvent?
+    let markerFlashTimestamps: [UUID: Date]
 
     @State private var flashOpacity: Double = 0
 
@@ -46,9 +46,9 @@ struct MarkerCard: View {
         )
         .contentShape(Rectangle())
         .listRowInsets(EdgeInsets())
-        .onChange(of: flashEvent) { event in
-            // Trigger flash only if this event is for this marker
-            if let event = event, event.markerID == marker.id {
+        .onChange(of: markerFlashTimestamps[marker.id]) { timestamp in
+            // Trigger flash when this marker's timestamp changes (marker was crossed)
+            if timestamp != nil {
                 triggerFlashEffect()
             }
         }

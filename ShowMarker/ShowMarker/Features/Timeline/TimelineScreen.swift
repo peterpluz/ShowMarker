@@ -112,7 +112,7 @@ struct TimelineScreen: View {
         MarkerCard(
             marker: marker,
             fps: viewModel.fps,
-            flashEvent: viewModel.flashEvent
+            markerFlashTimestamps: viewModel.markerFlashTimestamps
         )
         .contentShape(Rectangle())
         .onTapGesture {

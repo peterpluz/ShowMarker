@@ -24,12 +24,9 @@ final class TimelineViewModel: ObservableObject {
 
     // MARK: - Marker Crossing Detection
 
-    struct FlashEvent: Equatable {
-        let markerID: UUID
-        let eventID: UUID
-    }
-
-    @Published var flashEvent: FlashEvent?
+    // Dictionary storing last flash timestamp for each marker
+    // Using Date ensures unique value for each crossing, triggering onChange reliably
+    @Published var markerFlashTimestamps: [UUID: Date] = [:]
     private var previousTime: Double = 0
     private let crossingThreshold: Double = 1.0 // Maximum time delta to consider as continuous playback (increased for reliability)
 
@@ -167,14 +164,10 @@ final class TimelineViewModel: ObservableObject {
                     self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime
                 }
 
-                // Trigger flash for each crossed marker with staggered timing
-                for (index, marker) in crossedMarkers.enumerated() {
-                    // Stagger events by 16ms (one frame at 60fps) to ensure each onChange fires
-                    let delay = Double(index) * 0.016
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                        self.flashEvent = FlashEvent(markerID: marker.id, eventID: UUID())
-                    }
+                // Update timestamp for each crossed marker immediately
+                // Dictionary updates are batched by SwiftUI and each marker gets its update
+                for marker in crossedMarkers {
+                    self.markerFlashTimestamps[marker.id] = Date()
                 }
 
                 self.previousTime = newTime
