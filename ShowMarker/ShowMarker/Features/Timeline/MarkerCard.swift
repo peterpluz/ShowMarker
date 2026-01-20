@@ -4,7 +4,7 @@ struct MarkerCard: View {
 
     let marker: TimelineMarker
     let fps: Int
-    let markerFlashTimestamps: [UUID: Date]
+    let markerFlashTimestamps: [UUID: Int]
 
     @State private var flashOpacity: Double = 0
 

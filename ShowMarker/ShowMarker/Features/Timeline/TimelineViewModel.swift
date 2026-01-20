@@ -24,11 +24,11 @@ final class TimelineViewModel: ObservableObject {
 
     // MARK: - Marker Crossing Detection
 
-    // Dictionary storing last flash timestamp for each marker
-    // Using Date ensures unique value for each crossing, triggering onChange reliably
-    @Published var markerFlashTimestamps: [UUID: Date] = [:]
+    // Dictionary storing flash trigger counter for each marker
+    // Using incrementing Int ensures unique value for each crossing, triggering onChange reliably
+    @Published var markerFlashTimestamps: [UUID: Int] = [:]
+    private var flashCounter: Int = 0
     private var previousTime: Double = 0
-    private let crossingThreshold: Double = 1.0 // Maximum time delta to consider as continuous playback (increased for reliability)
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -152,9 +152,9 @@ final class TimelineViewModel: ObservableObject {
 
                 let timeDelta = newTime - self.previousTime
 
-                // Only trigger on forward movement within threshold (continuous playback)
-                // Ignore backward scrubbing, seeks/jumps, and pauses
-                guard timeDelta > 0 && timeDelta < self.crossingThreshold else {
+                // Only trigger on forward movement (continuous playback)
+                // Ignore backward scrubbing and pauses
+                guard timeDelta > 0 else {
                     self.previousTime = newTime
                     return
                 }
@@ -164,10 +164,11 @@ final class TimelineViewModel: ObservableObject {
                     self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime
                 }
 
-                // Update timestamp for each crossed marker immediately
-                // Dictionary updates are batched by SwiftUI and each marker gets its update
+                // Update flash counter for each crossed marker with unique incrementing value
+                // Guarantees onChange fires for every marker, even if processed in same cycle
                 for marker in crossedMarkers {
-                    self.markerFlashTimestamps[marker.id] = Date()
+                    self.flashCounter += 1
+                    self.markerFlashTimestamps[marker.id] = self.flashCounter
                 }
 
                 self.previousTime = newTime
