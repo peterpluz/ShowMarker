@@ -148,8 +148,12 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
 
         // MARK: - Marker Crossing Detection
-        // Detect when playhead crosses a marker during forward playback
-        $currentTime
+        // ✅ CRITICAL FIX: Subscribe to UNTHROTTLED audioPlayer.$currentTime
+        // The throttled $currentTime skips intermediate updates, causing markers
+        // to be randomly missed if they fall between throttled updates.
+        // Example: If real time updates are 1.000->1.010->1.020->1.030 but throttled
+        // to 1.000->1.032, a marker at 1.020 will be skipped!
+        audioPlayer.$currentTime
             .sink { [weak self] newTime in
                 guard let self = self else { return }
 
