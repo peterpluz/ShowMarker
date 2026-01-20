@@ -67,14 +67,16 @@ struct MarkerCard: View {
     }
 
     private func triggerFlashEffect() {
-        // Instant attack: immediately set to full opacity (no animation)
-        flashOpacity = 1.0
+        // Instant attack: immediately set to full opacity without animation
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            flashOpacity = 1.0
+        }
 
-        // Smooth decay: fade out over 0.5 seconds (on next runloop to ensure instant flash is visible)
-        DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.5)) {
-                flashOpacity = 0
-            }
+        // Smooth decay: fade out over 0.5 seconds
+        withAnimation(.easeOut(duration: 0.5)) {
+            flashOpacity = 0
         }
     }
 }
