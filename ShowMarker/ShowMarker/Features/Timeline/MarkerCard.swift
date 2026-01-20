@@ -5,8 +5,11 @@ struct MarkerCard: View {
     let marker: TimelineMarker
     let fps: Int
     let markerFlashTimestamps: [UUID: Int]
+    let draggedMarkerID: UUID?
+    let draggedMarkerPreviewTime: Double?
 
     @State private var flashOpacity: Double = 0
+    @State private var pulsePhase: Double = 0
 
     var body: some View {
         HStack(spacing: 12) {
@@ -41,7 +44,7 @@ struct MarkerCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color.accentColor.opacity(flashOpacity * 0.3))
+                .fill(Color.accentColor.opacity(overlayOpacity))
                 .allowsHitTesting(false)
         )
         .contentShape(Rectangle())
@@ -52,10 +55,45 @@ struct MarkerCard: View {
                 triggerFlashEffect()
             }
         }
+        .onChange(of: isDragging) { dragging in
+            if dragging {
+                startPulseAnimation()
+            } else {
+                stopPulseAnimation()
+            }
+        }
+        .onAppear {
+            if isDragging {
+                startPulseAnimation()
+            }
+        }
     }
 
+    // MARK: - Computed Properties
+
+    private var isDragging: Bool {
+        draggedMarkerID == marker.id
+    }
+
+    private var overlayOpacity: Double {
+        if isDragging {
+            // Pulsing animation: sine wave between 0.15 and 0.45
+            return 0.3 + 0.15 * sin(pulsePhase)
+        } else {
+            // Normal flash effect
+            return flashOpacity * 0.3
+        }
+    }
+
+    // MARK: - Helper Methods
+
     private func timecode() -> String {
-        let totalFrames = Int(marker.timeSeconds * Double(fps))
+        // Use preview time if this marker is being dragged, otherwise use actual time
+        let timeToDisplay = (isDragging && draggedMarkerPreviewTime != nil)
+            ? draggedMarkerPreviewTime!
+            : marker.timeSeconds
+
+        let totalFrames = Int(timeToDisplay * Double(fps))
         let frames = totalFrames % fps
         let totalSeconds = totalFrames / fps
         let seconds = totalSeconds % 60
@@ -75,6 +113,20 @@ struct MarkerCard: View {
             withAnimation(.easeOut(duration: 0.5)) {
                 flashOpacity = 0
             }
+        }
+    }
+
+    private func startPulseAnimation() {
+        // Start continuous sine wave animation
+        withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+            pulsePhase = .pi * 2
+        }
+    }
+
+    private func stopPulseAnimation() {
+        // Stop animation and reset phase
+        withAnimation(.linear(duration: 0.2)) {
+            pulsePhase = 0
         }
     }
 }

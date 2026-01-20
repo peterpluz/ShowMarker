@@ -30,6 +30,12 @@ final class TimelineViewModel: ObservableObject {
     private var flashCounter: Int = 0
     private var previousTime: Double = 0
 
+    // MARK: - Marker Drag State
+
+    // Tracks which marker is being dragged and its preview time
+    @Published var draggedMarkerID: UUID?
+    @Published var draggedMarkerPreviewTime: Double?
+
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Computed Properties (Single Source of Truth from Repository)
