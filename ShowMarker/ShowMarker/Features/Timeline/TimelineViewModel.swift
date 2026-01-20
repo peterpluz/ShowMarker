@@ -179,8 +179,9 @@ final class TimelineViewModel: ObservableObject {
                 print("🔍 [TimelineViewModel] currentTime update: \(String(format: "%.3f", newTime))s, delta: \(String(format: "%.3f", timeDelta))s")
 
                 // Find all markers that were crossed in this time interval
+                // Use <= on left side to include markers exactly at previousTime (e.g., marker at 0.000s when starting from 0.000s)
                 let crossedMarkers = self.markers.filter { marker in
-                    self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime
+                    self.previousTime <= marker.timeSeconds && marker.timeSeconds <= newTime
                 }
 
                 // 🔍 DIAGNOSTIC: Log crossed markers detection
