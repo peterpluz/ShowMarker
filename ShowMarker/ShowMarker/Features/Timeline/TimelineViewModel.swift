@@ -32,6 +32,7 @@ final class TimelineViewModel: ObservableObject {
     @Published var flashEvent: FlashEvent?
     private var previousTime: Double = 0
     private let crossingThreshold: Double = 0.2 // Maximum time delta to consider as continuous playback
+    private var flashEventResetTask: DispatchWorkItem?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -166,13 +167,19 @@ final class TimelineViewModel: ObservableObject {
                 for marker in self.markers {
                     // Crossing condition: marker is between previous and current time
                     if self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime {
+                        // Cancel any pending reset task to prevent race conditions
+                        // when multiple markers are crossed within 0.6s of each other
+                        self.flashEventResetTask?.cancel()
+
                         // Trigger flash effect for this marker with unique event ID
                         self.flashEvent = FlashEvent(markerID: marker.id, eventID: UUID())
 
-                        // Reset after animation completes (0.5s effect + 0.1s buffer)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                            self.flashEvent = nil
+                        // Schedule reset after animation completes (0.5s effect + 0.1s buffer)
+                        let resetTask = DispatchWorkItem { [weak self] in
+                            self?.flashEvent = nil
                         }
+                        self.flashEventResetTask = resetTask
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: resetTask)
 
                         // Only flash one marker per update (the first crossed)
                         break
