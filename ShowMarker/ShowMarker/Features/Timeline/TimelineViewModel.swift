@@ -24,14 +24,25 @@ final class TimelineViewModel: ObservableObject {
 
     // MARK: - Marker Crossing Detection
 
-    struct FlashEvent: Equatable {
+    // Event stream for marker flash events
+    // Using PassthroughSubject ensures EVERY event is delivered to ALL subscribers
+    // Unlike @Published Dictionary which can batch/coalesce rapid updates
+    struct MarkerFlashEvent: Equatable {
         let markerID: UUID
-        let eventID: UUID
+        let markerName: String
+        let eventID: Int
+        let timestamp: Date
     }
 
-    @Published var flashEvent: FlashEvent?
+    let markerFlashPublisher = PassthroughSubject<MarkerFlashEvent, Never>()
+    private var flashCounter: Int = 0
     private var previousTime: Double = 0
-    private let crossingThreshold: Double = 0.2 // Maximum time delta to consider as continuous playback
+
+    // MARK: - Marker Drag State
+
+    // Tracks which marker is being dragged and its preview time
+    @Published var draggedMarkerID: UUID?
+    @Published var draggedMarkerPreviewTime: Double?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -54,7 +65,7 @@ final class TimelineViewModel: ObservableObject {
     }
 
     var markers: [TimelineMarker] {
-        timeline?.markers ?? []
+        (timeline?.markers ?? []).sorted { $0.timeSeconds < $1.timeSeconds }
     }
     
     // MARK: - Computed
@@ -155,28 +166,49 @@ final class TimelineViewModel: ObservableObject {
 
                 let timeDelta = newTime - self.previousTime
 
-                // Only trigger on forward movement within threshold (continuous playback)
-                // Ignore backward scrubbing, seeks/jumps, and pauses
-                guard timeDelta > 0 && timeDelta < self.crossingThreshold else {
+                // Only trigger on forward movement (continuous playback)
+                // Ignore backward scrubbing and pauses
+                guard timeDelta > 0 else {
                     self.previousTime = newTime
                     return
                 }
 
-                // Find markers that were crossed in this time interval
-                for marker in self.markers {
-                    // Crossing condition: marker is between previous and current time
-                    if self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime {
-                        // Trigger flash effect for this marker with unique event ID
-                        self.flashEvent = FlashEvent(markerID: marker.id, eventID: UUID())
+                // 🔍 DIAGNOSTIC: Log timing information
+                print("🔍 [TimelineViewModel] currentTime update: \(String(format: "%.3f", newTime))s, delta: \(String(format: "%.3f", timeDelta))s")
 
-                        // Reset after animation completes (0.5s effect + 0.1s buffer)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                            self.flashEvent = nil
-                        }
+                // Find all markers that were crossed in this time interval
+                // Use <= on left side to include markers exactly at previousTime (e.g., marker at 0.000s when starting from 0.000s)
+                let crossedMarkers = self.markers.filter { marker in
+                    self.previousTime <= marker.timeSeconds && marker.timeSeconds <= newTime
+                }
 
-                        // Only flash one marker per update (the first crossed)
-                        break
+                // 🔍 DIAGNOSTIC: Log crossed markers detection
+                if !crossedMarkers.isEmpty {
+                    print("🔍 [TimelineViewModel] Detected \(crossedMarkers.count) crossed marker(s):")
+                    print("   Time range: \(String(format: "%.3f", self.previousTime)) → \(String(format: "%.3f", newTime))")
+                    for marker in crossedMarkers {
+                        print("   ✓ '\(marker.name)' at \(String(format: "%.3f", marker.timeSeconds))s")
                     }
+                }
+
+                // Publish flash event for each crossed marker
+                // PassthroughSubject guarantees EVERY event is delivered to ALL subscribers
+                // No batching/coalescing like @Published Dictionary
+                for marker in crossedMarkers {
+                    self.flashCounter += 1
+                    let event = MarkerFlashEvent(
+                        markerID: marker.id,
+                        markerName: marker.name,
+                        eventID: self.flashCounter,
+                        timestamp: Date()
+                    )
+
+                    // 🔍 DIAGNOSTIC: Log event publishing
+                    print("   📤 [TimelineViewModel] Publishing event #\(event.eventID) for '\(event.markerName)'")
+
+                    self.markerFlashPublisher.send(event)
+
+                    print("   ✅ [TimelineViewModel] Event #\(event.eventID) sent to stream")
                 }
 
                 self.previousTime = newTime
@@ -330,6 +362,18 @@ final class TimelineViewModel: ObservableObject {
     
     func togglePlayPause() {
         audioPlayer.togglePlayPause()
+
+        // 🔍 DIAGNOSTIC: Log all markers at playback start
+        if !isPlaying { // About to start playing
+            print("\n🎬 [TimelineViewModel] ========== PLAYBACK STARTED ==========")
+            print("🎬 Total markers: \(markers.count)")
+            print("🎬 Current time: \(String(format: "%.3f", currentTime))s")
+            print("🎬 Markers list:")
+            for (index, marker) in markers.enumerated() {
+                print("   \(index + 1). '\(marker.name)' at \(String(format: "%.3f", marker.timeSeconds))s")
+            }
+            print("🎬 ================================================\n")
+        }
     }
     
     func seek(to time: Double) {

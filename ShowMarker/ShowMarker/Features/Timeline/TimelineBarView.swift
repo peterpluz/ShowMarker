@@ -24,6 +24,11 @@ struct TimelineBarView: View {
 
     @State private var capsuleDragStart: CGFloat?
 
+    // MARK: - Marker Drag State (Bindings to ViewModel)
+
+    @Binding var draggedMarkerID: UUID?
+    @Binding var draggedMarkerPreviewTime: Double?
+
     // MARK: - Constants
 
     private static let barHeight: CGFloat = 140
@@ -36,8 +41,6 @@ struct TimelineBarView: View {
     private static let indicatorHeight: CGFloat = 6
     private static let rulerHeight: CGFloat = 24
 
-    @State private var draggedMarkerID: UUID?
-    @State private var draggedMarkerPreviewTime: Double?
     @State private var dragStartTime: Double?
 
     // MARK: - Timeline Drag State

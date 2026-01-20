@@ -112,7 +112,9 @@ struct TimelineScreen: View {
         MarkerCard(
             marker: marker,
             fps: viewModel.fps,
-            flashEvent: viewModel.flashEvent
+            markerFlashPublisher: viewModel.markerFlashPublisher,
+            draggedMarkerID: viewModel.draggedMarkerID,
+            draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -273,7 +275,9 @@ struct TimelineScreen: View {
                     viewModel.moveMarker(marker, to: time)
                 }
             },
-            zoomScale: $viewModel.zoomScale
+            zoomScale: $viewModel.zoomScale,
+            draggedMarkerID: $viewModel.draggedMarkerID,
+            draggedMarkerPreviewTime: $viewModel.draggedMarkerPreviewTime
         )
         .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)  // ✅ FIX: Force redraw on trigger toggle
     }

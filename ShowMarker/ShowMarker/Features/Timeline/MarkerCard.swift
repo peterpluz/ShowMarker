@@ -1,12 +1,17 @@
 import SwiftUI
+import Combine
 
 struct MarkerCard: View {
 
     let marker: TimelineMarker
     let fps: Int
-    let flashEvent: TimelineViewModel.FlashEvent?
+    let markerFlashPublisher: PassthroughSubject<TimelineViewModel.MarkerFlashEvent, Never>
+    let draggedMarkerID: UUID?
+    let draggedMarkerPreviewTime: Double?
 
     @State private var flashOpacity: Double = 0
+    @State private var pulsePhase: Double = 0
+    @State private var lastProcessedEventID: Int? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -35,22 +40,81 @@ struct MarkerCard: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8) // ⬅️ ключевое уменьшение высоты
-        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(UIColor.secondarySystemGroupedBackground))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.accentColor.opacity(flashOpacity * 0.3))
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.accentColor.opacity(overlayOpacity))
                 .allowsHitTesting(false)
         )
-        .onChange(of: flashEvent) { event in
-            // Trigger flash only if this event is for this marker
-            if let event = event, event.markerID == marker.id {
-                triggerFlashEffect()
+        .contentShape(Rectangle())
+        .listRowInsets(EdgeInsets())
+        .onReceive(markerFlashPublisher) { event in
+            // Only process events for THIS marker
+            guard event.markerID == marker.id else { return }
+
+            // 🔍 DIAGNOSTIC: Log event reception
+            print("   📥 [MarkerCard] '\(marker.name)' received event #\(event.eventID)")
+
+            // Check if already processed (shouldn't happen with event stream, but safety check)
+            if event.eventID == lastProcessedEventID {
+                print("   ⚠️ [MarkerCard] '\(marker.name)' skipping duplicate event #\(event.eventID)")
+                return
             }
+
+            // Process the flash event
+            lastProcessedEventID = event.eventID
+            print("   ⚡️ [MarkerCard] '\(marker.name)' processing event #\(event.eventID)")
+            triggerFlashEffect()
+        }
+        .onChange(of: isDragging) { dragging in
+            if dragging {
+                startPulseAnimation()
+            } else {
+                stopPulseAnimation()
+            }
+        }
+        .onAppear {
+            // 🔍 DIAGNOSTIC: Track visibility
+            print("   👁️ [MarkerCard] '\(marker.name)' appeared in viewport, subscribed to event stream")
+
+            if isDragging {
+                startPulseAnimation()
+            }
+        }
+        .onDisappear {
+            // 🔍 DIAGNOSTIC: Track visibility
+            print("   👁️ [MarkerCard] '\(marker.name)' disappeared from viewport")
         }
     }
 
+    // MARK: - Computed Properties
+
+    private var isDragging: Bool {
+        draggedMarkerID == marker.id
+    }
+
+    private var overlayOpacity: Double {
+        if isDragging {
+            // Pulsing animation: sine wave between 0.15 and 0.45
+            return 0.3 + 0.15 * sin(pulsePhase)
+        } else {
+            // Normal flash effect
+            return flashOpacity * 0.3
+        }
+    }
+
+    // MARK: - Helper Methods
+
     private func timecode() -> String {
-        let totalFrames = Int(marker.timeSeconds * Double(fps))
+        // Use preview time if this marker is being dragged, otherwise use actual time
+        let timeToDisplay = (isDragging && draggedMarkerPreviewTime != nil)
+            ? draggedMarkerPreviewTime!
+            : marker.timeSeconds
+
+        let totalFrames = Int(timeToDisplay * Double(fps))
         let frames = totalFrames % fps
         let totalSeconds = totalFrames / fps
         let seconds = totalSeconds % 60
@@ -62,14 +126,31 @@ struct MarkerCard: View {
     }
 
     private func triggerFlashEffect() {
+        // 🔍 DIAGNOSTIC: Log flash trigger
+        print("      💥 [MarkerCard] Flash effect triggered for '\(marker.name)', flashOpacity: \(flashOpacity) → 1.0")
+
         // Instant attack: immediately set to full opacity (no animation)
         flashOpacity = 1.0
 
-        // Smooth decay: fade out over 0.5 seconds (on next runloop to ensure instant flash is visible)
-        DispatchQueue.main.async {
+        // Smooth decay: fade out over 0.5 seconds (deferred to next run loop)
+        Task { @MainActor in
             withAnimation(.easeOut(duration: 0.5)) {
                 flashOpacity = 0
             }
+        }
+    }
+
+    private func startPulseAnimation() {
+        // Start continuous sine wave animation
+        withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+            pulsePhase = .pi * 2
+        }
+    }
+
+    private func stopPulseAnimation() {
+        // Stop animation and reset phase
+        withAnimation(.linear(duration: 0.2)) {
+            pulsePhase = 0
         }
     }
 }
