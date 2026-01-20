@@ -35,16 +35,17 @@ struct MarkerCard: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8) // ⬅️ ключевое уменьшение высоты
-        .contentShape(Rectangle())
-        .listRowBackground(
+        .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(UIColor.secondarySystemGroupedBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.accentColor.opacity(flashOpacity * 0.3))
-                        .allowsHitTesting(false)
-                )
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.accentColor.opacity(flashOpacity * 0.3))
+                .allowsHitTesting(false)
+        )
+        .contentShape(Rectangle())
+        .listRowInsets(EdgeInsets())
         .onChange(of: flashEvent) { event in
             // Trigger flash only if this event is for this marker
             if let event = event, event.markerID == marker.id {
