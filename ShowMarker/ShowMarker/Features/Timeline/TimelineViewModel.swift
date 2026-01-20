@@ -54,7 +54,7 @@ final class TimelineViewModel: ObservableObject {
     }
 
     var markers: [TimelineMarker] {
-        timeline?.markers ?? []
+        (timeline?.markers ?? []).sorted { $0.timeSeconds < $1.timeSeconds }
     }
     
     // MARK: - Computed
