@@ -112,7 +112,7 @@ struct TimelineScreen: View {
         MarkerCard(
             marker: marker,
             fps: viewModel.fps,
-            markerFlashTimestamps: viewModel.markerFlashTimestamps,
+            markerFlashPublisher: viewModel.markerFlashPublisher,
             draggedMarkerID: viewModel.draggedMarkerID,
             draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime
         )

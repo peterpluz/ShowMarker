@@ -24,19 +24,17 @@ final class TimelineViewModel: ObservableObject {
 
     // MARK: - Marker Crossing Detection
 
-    // Dictionary storing flash trigger counter for each marker
-    // Using incrementing Int ensures unique value for each crossing, triggering onChange reliably
-    @Published var markerFlashTimestamps: [UUID: Int] = [:] {
-        didSet {
-            // 🔍 DIAGNOSTIC: Log dictionary changes
-            let changedKeys = markerFlashTimestamps.filter { newKey, newValue in
-                oldValue[newKey] != newValue
-            }
-            if !changedKeys.isEmpty {
-                print("   🔄 [TimelineViewModel] markerFlashTimestamps changed: \(changedKeys.count) entries updated")
-            }
-        }
+    // Event stream for marker flash events
+    // Using PassthroughSubject ensures EVERY event is delivered to ALL subscribers
+    // Unlike @Published Dictionary which can batch/coalesce rapid updates
+    struct MarkerFlashEvent: Equatable {
+        let markerID: UUID
+        let markerName: String
+        let eventID: Int
+        let timestamp: Date
     }
+
+    let markerFlashPublisher = PassthroughSubject<MarkerFlashEvent, Never>()
     private var flashCounter: Int = 0
     private var previousTime: Double = 0
 
@@ -193,14 +191,24 @@ final class TimelineViewModel: ObservableObject {
                     }
                 }
 
-                // Update flash counter for each crossed marker with unique incrementing value
-                // Guarantees onChange fires for every marker, even if processed in same cycle
+                // Publish flash event for each crossed marker
+                // PassthroughSubject guarantees EVERY event is delivered to ALL subscribers
+                // No batching/coalescing like @Published Dictionary
                 for marker in crossedMarkers {
                     self.flashCounter += 1
-                    self.markerFlashTimestamps[marker.id] = self.flashCounter
+                    let event = MarkerFlashEvent(
+                        markerID: marker.id,
+                        markerName: marker.name,
+                        eventID: self.flashCounter,
+                        timestamp: Date()
+                    )
 
-                    // 🔍 DIAGNOSTIC: Log dictionary update
-                    print("   📝 [TimelineViewModel] Updated '\(marker.name)' → counter: \(self.flashCounter)")
+                    // 🔍 DIAGNOSTIC: Log event publishing
+                    print("   📤 [TimelineViewModel] Publishing event #\(event.eventID) for '\(event.markerName)'")
+
+                    self.markerFlashPublisher.send(event)
+
+                    print("   ✅ [TimelineViewModel] Event #\(event.eventID) sent to stream")
                 }
 
                 self.previousTime = newTime

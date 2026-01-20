@@ -1,16 +1,17 @@
 import SwiftUI
+import Combine
 
 struct MarkerCard: View {
 
     let marker: TimelineMarker
     let fps: Int
-    let markerFlashTimestamps: [UUID: Int]
+    let markerFlashPublisher: PassthroughSubject<TimelineViewModel.MarkerFlashEvent, Never>
     let draggedMarkerID: UUID?
     let draggedMarkerPreviewTime: Double?
 
     @State private var flashOpacity: Double = 0
     @State private var pulsePhase: Double = 0
-    @State private var lastProcessedTimestamp: Int? = nil
+    @State private var lastProcessedEventID: Int? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -50,15 +51,23 @@ struct MarkerCard: View {
         )
         .contentShape(Rectangle())
         .listRowInsets(EdgeInsets())
-        .onChange(of: markerFlashTimestamps[marker.id]) { timestamp in
-            // 🔍 DIAGNOSTIC: Log onChange callback
-            print("   ⚡️ [MarkerCard] onChange fired for '\(marker.name)', timestamp: \(timestamp ?? 0)")
+        .onReceive(markerFlashPublisher) { event in
+            // Only process events for THIS marker
+            guard event.markerID == marker.id else { return }
 
-            // Trigger flash when this marker's timestamp changes (marker was crossed)
-            if let timestamp = timestamp, timestamp != lastProcessedTimestamp {
-                lastProcessedTimestamp = timestamp
-                triggerFlashEffect()
+            // 🔍 DIAGNOSTIC: Log event reception
+            print("   📥 [MarkerCard] '\(marker.name)' received event #\(event.eventID)")
+
+            // Check if already processed (shouldn't happen with event stream, but safety check)
+            if event.eventID == lastProcessedEventID {
+                print("   ⚠️ [MarkerCard] '\(marker.name)' skipping duplicate event #\(event.eventID)")
+                return
             }
+
+            // Process the flash event
+            lastProcessedEventID = event.eventID
+            print("   ⚡️ [MarkerCard] '\(marker.name)' processing event #\(event.eventID)")
+            triggerFlashEffect()
         }
         .onChange(of: isDragging) { dragging in
             if dragging {
@@ -69,15 +78,7 @@ struct MarkerCard: View {
         }
         .onAppear {
             // 🔍 DIAGNOSTIC: Track visibility
-            print("   👁️ [MarkerCard] '\(marker.name)' appeared in viewport")
-
-            // 🔧 FIX: Check if marker was already crossed before this card appeared
-            // If dictionary has a value for this marker AND we haven't processed it yet, trigger flash
-            if let timestamp = markerFlashTimestamps[marker.id], timestamp != lastProcessedTimestamp {
-                print("   🔧 [MarkerCard] '\(marker.name)' was crossed while offscreen (timestamp: \(timestamp)), triggering flash now")
-                lastProcessedTimestamp = timestamp
-                triggerFlashEffect()
-            }
+            print("   👁️ [MarkerCard] '\(marker.name)' appeared in viewport, subscribed to event stream")
 
             if isDragging {
                 startPulseAnimation()
