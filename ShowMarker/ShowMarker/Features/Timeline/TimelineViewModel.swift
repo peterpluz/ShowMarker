@@ -26,7 +26,17 @@ final class TimelineViewModel: ObservableObject {
 
     // Dictionary storing flash trigger counter for each marker
     // Using incrementing Int ensures unique value for each crossing, triggering onChange reliably
-    @Published var markerFlashTimestamps: [UUID: Int] = [:]
+    @Published var markerFlashTimestamps: [UUID: Int] = [:] {
+        didSet {
+            // 🔍 DIAGNOSTIC: Log dictionary changes
+            let changedKeys = markerFlashTimestamps.filter { newKey, newValue in
+                oldValue[newKey] != newValue
+            }
+            if !changedKeys.isEmpty {
+                print("   🔄 [TimelineViewModel] markerFlashTimestamps changed: \(changedKeys.count) entries updated")
+            }
+        }
+    }
     private var flashCounter: Int = 0
     private var previousTime: Double = 0
 
@@ -165,9 +175,21 @@ final class TimelineViewModel: ObservableObject {
                     return
                 }
 
+                // 🔍 DIAGNOSTIC: Log timing information
+                print("🔍 [TimelineViewModel] currentTime update: \(String(format: "%.3f", newTime))s, delta: \(String(format: "%.3f", timeDelta))s")
+
                 // Find all markers that were crossed in this time interval
                 let crossedMarkers = self.markers.filter { marker in
                     self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime
+                }
+
+                // 🔍 DIAGNOSTIC: Log crossed markers detection
+                if !crossedMarkers.isEmpty {
+                    print("🔍 [TimelineViewModel] Detected \(crossedMarkers.count) crossed marker(s):")
+                    print("   Time range: \(String(format: "%.3f", self.previousTime)) → \(String(format: "%.3f", newTime))")
+                    for marker in crossedMarkers {
+                        print("   ✓ '\(marker.name)' at \(String(format: "%.3f", marker.timeSeconds))s")
+                    }
                 }
 
                 // Update flash counter for each crossed marker with unique incrementing value
@@ -175,6 +197,9 @@ final class TimelineViewModel: ObservableObject {
                 for marker in crossedMarkers {
                     self.flashCounter += 1
                     self.markerFlashTimestamps[marker.id] = self.flashCounter
+
+                    // 🔍 DIAGNOSTIC: Log dictionary update
+                    print("   📝 [TimelineViewModel] Updated '\(marker.name)' → counter: \(self.flashCounter)")
                 }
 
                 self.previousTime = newTime
@@ -328,6 +353,18 @@ final class TimelineViewModel: ObservableObject {
     
     func togglePlayPause() {
         audioPlayer.togglePlayPause()
+
+        // 🔍 DIAGNOSTIC: Log all markers at playback start
+        if !isPlaying { // About to start playing
+            print("\n🎬 [TimelineViewModel] ========== PLAYBACK STARTED ==========")
+            print("🎬 Total markers: \(markers.count)")
+            print("🎬 Current time: \(String(format: "%.3f", currentTime))s")
+            print("🎬 Markers list:")
+            for (index, marker) in markers.enumerated() {
+                print("   \(index + 1). '\(marker.name)' at \(String(format: "%.3f", marker.timeSeconds))s")
+            }
+            print("🎬 ================================================\n")
+        }
     }
     
     func seek(to time: Double) {

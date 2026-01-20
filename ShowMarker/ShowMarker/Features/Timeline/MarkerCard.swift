@@ -50,6 +50,9 @@ struct MarkerCard: View {
         .contentShape(Rectangle())
         .listRowInsets(EdgeInsets())
         .onChange(of: markerFlashTimestamps[marker.id]) { timestamp in
+            // 🔍 DIAGNOSTIC: Log onChange callback
+            print("   ⚡️ [MarkerCard] onChange fired for '\(marker.name)', timestamp: \(timestamp ?? 0)")
+
             // Trigger flash when this marker's timestamp changes (marker was crossed)
             if timestamp != nil {
                 triggerFlashEffect()
@@ -63,9 +66,16 @@ struct MarkerCard: View {
             }
         }
         .onAppear {
+            // 🔍 DIAGNOSTIC: Track visibility
+            print("   👁️ [MarkerCard] '\(marker.name)' appeared in viewport")
+
             if isDragging {
                 startPulseAnimation()
             }
+        }
+        .onDisappear {
+            // 🔍 DIAGNOSTIC: Track visibility
+            print("   👁️ [MarkerCard] '\(marker.name)' disappeared from viewport")
         }
     }
 
@@ -105,6 +115,9 @@ struct MarkerCard: View {
     }
 
     private func triggerFlashEffect() {
+        // 🔍 DIAGNOSTIC: Log flash trigger
+        print("      💥 [MarkerCard] Flash effect triggered for '\(marker.name)', flashOpacity: \(flashOpacity) → 1.0")
+
         // Instant attack: immediately set to full opacity (no animation)
         flashOpacity = 1.0
 
