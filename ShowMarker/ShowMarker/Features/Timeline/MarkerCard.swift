@@ -10,6 +10,7 @@ struct MarkerCard: View {
 
     @State private var flashOpacity: Double = 0
     @State private var pulsePhase: Double = 0
+    @State private var lastProcessedTimestamp: Int? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -54,7 +55,8 @@ struct MarkerCard: View {
             print("   ⚡️ [MarkerCard] onChange fired for '\(marker.name)', timestamp: \(timestamp ?? 0)")
 
             // Trigger flash when this marker's timestamp changes (marker was crossed)
-            if timestamp != nil {
+            if let timestamp = timestamp, timestamp != lastProcessedTimestamp {
+                lastProcessedTimestamp = timestamp
                 triggerFlashEffect()
             }
         }
@@ -68,6 +70,14 @@ struct MarkerCard: View {
         .onAppear {
             // 🔍 DIAGNOSTIC: Track visibility
             print("   👁️ [MarkerCard] '\(marker.name)' appeared in viewport")
+
+            // 🔧 FIX: Check if marker was already crossed before this card appeared
+            // If dictionary has a value for this marker AND we haven't processed it yet, trigger flash
+            if let timestamp = markerFlashTimestamps[marker.id], timestamp != lastProcessedTimestamp {
+                print("   🔧 [MarkerCard] '\(marker.name)' was crossed while offscreen (timestamp: \(timestamp)), triggering flash now")
+                lastProcessedTimestamp = timestamp
+                triggerFlashEffect()
+            }
 
             if isDragging {
                 startPulseAnimation()
