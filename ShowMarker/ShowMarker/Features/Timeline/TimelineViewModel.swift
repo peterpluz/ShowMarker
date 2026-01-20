@@ -162,16 +162,18 @@ final class TimelineViewModel: ObservableObject {
                     return
                 }
 
-                // Find markers that were crossed in this time interval
-                for marker in self.markers {
-                    // Crossing condition: marker is between previous and current time
-                    if self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime {
-                        // Trigger flash effect for this marker with unique event ID
-                        // Each new event has a unique eventID, ensuring onChange always fires
-                        self.flashEvent = FlashEvent(markerID: marker.id, eventID: UUID())
+                // Find all markers that were crossed in this time interval
+                let crossedMarkers = self.markers.filter { marker in
+                    self.previousTime < marker.timeSeconds && marker.timeSeconds <= newTime
+                }
 
-                        // Only flash one marker per update (the first crossed)
-                        break
+                // Trigger flash for each crossed marker with staggered timing
+                for (index, marker) in crossedMarkers.enumerated() {
+                    // Stagger events by 16ms (one frame at 60fps) to ensure each onChange fires
+                    let delay = Double(index) * 0.016
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        self.flashEvent = FlashEvent(markerID: marker.id, eventID: UUID())
                     }
                 }
 
