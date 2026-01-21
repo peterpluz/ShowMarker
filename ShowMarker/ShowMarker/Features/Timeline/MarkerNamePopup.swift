@@ -21,29 +21,32 @@ struct MarkerNamePopup: View {
 
     var body: some View {
         ZStack {
-            // Dimmed background
-            Color.black.opacity(0.4)
+            // Dimmed background with blur effect (iOS style)
+            Color.black.opacity(0.25)
+                .background(.ultraThinMaterial)
                 .ignoresSafeArea()
                 .onTapGesture {
                     onCancel()
                 }
 
             // Popup content
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
                 // Title
                 Text("Название маркера")
-                    .font(.system(size: 20, weight: .semibold))
-                    .padding(.top, 24)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .padding(.top, 20)
 
                 // Text field with clear button
                 HStack(spacing: 8) {
                     TextField("", text: $markerName)
                         .font(.system(size: 17))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                         .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color(.systemGray5))
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color(.tertiarySystemFill))
                         )
                         .focused($isTextFieldFocused)
 
@@ -53,16 +56,16 @@ struct MarkerNamePopup: View {
                             markerName = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
+                                .foregroundColor(Color(.tertiaryLabel))
                                 .font(.system(size: 20))
                         }
                         .padding(.trailing, 4)
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
 
                 // Buttons
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     // Cancel button
                     Button {
                         onCancel()
@@ -73,9 +76,11 @@ struct MarkerNamePopup: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 50)
                             .background(
-                                Capsule().fill(Color(.systemGray5))
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color(.tertiarySystemFill))
                             )
                     }
+                    .buttonStyle(.plain)
 
                     // Save button
                     Button {
@@ -88,19 +93,23 @@ struct MarkerNamePopup: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 50)
                             .background(
-                                Capsule().fill(Color.accentColor)
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color.accentColor)
                             )
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 20)
             }
-            .frame(width: 340)
+            .frame(width: 320)
             .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(.systemBackground))
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
             )
-            .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.15), radius: 30, x: 0, y: 10)
+            .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 5)
         }
         .onAppear {
             // Auto-focus text field when popup appears
