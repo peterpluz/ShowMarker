@@ -206,56 +206,51 @@ struct TimelineScreen: View {
     // MARK: - Toolbar
 
     private var toolbarContent: some ToolbarContent {
-        Group {
-            // ✅ Auto-scroll toggle switch (left side)
-            ToolbarItem(placement: .navigationBarLeading) {
-                HStack(spacing: 8) {
-                    Toggle("", isOn: $viewModel.isAutoScrollEnabled)
-                        .labelsHidden()
-                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Menu {
+                // ✅ Auto-scroll toggle (moved to menu)
+                Toggle(isOn: $viewModel.isAutoScrollEnabled) {
+                    Label("Автоскролл маркеров", systemImage: "arrow.down.circle")
                 }
-            }
-            
-            // Menu button (right side)
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
-                    if hasAudio {
-                        Button {
-                            isPickerPresented = true
-                        } label: {
-                            Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
-                        }
-
-                        Button(role: .destructive) {
-                            viewModel.removeAudio()
-                        } label: {
-                            Label("Удалить аудиофайл", systemImage: "trash")
-                        }
-
-                        Divider()
+                
+                Divider()
+                
+                // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
+                if hasAudio {
+                    Button {
+                        isPickerPresented = true
+                    } label: {
+                        Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
                     }
 
-                    Button {
-                        renameText = viewModel.name
-                        isRenamingTimeline = true
+                    Button(role: .destructive) {
+                        viewModel.removeAudio()
                     } label: {
-                        Label("Переименовать таймлайн", systemImage: "pencil")
+                        Label("Удалить аудиофайл", systemImage: "trash")
                     }
 
                     Divider()
-
-                    Button {
-                        prepareExport()
-                    } label: {
-                        Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
-                    }
-                    .disabled(viewModel.markers.isEmpty)
-
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 17, weight: .semibold))
                 }
+
+                Button {
+                    renameText = viewModel.name
+                    isRenamingTimeline = true
+                } label: {
+                    Label("Переименовать таймлайн", systemImage: "pencil")
+                }
+
+                Divider()
+
+                Button {
+                    prepareExport()
+                } label: {
+                    Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
+                }
+                .disabled(viewModel.markers.isEmpty)
+
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .semibold))
             }
         }
     }

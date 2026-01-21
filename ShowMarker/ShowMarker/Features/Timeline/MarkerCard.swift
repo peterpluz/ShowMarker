@@ -58,7 +58,7 @@ struct MarkerCard: View {
             print("   ⚡️ [MarkerCard] '\(marker.name)' will trigger flash animation")
             triggerFlashEffect()
         }
-        .onChange(of: isDragging) { dragging in
+        .onChange(of: isDragging) { oldValue, dragging in
             if dragging {
                 startPulseAnimation()
             } else {

@@ -44,6 +44,9 @@ final class TimelineViewModel: ObservableObject {
     let markerFlashPublisher = PassthroughSubject<MarkerFlashEvent, Never>()
     private var flashCounter: Int = 0
     private var previousFrame: Int = -1
+    
+    // ✅ NEW: Track already-flashed markers during current playback session
+    private var flashedMarkers: Set<UUID> = []
 
     // MARK: - Marker Drag State
 
@@ -167,10 +170,11 @@ final class TimelineViewModel: ObservableObject {
             .sink { [weak self] isPlaying in
                 guard let self = self else { return }
                 if isPlaying {
-                    // Playback started - reset frame tracking
+                    // Playback started - reset frame tracking and flashed markers
                     let startFrame = Int(round(self.currentTime * Double(self.fps)))
                     self.previousFrame = startFrame
-                    print("▶️ [Detection] Playback started at frame \(startFrame)")
+                    self.flashedMarkers.removeAll()
+                    print("▶️ [Detection] Playback started at frame \(startFrame), reset flashed markers")
                 } else {
                     // Playback stopped - reset to initial state
                     self.previousFrame = -1
@@ -195,6 +199,21 @@ final class TimelineViewModel: ObservableObject {
 
                 let currentFrame = Int(round(newTime * Double(self.fps)))
                 
+                // ✅ FIX: Handle backward movement (rewind during playback)
+                if currentFrame < self.previousFrame {
+                    // User rewound during playback - clear flashed markers that are now ahead
+                    let rewindedMarkers = self.markers.filter { marker in
+                        let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
+                        return markerFrame > currentFrame
+                    }
+                    for marker in rewindedMarkers {
+                        self.flashedMarkers.remove(marker.id)
+                    }
+                    self.previousFrame = currentFrame
+                    print("⏪ [Detection] Rewound to frame \(currentFrame), cleared \(rewindedMarkers.count) flashed markers")
+                    return
+                }
+                
                 // Skip if no movement (can happen with multiple rapid updates)
                 guard currentFrame > self.previousFrame else {
                     return
@@ -204,9 +223,9 @@ final class TimelineViewModel: ObservableObject {
                 let crossedMarkers = self.markers.filter { marker in
                     let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
                     
-                    // Bootstrap case: first playback update
+                    // ✅ FIX: Include frame 0 in bootstrap case
                     if self.previousFrame == -1 {
-                        return markerFrame <= currentFrame
+                        return markerFrame >= 0 && markerFrame <= currentFrame
                     }
                     
                     // Normal case: check if marker is in the interval (previous, current]
@@ -214,9 +233,18 @@ final class TimelineViewModel: ObservableObject {
                     return self.previousFrame < markerFrame && markerFrame <= currentFrame
                 }
                 
-                // Send flash events for all crossed markers
+                // Send flash events only for markers that haven't flashed yet
                 for marker in crossedMarkers {
+                    // ✅ Skip if already flashed in this session
+                    guard !self.flashedMarkers.contains(marker.id) else {
+                        print("⏭️  [Detection] Marker '\(marker.name)' already flashed, skipping")
+                        continue
+                    }
+                    
                     let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
+                    
+                    // Mark as flashed
+                    self.flashedMarkers.insert(marker.id)
                     
                     self.flashCounter += 1
                     let event = MarkerFlashEvent(
