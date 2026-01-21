@@ -142,12 +142,10 @@ final class TimelineViewModel: ObservableObject {
         audioPlayer.$isPlaying
             .assign(to: &$isPlaying)
 
-        // ✅ FIX: Use DispatchQueue.main instead of RunLoop.main
-        // RunLoop.main gets blocked during List scroll gestures,
-        // causing timeline UI to freeze while audio continues playing.
-        // DispatchQueue.main.async dispatches work that executes even during scroll.
+        // ✅ ИСПРАВЛЕНИЕ: Убран throttle для устранения "слепых зон" в детекции маркеров
+        // AVPlayer уже обновляется с интервалом ~33ms, throttle только создавал пропуски
         audioPlayer.$currentTime
-            .throttle(for: .milliseconds(32), scheduler: DispatchQueue.main, latest: true)
+            .receive(on: DispatchQueue.main)
             .assign(to: &$currentTime)
 
         audioPlayer.$duration
@@ -173,27 +171,18 @@ final class TimelineViewModel: ObservableObject {
                     return
                 }
 
-                // 🔍 DIAGNOSTIC: Log timing information
-                print("🔍 [TimelineViewModel] currentTime update: \(String(format: "%.3f", newTime))s, delta: \(String(format: "%.3f", timeDelta))s")
+                // ✅ ИСПРАВЛЕНИЕ: Добавлена толерантность для floating point precision
+                // Маркеры могут быть на границе между обновлениями (например, 5.533505s vs 5.533389s)
+                let tolerance: Double = 0.001  // 1 миллисекунда толерантности
 
                 // Find all markers that were crossed in this time interval
-                // Use <= on left side to include markers exactly at previousTime (e.g., marker at 0.000s when starting from 0.000s)
+                // Расширяем интервал на ±tolerance для учёта погрешности floating point
                 let crossedMarkers = self.markers.filter { marker in
-                    self.previousTime <= marker.timeSeconds && marker.timeSeconds <= newTime
-                }
-
-                // 🔍 DIAGNOSTIC: Log crossed markers detection
-                if !crossedMarkers.isEmpty {
-                    print("🔍 [TimelineViewModel] Detected \(crossedMarkers.count) crossed marker(s):")
-                    print("   Time range: \(String(format: "%.3f", self.previousTime)) → \(String(format: "%.3f", newTime))")
-                    for marker in crossedMarkers {
-                        print("   ✓ '\(marker.name)' at \(String(format: "%.3f", marker.timeSeconds))s")
-                    }
+                    (self.previousTime - tolerance) <= marker.timeSeconds &&
+                    marker.timeSeconds <= (newTime + tolerance)
                 }
 
                 // Publish flash event for each crossed marker
-                // PassthroughSubject guarantees EVERY event is delivered to ALL subscribers
-                // No batching/coalescing like @Published Dictionary
                 for marker in crossedMarkers {
                     self.flashCounter += 1
                     let event = MarkerFlashEvent(
@@ -203,12 +192,7 @@ final class TimelineViewModel: ObservableObject {
                         timestamp: Date()
                     )
 
-                    // 🔍 DIAGNOSTIC: Log event publishing
-                    print("   📤 [TimelineViewModel] Publishing event #\(event.eventID) for '\(event.markerName)'")
-
                     self.markerFlashPublisher.send(event)
-
-                    print("   ✅ [TimelineViewModel] Event #\(event.eventID) sent to stream")
                 }
 
                 self.previousTime = newTime
@@ -362,18 +346,6 @@ final class TimelineViewModel: ObservableObject {
     
     func togglePlayPause() {
         audioPlayer.togglePlayPause()
-
-        // 🔍 DIAGNOSTIC: Log all markers at playback start
-        if !isPlaying { // About to start playing
-            print("\n🎬 [TimelineViewModel] ========== PLAYBACK STARTED ==========")
-            print("🎬 Total markers: \(markers.count)")
-            print("🎬 Current time: \(String(format: "%.3f", currentTime))s")
-            print("🎬 Markers list:")
-            for (index, marker) in markers.enumerated() {
-                print("   \(index + 1). '\(marker.name)' at \(String(format: "%.3f", marker.timeSeconds))s")
-            }
-            print("🎬 ================================================\n")
-        }
     }
     
     func seek(to time: Double) {
