@@ -55,10 +55,6 @@ struct MarkerCard: View {
             guard event.markerID == marker.id else { return }
             
             print("   📥 [MarkerCard] '\(marker.name)' received event #\(event.eventID)")
-
-            // ✅ ИСПРАВЛЕНИЕ: Убрана логика lastProcessedEventID
-            // Каждое событие теперь вызывает flash, независимо от eventID
-            // Это позволяет маркеру мигать при каждом пересечении playhead
             print("   ⚡️ [MarkerCard] '\(marker.name)' will trigger flash animation")
             triggerFlashEffect()
         }
@@ -112,20 +108,29 @@ struct MarkerCard: View {
     }
 
     private func triggerFlashEffect() {
-        print("      💥 [MarkerCard] '\(marker.name)' ANIMATION STARTED: flashOpacity 0.0 → 1.0")
+        print("      💥 [MarkerCard] '\(marker.name)' FLASH TRIGGERED")
         
-        // Instant attack: immediately set to full opacity (no animation)
-        flashOpacity = 1.0
-
-        // Smooth decay: fade out over 0.5 seconds
+        // ✅ CRITICAL FIX: Use withAnimation(.none) to ensure instant attack
+        // This prevents SwiftUI from applying implicit animations
+        withAnimation(.none) {
+            flashOpacity = 1.0
+        }
+        print("      ⚡️ [MarkerCard] '\(marker.name)' flashOpacity set to 1.0 (instant)")
+        
+        // ✅ Add small delay before decay to ensure attack completes
+        // This gives SwiftUI time to render the full opacity before starting fade
         Task { @MainActor in
+            // Wait one frame to ensure the full opacity is rendered
+            try? await Task.sleep(nanoseconds: 16_000_000)  // ~1 frame at 60fps
+            
+            print("      🌊 [MarkerCard] '\(marker.name)' starting decay animation")
             withAnimation(.easeOut(duration: 0.5)) {
                 flashOpacity = 0
             }
             
             // Log after animation completes
             try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
-            print("      ✅ [MarkerCard] '\(marker.name)' ANIMATION COMPLETED: flashOpacity → 0.0")
+            print("      ✅ [MarkerCard] '\(marker.name)' FLASH COMPLETED")
         }
     }
 

@@ -26,7 +26,6 @@ final class TimelineViewModel: ObservableObject {
 
     // Event stream for marker flash events
     // Using PassthroughSubject ensures EVERY event is delivered to ALL subscribers
-    // Unlike @Published Dictionary which can batch/coalesce rapid updates
     struct MarkerFlashEvent: Equatable {
         let markerID: UUID
         let markerName: String
@@ -37,7 +36,6 @@ final class TimelineViewModel: ObservableObject {
     let markerFlashPublisher = PassthroughSubject<MarkerFlashEvent, Never>()
     private var flashCounter: Int = 0
     private var previousFrame: Int = -1
-    private var triggeredMarkers: Set<UUID> = []  // Track which markers have flashed in current playback session
 
     // MARK: - Marker Drag State
 
@@ -143,8 +141,7 @@ final class TimelineViewModel: ObservableObject {
         audioPlayer.$isPlaying
             .assign(to: &$isPlaying)
 
-        // ✅ ИСПРАВЛЕНИЕ: Убран throttle для устранения "слепых зон" в детекции маркеров
-        // AVPlayer уже обновляется с интервалом ~33ms, throttle только создавал пропуски
+        // ✅ Direct assignment without throttle - AVPlayer already updates at ~33ms intervals
         audioPlayer.$currentTime
             .receive(on: DispatchQueue.main)
             .assign(to: &$currentTime)
@@ -157,53 +154,38 @@ final class TimelineViewModel: ObservableObject {
             }
             .store(in: &cancellables)
         
-        // Reset triggered markers when playback stops
+        // ✅ Reset frame tracking when playback state changes
         audioPlayer.$isPlaying
             .sink { [weak self] isPlaying in
                 guard let self = self else { return }
-                if !isPlaying {
-                    // When playback stops, clear all triggered markers
-                    // This allows markers to flash again on next playback
-                    let count = self.triggeredMarkers.count
-                    self.triggeredMarkers.removeAll()
-                    if count > 0 {
-                        print("🛑 [Detection] Playback stopped, reset \(count) triggered marker(s)")
-                    }
-                } else {
-                    // Playback started
+                if isPlaying {
+                    // Playback started - reset frame tracking
                     let startFrame = Int(round(self.currentTime * Double(self.fps)))
+                    self.previousFrame = startFrame
                     print("▶️ [Detection] Playback started at frame \(startFrame)")
+                } else {
+                    // Playback stopped - reset to initial state
+                    self.previousFrame = -1
+                    print("🛑 [Detection] Playback stopped, frame tracking reset")
                 }
             }
             .store(in: &cancellables)
 
         // MARK: - Marker Crossing Detection
-        // ✅ STATE FLAGS PATTERN: Industry-standard approach for marker detection
-        // Each marker tracks whether it has been triggered in the current playback session
+        // ✅ SIMPLIFIED: Only detect during active playback
         $currentTime
             .sink { [weak self] newTime in
                 guard let self = self else { return }
+                
+                // ✅ CRITICAL: Only detect markers during active playback
+                guard self.isPlaying else {
+                    return
+                }
 
                 let currentFrame = Int(round(newTime * Double(self.fps)))
                 
-                // Handle backward movement (rewind/seek) - reset triggered state for passed markers
-                if currentFrame < self.previousFrame {
-                    // Clear triggered flags for markers we're rewinding past
-                    let rewindedMarkers = self.markers.filter { marker in
-                        let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
-                        return currentFrame <= markerFrame && markerFrame <= self.previousFrame
-                    }
-                    for marker in rewindedMarkers {
-                        self.triggeredMarkers.remove(marker.id)
-                        print("🔄 [Detection] Marker '\(marker.name)' reset (rewind from frame \(self.previousFrame) to \(currentFrame))")
-                    }
-                    self.previousFrame = currentFrame
-                    return
-                }
-                
-                // Handle pause/stop - no movement
+                // Skip if no movement (can happen with multiple rapid updates)
                 guard currentFrame > self.previousFrame else {
-                    self.previousFrame = currentFrame
                     return
                 }
 
@@ -211,30 +193,20 @@ final class TimelineViewModel: ObservableObject {
                 let crossedMarkers = self.markers.filter { marker in
                     let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
                     
-                    // Bootstrap case: first update from -1 includes frame 0
+                    // Bootstrap case: first playback update
                     if self.previousFrame == -1 {
                         return markerFrame <= currentFrame
                     }
                     
-                    // Normal case: strict < on left prevents duplicate detections
-                    // when AVPlayer sends multiple updates at same frame (N→N)
+                    // Normal case: check if marker is in the interval (previous, current]
+                    // Using strict < on left boundary prevents duplicate detections
                     return self.previousFrame < markerFrame && markerFrame <= currentFrame
                 }
                 
-                // Trigger flash events only for markers that haven't been triggered yet
+                // Send flash events for all crossed markers
                 for marker in crossedMarkers {
                     let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
                     
-                    // Skip if already triggered in this playback session
-                    if self.triggeredMarkers.contains(marker.id) {
-                        print("⏭️  [Detection] Marker '\(marker.name)' at frame \(markerFrame) SKIPPED (already triggered in this session)")
-                        continue
-                    }
-                    
-                    // Mark as triggered
-                    self.triggeredMarkers.insert(marker.id)
-                    
-                    // Send flash event
                     self.flashCounter += 1
                     let event = MarkerFlashEvent(
                         markerID: marker.id,
@@ -243,7 +215,7 @@ final class TimelineViewModel: ObservableObject {
                         timestamp: Date()
                     )
                     self.markerFlashPublisher.send(event)
-                    print("✨ [Detection] Marker '\(marker.name)' EVENT SENT #\(self.flashCounter) at frame \(markerFrame) (interval: \(self.previousFrame)→\(currentFrame))")
+                    print("✨ [Detection] Marker '\(marker.name)' FLASH #\(self.flashCounter) at frame \(markerFrame) (interval: \(self.previousFrame)→\(currentFrame))")
                 }
 
                 self.previousFrame = currentFrame
@@ -424,8 +396,7 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Markers
     
     func addMarkerAtCurrentTime() {
-        // ✅ ИСПРАВЛЕНИЕ: Квантуем время к ближайшему кадру
-        // Это гарантирует, что маркеры всегда привязаны к кадрам таймлайна
+        // ✅ Квантуем время к ближайшему кадру
         let quantizedTime = quantizeToFrame(currentTime)
         
         let marker = TimelineMarker(
@@ -438,7 +409,7 @@ final class TimelineViewModel: ObservableObject {
     }
 
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
-        // ✅ ИСПРАВЛЕНИЕ: Квантуем время при перемещении маркера
+        // ✅ Квантуем время при перемещении маркера
         let quantizedTime = quantizeToFrame(newTime)
         
         var updatedMarker = marker
