@@ -16,6 +16,11 @@ struct TimelineScreen: View {
     @State private var exportData: Data?
     @State private var isExportPresented = false
 
+    // Marker creation popup state
+    @State private var isMarkerNamePopupPresented = false
+    @State private var markerCreationTime: Double = 0
+    @State private var wasPlayingBeforePopup = false
+
     // ✅ FIX: Force timeline redraw during List scroll
     @State private var timelineRedrawTrigger: Bool = false
 
@@ -48,6 +53,9 @@ struct TimelineScreen: View {
             }
             .sheet(item: $timePickerMarker) { marker in
                 timecodePickerSheet(for: marker)
+            }
+            .sheet(isPresented: $isMarkerNamePopupPresented) {
+                markerNamePopupSheet
             }
             .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
                 TextField("Название", text: $renameText)
@@ -196,6 +204,29 @@ struct TimelineScreen: View {
         .presentationDragIndicator(.visible)
     }
 
+    private var markerNamePopupSheet: some View {
+        MarkerNamePopup(
+            defaultName: "Маркер \(viewModel.markers.count + 1)",
+            onSave: { markerName in
+                viewModel.addMarker(name: markerName, at: markerCreationTime)
+                resumePlaybackIfNeeded()
+            },
+            onCancel: {
+                resumePlaybackIfNeeded()
+            }
+        )
+        .presentationDetents([.height(250)])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func resumePlaybackIfNeeded() {
+        // Always resume playback after popup closes if it was playing before
+        if wasPlayingBeforePopup {
+            viewModel.resumePlayback()
+            wasPlayingBeforePopup = false
+        }
+    }
+
     private var renameMarkerBinding: Binding<Bool> {
         Binding(
             get: { renamingMarker != nil },
@@ -212,7 +243,12 @@ struct TimelineScreen: View {
                 Toggle(isOn: $viewModel.isAutoScrollEnabled) {
                     Label("Автоскролл маркеров", systemImage: "arrow.down.circle")
                 }
-                
+
+                // Pause on marker creation toggle
+                Toggle(isOn: $viewModel.shouldPauseOnMarkerCreation) {
+                    Label("Останавливать воспроизведение", systemImage: "pause.circle")
+                }
+
                 Divider()
                 
                 // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
@@ -328,7 +364,17 @@ struct TimelineScreen: View {
 
     private var addMarkerButton: some View {
         Button {
-            viewModel.addMarkerAtCurrentTime()
+            // Save current time for marker creation
+            markerCreationTime = viewModel.currentTime
+
+            // Save playback state and pause if needed
+            wasPlayingBeforePopup = viewModel.isPlaying
+            if viewModel.shouldPauseOnMarkerCreation && wasPlayingBeforePopup {
+                viewModel.pausePlayback()
+            }
+
+            // Show marker name popup
+            isMarkerNamePopupPresented = true
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
                 .font(.system(size: 17, weight: .semibold))

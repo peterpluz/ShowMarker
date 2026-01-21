@@ -23,12 +23,16 @@ final class TimelineViewModel: ObservableObject {
     private var waveformCacheKey: String?
 
     // MARK: - Auto-scroll state
-    
+
     @Published var isAutoScrollEnabled: Bool = false
-    
+
     /// ID of the next marker after current playhead position
     /// Used for auto-scrolling the marker list
     @Published private(set) var nextMarkerID: UUID?
+
+    // MARK: - Marker creation settings
+
+    @Published var shouldPauseOnMarkerCreation: Bool = false
 
     // MARK: - Marker Crossing Detection
 
@@ -453,14 +457,35 @@ final class TimelineViewModel: ObservableObject {
     func addMarkerAtCurrentTime() {
         // ✅ Квантуем время к ближайшему кадру
         let quantizedTime = quantizeToFrame(currentTime)
-        
+
         let marker = TimelineMarker(
             timeSeconds: quantizedTime,
             name: "Marker \(markers.count + 1)"
         )
         repository.addMarker(timelineID: timelineID, marker: marker)
-        
+
         print("✅ Marker added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", currentTime))s)")
+    }
+
+    func addMarker(name: String, at time: Double) {
+        // ✅ Квантуем время к ближайшему кадру
+        let quantizedTime = quantizeToFrame(time)
+
+        let marker = TimelineMarker(
+            timeSeconds: quantizedTime,
+            name: name
+        )
+        repository.addMarker(timelineID: timelineID, marker: marker)
+
+        print("✅ Marker '\(name)' added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s")
+    }
+
+    func pausePlayback() {
+        audioPlayer.pause()
+    }
+
+    func resumePlayback() {
+        audioPlayer.play()
     }
 
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
