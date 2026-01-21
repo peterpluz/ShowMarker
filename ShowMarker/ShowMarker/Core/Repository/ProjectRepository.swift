@@ -91,4 +91,42 @@ final class ProjectRepository: ObservableObject {
         }
         project.timelines[timelineIndex].markers[markerIndex] = marker
     }
+
+    // MARK: - Tags
+
+    func addTag(_ tag: Tag) {
+        project.tags.append(tag)
+    }
+
+    func updateTag(_ tag: Tag) {
+        guard let index = project.tags.firstIndex(where: { $0.id == tag.id }) else {
+            return
+        }
+        project.tags[index] = tag
+    }
+
+    func deleteTag(id: UUID) {
+        // Remove tag from project
+        project.tags.removeAll { $0.id == id }
+
+        // Get default tag (first tag) to reassign markers
+        guard let defaultTag = project.tags.first else { return }
+
+        // Reassign all markers with deleted tag to default tag
+        for timelineIndex in project.timelines.indices {
+            for markerIndex in project.timelines[timelineIndex].markers.indices {
+                if project.timelines[timelineIndex].markers[markerIndex].tagId == id {
+                    project.timelines[timelineIndex].markers[markerIndex].tagId = defaultTag.id
+                }
+            }
+        }
+    }
+
+    func getTag(id: UUID) -> Tag? {
+        project.tags.first(where: { $0.id == id })
+    }
+
+    func getDefaultTag() -> Tag? {
+        project.tags.first
+    }
 }

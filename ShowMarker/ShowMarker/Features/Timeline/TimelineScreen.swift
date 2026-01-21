@@ -211,8 +211,10 @@ struct TimelineScreen: View {
     private var markerNamePopupOverlay: some View {
         MarkerNamePopup(
             defaultName: "Маркер \(viewModel.markers.count + 1)",
-            onSave: { markerName in
-                viewModel.addMarker(name: markerName, at: markerCreationTime)
+            tags: viewModel.tags,
+            defaultTagId: viewModel.defaultTag?.id ?? UUID(),
+            onSave: { markerName, tagId in
+                viewModel.addMarker(name: markerName, tagId: tagId, at: markerCreationTime)
                 isMarkerNamePopupPresented = false
                 resumePlaybackIfNeeded()
             },

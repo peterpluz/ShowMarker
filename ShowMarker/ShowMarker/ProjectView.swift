@@ -16,6 +16,7 @@ struct ProjectView: View {
     @State private var renameText = ""
 
     @State private var isEditing = false
+    @State private var isProjectSettingsPresented = false
 
     private let availableFPS = [25, 30, 50, 60, 100]
 
@@ -51,6 +52,9 @@ struct ProjectView: View {
             }
             .alert("Переименовать таймлайн", isPresented: isRenamingPresented) {
                 renameTimelineAlert
+            }
+            .sheet(isPresented: $isProjectSettingsPresented) {
+                ProjectSettingsView(repository: repository)
             }
     }
 
@@ -168,6 +172,14 @@ struct ProjectView: View {
         ToolbarItem(placement: .navigationBarTrailing) {
             Menu {
                 Button {
+                    isProjectSettingsPresented = true
+                } label: {
+                    Label("Настройки проекта", systemImage: "gear")
+                }
+
+                Divider()
+
+                Button {
                     isEditing.toggle()
                 } label: {
                     Label(
@@ -176,35 +188,10 @@ struct ProjectView: View {
                     )
                 }
 
-                Divider()
-
-                fpsMenu
-
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 20, weight: .semibold))
             }
-        }
-    }
-
-    private var fpsMenu: some View {
-        Menu {
-            ForEach(availableFPS, id: \.self) { value in
-                Button {
-                    repository.setProjectFPS(value)
-                } label: {
-                    if repository.project.fps == value {
-                        Label("\(value) FPS", systemImage: "checkmark")
-                    } else {
-                        Text("\(value) FPS")
-                    }
-                }
-            }
-        } label: {
-            Label(
-                "FPS (\(repository.project.fps))",
-                systemImage: "speedometer"
-            )
         }
     }
 

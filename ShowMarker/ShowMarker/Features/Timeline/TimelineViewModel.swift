@@ -81,7 +81,15 @@ final class TimelineViewModel: ObservableObject {
     var markers: [TimelineMarker] {
         (timeline?.markers ?? []).sorted { $0.timeSeconds < $1.timeSeconds }
     }
-    
+
+    var tags: [Tag] {
+        repository.project.tags
+    }
+
+    var defaultTag: Tag? {
+        repository.getDefaultTag()
+    }
+
     // MARK: - Computed
     
     var visibleMarkers: [TimelineMarker] {
@@ -453,31 +461,19 @@ final class TimelineViewModel: ObservableObject {
     }
     
     // MARK: - Markers
-    
-    func addMarkerAtCurrentTime() {
-        // ✅ Квантуем время к ближайшему кадру
-        let quantizedTime = quantizeToFrame(currentTime)
 
-        let marker = TimelineMarker(
-            timeSeconds: quantizedTime,
-            name: "Marker \(markers.count + 1)"
-        )
-        repository.addMarker(timelineID: timelineID, marker: marker)
-
-        print("✅ Marker added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", currentTime))s)")
-    }
-
-    func addMarker(name: String, at time: Double) {
+    func addMarker(name: String, tagId: UUID, at time: Double) {
         // ✅ Квантуем время к ближайшему кадру
         let quantizedTime = quantizeToFrame(time)
 
         let marker = TimelineMarker(
             timeSeconds: quantizedTime,
-            name: name
+            name: name,
+            tagId: tagId
         )
         repository.addMarker(timelineID: timelineID, marker: marker)
 
-        print("✅ Marker '\(name)' added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s")
+        print("✅ Marker '\(name)' added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s with tagId: \(tagId)")
     }
 
     func pausePlayback() {

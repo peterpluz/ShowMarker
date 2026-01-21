@@ -2,21 +2,34 @@ import SwiftUI
 
 struct MarkerNamePopup: View {
     let defaultName: String
-    let onSave: (String) -> Void
+    let tags: [Tag]
+    let defaultTagId: UUID
+    let onSave: (String, UUID) -> Void
     let onCancel: () -> Void
 
     @State private var markerName: String
+    @State private var selectedTagId: UUID
+    @State private var showTagPicker = false
     @FocusState private var isTextFieldFocused: Bool
 
     init(
         defaultName: String,
-        onSave: @escaping (String) -> Void,
+        tags: [Tag],
+        defaultTagId: UUID,
+        onSave: @escaping (String, UUID) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.defaultName = defaultName
+        self.tags = tags
+        self.defaultTagId = defaultTagId
         self.onSave = onSave
         self.onCancel = onCancel
         _markerName = State(initialValue: defaultName)
+        _selectedTagId = State(initialValue: defaultTagId)
+    }
+
+    private var selectedTag: Tag? {
+        tags.first(where: { $0.id == selectedTagId })
     }
 
     var body: some View {
@@ -64,6 +77,43 @@ struct MarkerNamePopup: View {
                 }
                 .padding(.horizontal, 16)
 
+                // Tag selector
+                Button {
+                    showTagPicker = true
+                } label: {
+                    HStack {
+                        Text("Тег")
+                            .font(.system(size: 17))
+                            .foregroundColor(.primary)
+
+                        Spacer()
+
+                        if let tag = selectedTag {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(Color(hex: tag.colorHex))
+                                    .frame(width: 16, height: 16)
+
+                                Text(tag.name)
+                                    .font(.system(size: 17))
+                                    .foregroundColor(Color(hex: tag.colorHex))
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color(.tertiarySystemFill))
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+
                 // Buttons
                 HStack(spacing: 8) {
                     // Cancel button
@@ -85,7 +135,7 @@ struct MarkerNamePopup: View {
                     // Save button
                     Button {
                         let finalName = markerName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        onSave(finalName.isEmpty ? defaultName : finalName)
+                        onSave(finalName.isEmpty ? defaultName : finalName, selectedTagId)
                     } label: {
                         Text("Сохранить")
                             .font(.system(size: 17, weight: .semibold))
@@ -116,6 +166,19 @@ struct MarkerNamePopup: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isTextFieldFocused = true
             }
+        }
+        .sheet(isPresented: $showTagPicker) {
+            TagPickerView(
+                tags: tags,
+                selectedTagId: selectedTagId,
+                onSelect: { tagId in
+                    selectedTagId = tagId
+                    showTagPicker = false
+                },
+                onCancel: {
+                    showTagPicker = false
+                }
+            )
         }
     }
 }
