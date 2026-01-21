@@ -42,7 +42,7 @@ struct TimelineScreen: View {
 
     var body: some View {
         mainContent
-            .onReceive(viewModel.$currentTime) { _ in
+            .onChange(of: viewModel.currentTime) { oldValue, newValue in
                 // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
                 timelineRedrawTrigger.toggle()
             }
@@ -92,18 +92,29 @@ struct TimelineScreen: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        List {
-            Section {
-                ForEach(viewModel.markers) { marker in
-                    markerRow(marker)
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    ForEach(viewModel.markers) { marker in
+                        markerRow(marker)
+                            .id(marker.id)  // ✅ Required for ScrollViewReader
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle(viewModel.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { toolbarContent }
+            .safeAreaInset(edge: .bottom) { bottomPanel }
+            .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
+                // ✅ Auto-scroll to next marker if enabled
+                guard viewModel.isAutoScrollEnabled, let nextID = nextID else { return }
+                
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(nextID, anchor: .center)
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .navigationTitle(viewModel.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { toolbarContent }
-        .safeAreaInset(edge: .bottom) { bottomPanel }
     }
 
     // MARK: - Marker Row
@@ -195,44 +206,56 @@ struct TimelineScreen: View {
     // MARK: - Toolbar
 
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarTrailing) {
-            Menu {
-                // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
-                if hasAudio {
-                    Button {
-                        isPickerPresented = true
-                    } label: {
-                        Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
+        Group {
+            // ✅ Auto-scroll toggle switch (left side)
+            ToolbarItem(placement: .navigationBarLeading) {
+                HStack(spacing: 8) {
+                    Toggle("", isOn: $viewModel.isAutoScrollEnabled)
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                }
+            }
+            
+            // Menu button (right side)
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
+                    if hasAudio {
+                        Button {
+                            isPickerPresented = true
+                        } label: {
+                            Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
+                        }
+
+                        Button(role: .destructive) {
+                            viewModel.removeAudio()
+                        } label: {
+                            Label("Удалить аудиофайл", systemImage: "trash")
+                        }
+
+                        Divider()
                     }
 
-                    Button(role: .destructive) {
-                        viewModel.removeAudio()
+                    Button {
+                        renameText = viewModel.name
+                        isRenamingTimeline = true
                     } label: {
-                        Label("Удалить аудиофайл", systemImage: "trash")
+                        Label("Переименовать таймлайн", systemImage: "pencil")
                     }
 
                     Divider()
-                }
 
-                Button {
-                    renameText = viewModel.name
-                    isRenamingTimeline = true
+                    Button {
+                        prepareExport()
+                    } label: {
+                        Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(viewModel.markers.isEmpty)
+
                 } label: {
-                    Label("Переименовать таймлайн", systemImage: "pencil")
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .semibold))
                 }
-
-                Divider()
-
-                Button {
-                    prepareExport()
-                } label: {
-                    Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
-                }
-                .disabled(viewModel.markers.isEmpty)
-
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .semibold))
             }
         }
     }

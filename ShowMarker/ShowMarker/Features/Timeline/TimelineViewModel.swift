@@ -22,6 +22,14 @@ final class TimelineViewModel: ObservableObject {
     private var waveformMipmaps: [[Float]] = []
     private var waveformCacheKey: String?
 
+    // MARK: - Auto-scroll state
+    
+    @Published var isAutoScrollEnabled: Bool = false
+    
+    /// ID of the next marker after current playhead position
+    /// Used for auto-scrolling the marker list
+    @Published private(set) var nextMarkerID: UUID?
+
     // MARK: - Marker Crossing Detection
 
     // Event stream for marker flash events
@@ -177,6 +185,9 @@ final class TimelineViewModel: ObservableObject {
             .sink { [weak self] newTime in
                 guard let self = self else { return }
                 
+                // ✅ Update next marker for auto-scroll (always, regardless of playback state)
+                self.updateNextMarker(for: newTime)
+                
                 // ✅ CRITICAL: Only detect markers during active playback
                 guard self.isPlaying else {
                     return
@@ -221,6 +232,22 @@ final class TimelineViewModel: ObservableObject {
                 self.previousFrame = currentFrame
             }
             .store(in: &cancellables)
+    }
+    
+    // MARK: - Auto-scroll
+    
+    /// Updates the next marker ID based on current playhead position
+    /// This is used for auto-scrolling the marker list
+    private func updateNextMarker(for time: Double) {
+        // Find the first marker that comes after the current time
+        let next = markers.first { marker in
+            marker.timeSeconds > time
+        }
+        
+        // Only update if changed to avoid unnecessary UI updates
+        if nextMarkerID != next?.id {
+            nextMarkerID = next?.id
+        }
     }
     
     // MARK: - Frame Quantization
