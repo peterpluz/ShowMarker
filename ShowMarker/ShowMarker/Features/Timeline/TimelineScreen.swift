@@ -46,17 +46,21 @@ struct TimelineScreen: View {
     }
 
     var body: some View {
-        mainContent
-            .onChange(of: viewModel.currentTime) { oldValue, newValue in
-                // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
-                timelineRedrawTrigger.toggle()
+        ZStack {
+            mainContent
+                .onChange(of: viewModel.currentTime) { oldValue, newValue in
+                    // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
+                    timelineRedrawTrigger.toggle()
+                }
+                .sheet(item: $timePickerMarker) { marker in
+                    timecodePickerSheet(for: marker)
+                }
+
+            // Marker name popup overlay
+            if isMarkerNamePopupPresented {
+                markerNamePopupOverlay
             }
-            .sheet(item: $timePickerMarker) { marker in
-                timecodePickerSheet(for: marker)
-            }
-            .sheet(isPresented: $isMarkerNamePopupPresented) {
-                markerNamePopupSheet
-            }
+        }
             .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
                 TextField("Название", text: $renameText)
                 Button("Готово") {
@@ -204,19 +208,21 @@ struct TimelineScreen: View {
         .presentationDragIndicator(.visible)
     }
 
-    private var markerNamePopupSheet: some View {
+    private var markerNamePopupOverlay: some View {
         MarkerNamePopup(
             defaultName: "Маркер \(viewModel.markers.count + 1)",
             onSave: { markerName in
                 viewModel.addMarker(name: markerName, at: markerCreationTime)
+                isMarkerNamePopupPresented = false
                 resumePlaybackIfNeeded()
             },
             onCancel: {
+                isMarkerNamePopupPresented = false
                 resumePlaybackIfNeeded()
             }
         )
-        .presentationDetents([.height(250)])
-        .presentationDragIndicator(.visible)
+        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isMarkerNamePopupPresented)
     }
 
     private func resumePlaybackIfNeeded() {

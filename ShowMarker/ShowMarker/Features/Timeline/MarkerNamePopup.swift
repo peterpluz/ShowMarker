@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct MarkerNamePopup: View {
-    @Environment(\.dismiss) private var dismiss
-
     let defaultName: String
     let onSave: (String) -> Void
     let onCancel: () -> Void
@@ -22,15 +20,23 @@ struct MarkerNamePopup: View {
     }
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 24) {
+        ZStack {
+            // Dimmed background
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    onCancel()
+                }
+
+            // Popup content
+            VStack(spacing: 20) {
                 // Title
                 Text("Название маркера")
                     .font(.system(size: 20, weight: .semibold))
-                    .padding(.top, 20)
+                    .padding(.top, 24)
 
                 // Text field with clear button
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     TextField("", text: $markerName)
                         .font(.system(size: 17))
                         .padding(.horizontal, 16)
@@ -50,18 +56,16 @@ struct MarkerNamePopup: View {
                                 .foregroundColor(.gray)
                                 .font(.system(size: 20))
                         }
+                        .padding(.trailing, 4)
                     }
                 }
                 .padding(.horizontal, 20)
-
-                Spacer()
 
                 // Buttons
                 HStack(spacing: 12) {
                     // Cancel button
                     Button {
                         onCancel()
-                        dismiss()
                     } label: {
                         Text("Отмена")
                             .font(.system(size: 17, weight: .semibold))
@@ -77,7 +81,6 @@ struct MarkerNamePopup: View {
                     Button {
                         let finalName = markerName.trimmingCharacters(in: .whitespacesAndNewlines)
                         onSave(finalName.isEmpty ? defaultName : finalName)
-                        dismiss()
                     } label: {
                         Text("Сохранить")
                             .font(.system(size: 17, weight: .semibold))
@@ -90,9 +93,14 @@ struct MarkerNamePopup: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 20)
+                .padding(.bottom, 24)
             }
-            .navigationBarHidden(true)
+            .frame(width: 340)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(.systemBackground))
+            )
+            .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
         }
         .onAppear {
             // Auto-focus text field when popup appears
