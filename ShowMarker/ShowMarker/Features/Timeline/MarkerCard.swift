@@ -11,7 +11,6 @@ struct MarkerCard: View {
 
     @State private var flashOpacity: Double = 0
     @State private var pulsePhase: Double = 0
-    @State private var lastProcessedEventID: Int? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -39,7 +38,7 @@ struct MarkerCard: View {
                 .foregroundColor(.secondary.opacity(0.5))
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8) // ⬅️ ключевое уменьшение высоты
+        .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(UIColor.secondarySystemGroupedBackground))
@@ -54,19 +53,13 @@ struct MarkerCard: View {
         .onReceive(markerFlashPublisher) { event in
             // Only process events for THIS marker
             guard event.markerID == marker.id else { return }
-
-            // 🔍 DIAGNOSTIC: Log event reception
+            
             print("   📥 [MarkerCard] '\(marker.name)' received event #\(event.eventID)")
 
-            // Check if already processed (shouldn't happen with event stream, but safety check)
-            if event.eventID == lastProcessedEventID {
-                print("   ⚠️ [MarkerCard] '\(marker.name)' skipping duplicate event #\(event.eventID)")
-                return
-            }
-
-            // Process the flash event
-            lastProcessedEventID = event.eventID
-            print("   ⚡️ [MarkerCard] '\(marker.name)' processing event #\(event.eventID)")
+            // ✅ ИСПРАВЛЕНИЕ: Убрана логика lastProcessedEventID
+            // Каждое событие теперь вызывает flash, независимо от eventID
+            // Это позволяет маркеру мигать при каждом пересечении playhead
+            print("   ⚡️ [MarkerCard] '\(marker.name)' will trigger flash animation")
             triggerFlashEffect()
         }
         .onChange(of: isDragging) { dragging in
@@ -77,16 +70,9 @@ struct MarkerCard: View {
             }
         }
         .onAppear {
-            // 🔍 DIAGNOSTIC: Track visibility
-            print("   👁️ [MarkerCard] '\(marker.name)' appeared in viewport, subscribed to event stream")
-
             if isDragging {
                 startPulseAnimation()
             }
-        }
-        .onDisappear {
-            // 🔍 DIAGNOSTIC: Track visibility
-            print("   👁️ [MarkerCard] '\(marker.name)' disappeared from viewport")
         }
     }
 
@@ -126,17 +112,20 @@ struct MarkerCard: View {
     }
 
     private func triggerFlashEffect() {
-        // 🔍 DIAGNOSTIC: Log flash trigger
-        print("      💥 [MarkerCard] Flash effect triggered for '\(marker.name)', flashOpacity: \(flashOpacity) → 1.0")
-
+        print("      💥 [MarkerCard] '\(marker.name)' ANIMATION STARTED: flashOpacity 0.0 → 1.0")
+        
         // Instant attack: immediately set to full opacity (no animation)
         flashOpacity = 1.0
 
-        // Smooth decay: fade out over 0.5 seconds (deferred to next run loop)
+        // Smooth decay: fade out over 0.5 seconds
         Task { @MainActor in
             withAnimation(.easeOut(duration: 0.5)) {
                 flashOpacity = 0
             }
+            
+            // Log after animation completes
+            try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
+            print("      ✅ [MarkerCard] '\(marker.name)' ANIMATION COMPLETED: flashOpacity → 0.0")
         }
     }
 

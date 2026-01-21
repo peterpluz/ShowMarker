@@ -36,7 +36,8 @@ final class TimelineViewModel: ObservableObject {
 
     let markerFlashPublisher = PassthroughSubject<MarkerFlashEvent, Never>()
     private var flashCounter: Int = 0
-    private var previousTime: Double = 0
+    private var previousFrame: Int = -1
+    private var triggeredMarkers: Set<UUID> = []  // Track which markers have flashed in current playback session
 
     // MARK: - Marker Drag State
 
@@ -155,35 +156,85 @@ final class TimelineViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+        
+        // Reset triggered markers when playback stops
+        audioPlayer.$isPlaying
+            .sink { [weak self] isPlaying in
+                guard let self = self else { return }
+                if !isPlaying {
+                    // When playback stops, clear all triggered markers
+                    // This allows markers to flash again on next playback
+                    let count = self.triggeredMarkers.count
+                    self.triggeredMarkers.removeAll()
+                    if count > 0 {
+                        print("🛑 [Detection] Playback stopped, reset \(count) triggered marker(s)")
+                    }
+                } else {
+                    // Playback started
+                    let startFrame = Int(round(self.currentTime * Double(self.fps)))
+                    print("▶️ [Detection] Playback started at frame \(startFrame)")
+                }
+            }
+            .store(in: &cancellables)
 
         // MARK: - Marker Crossing Detection
-        // Detect when playhead crosses a marker during forward playback
+        // ✅ STATE FLAGS PATTERN: Industry-standard approach for marker detection
+        // Each marker tracks whether it has been triggered in the current playback session
         $currentTime
             .sink { [weak self] newTime in
                 guard let self = self else { return }
 
-                let timeDelta = newTime - self.previousTime
-
-                // Only trigger on forward movement (continuous playback)
-                // Ignore backward scrubbing and pauses
-                guard timeDelta > 0 else {
-                    self.previousTime = newTime
+                let currentFrame = Int(round(newTime * Double(self.fps)))
+                
+                // Handle backward movement (rewind/seek) - reset triggered state for passed markers
+                if currentFrame < self.previousFrame {
+                    // Clear triggered flags for markers we're rewinding past
+                    let rewindedMarkers = self.markers.filter { marker in
+                        let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
+                        return currentFrame <= markerFrame && markerFrame <= self.previousFrame
+                    }
+                    for marker in rewindedMarkers {
+                        self.triggeredMarkers.remove(marker.id)
+                        print("🔄 [Detection] Marker '\(marker.name)' reset (rewind from frame \(self.previousFrame) to \(currentFrame))")
+                    }
+                    self.previousFrame = currentFrame
+                    return
+                }
+                
+                // Handle pause/stop - no movement
+                guard currentFrame > self.previousFrame else {
+                    self.previousFrame = currentFrame
                     return
                 }
 
-                // ✅ ИСПРАВЛЕНИЕ: Добавлена толерантность для floating point precision
-                // Маркеры могут быть на границе между обновлениями (например, 5.533505s vs 5.533389s)
-                let tolerance: Double = 0.001  // 1 миллисекунда толерантности
-
-                // Find all markers that were crossed in this time interval
-                // Расширяем интервал на ±tolerance для учёта погрешности floating point
+                // Find all markers crossed in this frame interval
                 let crossedMarkers = self.markers.filter { marker in
-                    (self.previousTime - tolerance) <= marker.timeSeconds &&
-                    marker.timeSeconds <= (newTime + tolerance)
+                    let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
+                    
+                    // Bootstrap case: first update from -1 includes frame 0
+                    if self.previousFrame == -1 {
+                        return markerFrame <= currentFrame
+                    }
+                    
+                    // Normal case: strict < on left prevents duplicate detections
+                    // when AVPlayer sends multiple updates at same frame (N→N)
+                    return self.previousFrame < markerFrame && markerFrame <= currentFrame
                 }
-
-                // Publish flash event for each crossed marker
+                
+                // Trigger flash events only for markers that haven't been triggered yet
                 for marker in crossedMarkers {
+                    let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
+                    
+                    // Skip if already triggered in this playback session
+                    if self.triggeredMarkers.contains(marker.id) {
+                        print("⏭️  [Detection] Marker '\(marker.name)' at frame \(markerFrame) SKIPPED (already triggered in this session)")
+                        continue
+                    }
+                    
+                    // Mark as triggered
+                    self.triggeredMarkers.insert(marker.id)
+                    
+                    // Send flash event
                     self.flashCounter += 1
                     let event = MarkerFlashEvent(
                         markerID: marker.id,
@@ -191,13 +242,22 @@ final class TimelineViewModel: ObservableObject {
                         eventID: self.flashCounter,
                         timestamp: Date()
                     )
-
                     self.markerFlashPublisher.send(event)
+                    print("✨ [Detection] Marker '\(marker.name)' EVENT SENT #\(self.flashCounter) at frame \(markerFrame) (interval: \(self.previousFrame)→\(currentFrame))")
                 }
 
-                self.previousTime = newTime
+                self.previousFrame = currentFrame
             }
             .store(in: &cancellables)
+    }
+    
+    // MARK: - Frame Quantization
+    
+    /// Квантует время к ближайшему кадру на таймлайне
+    /// Это критично для точной детекции маркеров, так как маркеры должны быть привязаны к кадрам
+    private func quantizeToFrame(_ time: Double) -> Double {
+        let frameNumber = round(time * Double(fps))
+        return frameNumber / Double(fps)
     }
     
     // MARK: - Waveform Cache
@@ -364,17 +424,28 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Markers
     
     func addMarkerAtCurrentTime() {
+        // ✅ ИСПРАВЛЕНИЕ: Квантуем время к ближайшему кадру
+        // Это гарантирует, что маркеры всегда привязаны к кадрам таймлайна
+        let quantizedTime = quantizeToFrame(currentTime)
+        
         let marker = TimelineMarker(
-            timeSeconds: currentTime,
+            timeSeconds: quantizedTime,
             name: "Marker \(markers.count + 1)"
         )
         repository.addMarker(timelineID: timelineID, marker: marker)
+        
+        print("✅ Marker added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", currentTime))s)")
     }
 
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
+        // ✅ ИСПРАВЛЕНИЕ: Квантуем время при перемещении маркера
+        let quantizedTime = quantizeToFrame(newTime)
+        
         var updatedMarker = marker
-        updatedMarker.timeSeconds = newTime
+        updatedMarker.timeSeconds = quantizedTime
         repository.updateMarker(timelineID: timelineID, marker: updatedMarker)
+        
+        print("✅ Marker moved to frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", newTime))s)")
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
