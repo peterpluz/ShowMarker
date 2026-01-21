@@ -20,13 +20,6 @@ struct ProjectSettingsView: View {
             }
             .navigationTitle("Настройки проекта")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Закрыть") {
-                        dismiss()
-                    }
-                }
-            }
             .sheet(item: $editingTag) { tag in
                 TagEditorView(
                     tag: tag,
@@ -146,7 +139,7 @@ struct FPSPickerView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    private let fpsOptions = [24, 25, 30, 50, 60, 100, 120]
+    private let fpsOptions = [24, 25, 30, 50, 60, 100]
 
     var body: some View {
         List {

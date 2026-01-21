@@ -169,28 +169,23 @@ struct ProjectView: View {
     // MARK: - Toolbar
 
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarTrailing) {
-            Menu {
+        Group {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     isProjectSettingsPresented = true
                 } label: {
-                    Label("Настройки проекта", systemImage: "gear")
+                    Image(systemName: "gear")
+                        .font(.system(size: 20, weight: .semibold))
                 }
+            }
 
-                Divider()
-
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     isEditing.toggle()
                 } label: {
-                    Label(
-                        isEditing ? "Done" : "Edit",
-                        systemImage: "list.bullet"
-                    )
+                    Text(isEditing ? "Готово" : "Выбрать")
+                        .font(.system(size: 17))
                 }
-
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 20, weight: .semibold))
             }
         }
     }

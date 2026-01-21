@@ -21,6 +21,9 @@ struct TimelineScreen: View {
     @State private var markerCreationTime: Double = 0
     @State private var wasPlayingBeforePopup = false
 
+    // Marker tag editing state
+    @State private var editingTagMarker: TimelineMarker?
+
     // ✅ FIX: Force timeline redraw during List scroll
     @State private var timelineRedrawTrigger: Bool = false
 
@@ -54,6 +57,9 @@ struct TimelineScreen: View {
                 }
                 .sheet(item: $timePickerMarker) { marker in
                     timecodePickerSheet(for: marker)
+                }
+                .sheet(item: $editingTagMarker) { marker in
+                    tagPickerSheet(for: marker)
                 }
 
             // Marker name popup overlay
@@ -134,10 +140,14 @@ struct TimelineScreen: View {
     private func markerRow(_ marker: TimelineMarker) -> some View {
         MarkerCard(
             marker: marker,
+            tag: viewModel.tags.first(where: { $0.id == marker.tagId }),
             fps: viewModel.fps,
             markerFlashPublisher: viewModel.markerFlashPublisher,
             draggedMarkerID: viewModel.draggedMarkerID,
-            draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime
+            draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime,
+            onTagEdit: {
+                editingTagMarker = marker
+            }
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -206,6 +216,22 @@ struct TimelineScreen: View {
         )
         .presentationDetents([.height(320)])
         .presentationDragIndicator(.visible)
+    }
+
+    private func tagPickerSheet(for marker: TimelineMarker) -> some View {
+        TagPickerView(
+            tags: viewModel.tags,
+            selectedTagId: marker.tagId,
+            onSelect: { newTagId in
+                var updatedMarker = marker
+                updatedMarker.tagId = newTagId
+                viewModel.updateMarker(updatedMarker)
+                editingTagMarker = nil
+            },
+            onCancel: {
+                editingTagMarker = nil
+            }
+        )
     }
 
     private var markerNamePopupOverlay: some View {

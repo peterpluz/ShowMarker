@@ -107,12 +107,12 @@ struct TagEditorView: View {
                                     ZStack {
                                         Circle()
                                             .fill(Color(hex: colorOption.hex))
-                                            .frame(width: 40, height: 40)
+                                            .frame(width: 32, height: 32)
 
                                         if selectedColor == colorOption.hex {
                                             Circle()
-                                                .strokeBorder(Color.primary, lineWidth: 3)
-                                                .frame(width: 46, height: 46)
+                                                .strokeBorder(Color.primary, lineWidth: 2.5)
+                                                .frame(width: 36, height: 36)
                                         }
                                     }
                                 }

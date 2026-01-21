@@ -501,6 +501,10 @@ final class TimelineViewModel: ObservableObject {
         repository.updateMarker(timelineID: timelineID, marker: updatedMarker)
     }
 
+    func updateMarker(_ marker: TimelineMarker) {
+        repository.updateMarker(timelineID: timelineID, marker: marker)
+    }
+
     func deleteMarker(_ marker: TimelineMarker) {
         repository.removeMarker(timelineID: timelineID, markerID: marker.id)
     }
