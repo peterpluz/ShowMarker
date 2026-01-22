@@ -5,20 +5,20 @@ struct TimelineMarker: Codable, Identifiable, Sendable {
     let id: UUID
     var timeSeconds: Double      // БАЗОВОЕ хранение
     var name: String
-    var tag: String
+    var tagId: UUID              // Reference to Tag
     let createdAt: Date
 
     init(
         id: UUID = UUID(),
         timeSeconds: Double,
         name: String,
-        tag: String = "Default",
+        tagId: UUID,
         createdAt: Date = Date()
     ) {
         self.id = id
         self.timeSeconds = timeSeconds
         self.name = name
-        self.tag = tag
+        self.tagId = tagId
         self.createdAt = createdAt
     }
 }

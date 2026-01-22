@@ -16,8 +16,22 @@ struct TimelineScreen: View {
     @State private var exportData: Data?
     @State private var isExportPresented = false
 
+    // Marker creation popup state
+    @State private var isMarkerNamePopupPresented = false
+    @State private var markerCreationTime: Double = 0
+    @State private var wasPlayingBeforePopup = false
+
+    // Marker tag editing state
+    @State private var editingTagMarker: TimelineMarker?
+
+    // Tag filter state
+    @State private var isTagFilterPresented = false
+
     // ✅ FIX: Force timeline redraw during List scroll
     @State private var timelineRedrawTrigger: Bool = false
+
+    // Delete all markers confirmation
+    @State private var showDeleteAllMarkersConfirmation = false
 
     private static func makeViewModel(
         repository: ProjectRepository,
@@ -40,15 +54,33 @@ struct TimelineScreen: View {
         viewModel.audio != nil
     }
 
+    // Check if filter is active (not all tags selected)
+    private var hasActiveFilter: Bool {
+        !viewModel.selectedTagIds.isEmpty && viewModel.selectedTagIds.count < viewModel.tags.count
+    }
+
     var body: some View {
-        mainContent
-            .onChange(of: viewModel.currentTime) { oldValue, newValue in
-                // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
-                timelineRedrawTrigger.toggle()
+        ZStack {
+            mainContent
+                .onChange(of: viewModel.currentTime) { oldValue, newValue in
+                    // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
+                    timelineRedrawTrigger.toggle()
+                }
+                .sheet(item: $timePickerMarker) { marker in
+                    timecodePickerSheet(for: marker)
+                }
+                .sheet(item: $editingTagMarker) { marker in
+                    tagPickerSheet(for: marker)
+                }
+                .sheet(isPresented: $isTagFilterPresented) {
+                    tagFilterSheet
+                }
+
+            // Marker name popup overlay
+            if isMarkerNamePopupPresented {
+                markerNamePopupOverlay
             }
-            .sheet(item: $timePickerMarker) { marker in
-                timecodePickerSheet(for: marker)
-            }
+        }
             .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
                 TextField("Название", text: $renameText)
                 Button("Готово") {
@@ -74,6 +106,14 @@ struct TimelineScreen: View {
                     renamingMarker = nil
                 }
             }
+            .alert("Удалить все маркеры?", isPresented: $showDeleteAllMarkersConfirmation) {
+                Button("Удалить", role: .destructive) {
+                    viewModel.deleteAllMarkers()
+                }
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Вы уверены, что хотите удалить все маркеры этого таймлайна?")
+            }
             .fileImporter(
                 isPresented: $isPickerPresented,
                 allowedContentTypes: [.audio],
@@ -95,7 +135,7 @@ struct TimelineScreen: View {
         ScrollViewReader { proxy in
             List {
                 Section {
-                    ForEach(viewModel.markers) { marker in
+                    ForEach(viewModel.visibleMarkers) { marker in
                         markerRow(marker)
                             .id(marker.id)  // ✅ Required for ScrollViewReader
                     }
@@ -122,10 +162,14 @@ struct TimelineScreen: View {
     private func markerRow(_ marker: TimelineMarker) -> some View {
         MarkerCard(
             marker: marker,
+            tag: viewModel.tags.first(where: { $0.id == marker.tagId }),
             fps: viewModel.fps,
             markerFlashPublisher: viewModel.markerFlashPublisher,
             draggedMarkerID: viewModel.draggedMarkerID,
-            draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime
+            draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime,
+            onTagEdit: {
+                editingTagMarker = marker
+            }
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -153,6 +197,12 @@ struct TimelineScreen: View {
             timePickerMarker = marker
         } label: {
             Label("Изменить время маркера", systemImage: "clock")
+        }
+
+        Button {
+            editingTagMarker = marker
+        } label: {
+            Label("Изменить тег", systemImage: "tag")
         }
 
         Divider()
@@ -196,6 +246,58 @@ struct TimelineScreen: View {
         .presentationDragIndicator(.visible)
     }
 
+    private func tagPickerSheet(for marker: TimelineMarker) -> some View {
+        TagPickerView(
+            tags: viewModel.tags,
+            selectedTagId: marker.tagId,
+            onSelect: { newTagId in
+                viewModel.changeMarkerTag(marker, to: newTagId)
+                editingTagMarker = nil
+            },
+            onCancel: {
+                editingTagMarker = nil
+            }
+        )
+    }
+
+    private var tagFilterSheet: some View {
+        TagFilterView(
+            tags: viewModel.tags,
+            selectedTagIds: $viewModel.selectedTagIds,
+            onClose: {
+                isTagFilterPresented = false
+            }
+        )
+        .presentationDetents([.medium])
+    }
+
+    private var markerNamePopupOverlay: some View {
+        MarkerNamePopup(
+            defaultName: "Маркер \(viewModel.markers.count + 1)",
+            tags: viewModel.tags,
+            defaultTagId: viewModel.defaultTag?.id ?? UUID(),
+            onSave: { markerName, tagId in
+                viewModel.addMarker(name: markerName, tagId: tagId, at: markerCreationTime)
+                isMarkerNamePopupPresented = false
+                resumePlaybackIfNeeded()
+            },
+            onCancel: {
+                isMarkerNamePopupPresented = false
+                resumePlaybackIfNeeded()
+            }
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isMarkerNamePopupPresented)
+    }
+
+    private func resumePlaybackIfNeeded() {
+        // Always resume playback after popup closes if it was playing before
+        if wasPlayingBeforePopup {
+            viewModel.resumePlayback()
+            wasPlayingBeforePopup = false
+        }
+    }
+
     private var renameMarkerBinding: Binding<Bool> {
         Binding(
             get: { renamingMarker != nil },
@@ -206,14 +308,58 @@ struct TimelineScreen: View {
     // MARK: - Toolbar
 
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarTrailing) {
-            Menu {
-                // ✅ Auto-scroll toggle (moved to menu)
-                Toggle(isOn: $viewModel.isAutoScrollEnabled) {
-                    Label("Автоскролл маркеров", systemImage: "arrow.down.circle")
+        Group {
+            // Undo button (leading)
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    viewModel.undoManager.undo()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 20, weight: .semibold))
                 }
-                
-                Divider()
+                .disabled(!viewModel.undoManager.canUndo)
+            }
+
+            // Redo button (leading)
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    viewModel.undoManager.redo()
+                } label: {
+                    Image(systemName: "arrow.uturn.forward")
+                        .font(.system(size: 20, weight: .semibold))
+                }
+                .disabled(!viewModel.undoManager.canRedo)
+            }
+
+            // Tag filter button
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isTagFilterPresented = true
+                } label: {
+                    Image(systemName: hasActiveFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 20, weight: .semibold))
+                }
+            }
+
+            // Settings menu
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    // ✅ Auto-scroll toggle (moved to menu)
+                    Toggle(isOn: $viewModel.isAutoScrollEnabled) {
+                        Label("Автоскролл маркеров", systemImage: "arrow.down.circle")
+                    }
+
+                    // Pause on marker creation toggle
+                    Toggle(isOn: $viewModel.shouldPauseOnMarkerCreation) {
+                        Label("Останавливать воспроизведение", systemImage: "pause.circle")
+                    }
+
+                    // Show marker popup toggle
+                    Toggle(isOn: $viewModel.shouldShowMarkerPopup) {
+                        Label("Показывать окно создания маркера", systemImage: "square.and.pencil")
+                    }
+
+                    Divider()
                 
                 // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
                 if hasAudio {
@@ -241,6 +387,13 @@ struct TimelineScreen: View {
 
                 Divider()
 
+                Button(role: .destructive) {
+                    showDeleteAllMarkersConfirmation = true
+                } label: {
+                    Label("Удалить все маркеры", systemImage: "trash.fill")
+                }
+                .disabled(viewModel.markers.isEmpty)
+
                 Button {
                     prepareExport()
                 } label: {
@@ -248,9 +401,10 @@ struct TimelineScreen: View {
                 }
                 .disabled(viewModel.markers.isEmpty)
 
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .semibold))
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .semibold))
+                }
             }
         }
     }
@@ -284,6 +438,7 @@ struct TimelineScreen: View {
             currentTime: viewModel.currentTime,
             waveform: viewModel.visibleWaveform,
             markers: viewModel.visibleMarkers,
+            tags: viewModel.tags,
             hasAudio: hasAudio,
             onAddAudio: { isPickerPresented = true },
             onSeek: { viewModel.seek(to: $0) },
@@ -328,7 +483,30 @@ struct TimelineScreen: View {
 
     private var addMarkerButton: some View {
         Button {
-            viewModel.addMarkerAtCurrentTime()
+            // Save current time for marker creation
+            markerCreationTime = viewModel.currentTime
+
+            if viewModel.shouldShowMarkerPopup {
+                // Save playback state and pause if needed
+                wasPlayingBeforePopup = viewModel.isPlaying
+                if viewModel.shouldPauseOnMarkerCreation && wasPlayingBeforePopup {
+                    viewModel.pausePlayback()
+                }
+
+                // Show marker name popup
+                isMarkerNamePopupPresented = true
+            } else {
+                // Create marker directly with default values
+                let markerNumber = viewModel.markers.count + 1
+                let defaultName = "Marker \(markerNumber)"
+                let defaultTag = viewModel.defaultTag ?? viewModel.tags.first!
+
+                viewModel.addMarker(
+                    name: defaultName,
+                    tagId: defaultTag.id,
+                    at: markerCreationTime
+                )
+            }
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
                 .font(.system(size: 17, weight: .semibold))
@@ -398,25 +576,5 @@ struct TimelineScreen: View {
         } catch {
             print("❌ Audio file reading error: \(error)")
         }
-    }
-}
-
-// MARK: - CSV Document
-
-private struct SimpleCSVDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.commaSeparatedText] }
-    
-    var data: Data
-    
-    init(data: Data) {
-        self.data = data
-    }
-    
-    init(configuration: ReadConfiguration) throws {
-        self.data = configuration.file.regularFileContents ?? Data()
-    }
-    
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
     }
 }

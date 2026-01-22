@@ -23,12 +23,25 @@ final class TimelineViewModel: ObservableObject {
     private var waveformCacheKey: String?
 
     // MARK: - Auto-scroll state
-    
-    @Published var isAutoScrollEnabled: Bool = false
-    
+
+    @Published var isAutoScrollEnabled: Bool = true  // Enabled by default
+
     /// ID of the next marker after current playhead position
     /// Used for auto-scrolling the marker list
     @Published private(set) var nextMarkerID: UUID?
+
+    // MARK: - Marker creation settings
+
+    @Published var shouldPauseOnMarkerCreation: Bool = false
+    @Published var shouldShowMarkerPopup: Bool = true  // Toggle for marker creation popup
+
+    // MARK: - Undo/Redo System
+
+    @Published private(set) var undoManager: MarkerUndoManager
+
+    // MARK: - Tag filtering
+
+    @Published var selectedTagIds: Set<UUID> = []
 
     // MARK: - Marker Crossing Detection
 
@@ -77,11 +90,27 @@ final class TimelineViewModel: ObservableObject {
     var markers: [TimelineMarker] {
         (timeline?.markers ?? []).sorted { $0.timeSeconds < $1.timeSeconds }
     }
-    
+
+    var tags: [Tag] {
+        repository.project.tags
+    }
+
+    var defaultTag: Tag? {
+        repository.getDefaultTag()
+    }
+
     // MARK: - Computed
-    
+
     var visibleMarkers: [TimelineMarker] {
-        markers
+        // If no tags selected or all tags selected, show all markers
+        if selectedTagIds.isEmpty || selectedTagIds.count == tags.count {
+            return markers
+        }
+
+        // Filter markers by selected tags
+        return markers.filter { marker in
+            selectedTagIds.contains(marker.tagId)
+        }
     }
     
     var visibleWaveform: [Float] {
@@ -121,6 +150,10 @@ final class TimelineViewModel: ObservableObject {
     init(repository: ProjectRepository, timelineID: UUID) {
         self.repository = repository
         self.timelineID = timelineID
+        self.undoManager = MarkerUndoManager(repository: repository, timelineID: timelineID)
+
+        // Initialize selectedTagIds with all tags (show all by default)
+        self.selectedTagIds = Set(repository.project.tags.map(\.id))
 
         setupBindings()
         setupRepositoryObserver()
@@ -449,41 +482,83 @@ final class TimelineViewModel: ObservableObject {
     }
     
     // MARK: - Markers
-    
-    func addMarkerAtCurrentTime() {
+
+    func addMarker(name: String, tagId: UUID, at time: Double) {
         // ✅ Квантуем время к ближайшему кадру
-        let quantizedTime = quantizeToFrame(currentTime)
-        
+        let quantizedTime = quantizeToFrame(time)
+
         let marker = TimelineMarker(
             timeSeconds: quantizedTime,
-            name: "Marker \(markers.count + 1)"
+            name: name,
+            tagId: tagId
         )
-        repository.addMarker(timelineID: timelineID, marker: marker)
-        
-        print("✅ Marker added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", currentTime))s)")
+
+        // Use undo manager for this action
+        let action = AddMarkerAction(marker: marker)
+        undoManager.performAction(action)
+
+        print("✅ Marker '\(name)' added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s with tagId: \(tagId)")
+    }
+
+    func pausePlayback() {
+        audioPlayer.pause()
+    }
+
+    func resumePlayback() {
+        audioPlayer.play()
     }
 
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
         // ✅ Квантуем время при перемещении маркера
         let quantizedTime = quantizeToFrame(newTime)
-        
-        var updatedMarker = marker
-        updatedMarker.timeSeconds = quantizedTime
-        repository.updateMarker(timelineID: timelineID, marker: updatedMarker)
-        
+
+        // Use undo manager for this action
+        let action = ChangeMarkerTimeAction(
+            markerID: marker.id,
+            oldTime: marker.timeSeconds,
+            newTime: quantizedTime
+        )
+        undoManager.performAction(action)
+
         print("✅ Marker moved to frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", newTime))s)")
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
-        var updatedMarker = marker
-        updatedMarker.name = newName
-        repository.updateMarker(timelineID: timelineID, marker: updatedMarker)
+        // Use undo manager for this action
+        let action = RenameMarkerAction(
+            markerID: marker.id,
+            oldName: marker.name,
+            newName: newName
+        )
+        undoManager.performAction(action)
+    }
+
+    func updateMarker(_ marker: TimelineMarker) {
+        repository.updateMarker(timelineID: timelineID, marker: marker)
+    }
+
+    func changeMarkerTag(_ marker: TimelineMarker, to newTagId: UUID) {
+        // Use undo manager for this action
+        let action = ChangeMarkerTagAction(
+            markerID: marker.id,
+            oldTagId: marker.tagId,
+            newTagId: newTagId
+        )
+        undoManager.performAction(action)
     }
 
     func deleteMarker(_ marker: TimelineMarker) {
-        repository.removeMarker(timelineID: timelineID, markerID: marker.id)
+        // Use undo manager for this action
+        let action = DeleteMarkerAction(marker: marker)
+        undoManager.performAction(action)
     }
-    
+
+    func deleteAllMarkers() {
+        // Use undo manager for this action
+        let action = DeleteAllMarkersAction(markers: markers)
+        undoManager.performAction(action)
+    }
+
     // MARK: - Timeline
 
     func renameTimeline(to newName: String) {

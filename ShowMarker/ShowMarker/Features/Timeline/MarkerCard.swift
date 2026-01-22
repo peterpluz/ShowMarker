@@ -4,10 +4,12 @@ import Combine
 struct MarkerCard: View {
 
     let marker: TimelineMarker
+    let tag: Tag?  // Tag for this marker
     let fps: Int
     let markerFlashPublisher: PassthroughSubject<TimelineViewModel.MarkerFlashEvent, Never>
     let draggedMarkerID: UUID?
     let draggedMarkerPreviewTime: Double?
+    let onTagEdit: () -> Void  // Callback for tag editing
 
     @State private var flashOpacity: Double = 0
     @State private var pulsePhase: Double = 0
@@ -15,10 +17,10 @@ struct MarkerCard: View {
     var body: some View {
         HStack(spacing: 12) {
 
-            Image(systemName: "bookmark.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.accentColor)
-                .frame(width: 24)
+            // Vertical colored stripe instead of bookmark icon
+            Rectangle()
+                .fill(tag.map { Color(hex: $0.colorHex) } ?? Color.accentColor)
+                .frame(width: 4, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(marker.name)
@@ -32,6 +34,14 @@ struct MarkerCard: View {
             }
 
             Spacer()
+
+            // Tag indicator (larger text)
+            if let tag = tag {
+                Text(tag.name)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(Color(hex: tag.colorHex))
+                    .lineLimit(1)
+            }
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
@@ -50,6 +60,17 @@ struct MarkerCard: View {
         )
         .contentShape(Rectangle())
         .listRowInsets(EdgeInsets())
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button {
+                onTagEdit()
+            } label: {
+                Label("Тег", systemImage: "tag.fill")
+            }
+            .tint(.orange)
+        }
+        .onLongPressGesture {
+            onTagEdit()
+        }
         .onReceive(markerFlashPublisher) { event in
             // Only process events for THIS marker
             guard event.markerID == marker.id else { return }

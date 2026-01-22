@@ -7,6 +7,7 @@ struct TimelineBarView: View {
 
     let waveform: [Float]
     let markers: [TimelineMarker]
+    let tags: [Tag]  // Tags for coloring markers
 
     let hasAudio: Bool
 
@@ -138,7 +139,6 @@ struct TimelineBarView: View {
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
                     .offset(x: {
-                        let playheadAbsoluteX = totalWidth * timeRatio
                         let idealCapsuleCenter = totalWidth * timeRatio
                         let actualCapsuleCenter = capsuleCenter
                         let capsuleShift = actualCapsuleCenter - idealCapsuleCenter
@@ -394,8 +394,16 @@ struct TimelineBarView: View {
                 let normalizedPosition = displayTime / max(duration, 0.0001)
                 let markerX = centerX - offset + (normalizedPosition * contentWidth)
 
+                // Get tag color for this marker
+                let markerColor: Color = {
+                    if let tag = tags.first(where: { $0.id == marker.tagId }) {
+                        return Color(hex: tag.colorHex)
+                    }
+                    return .orange // Fallback color
+                }()
+
                 Rectangle()
-                    .fill(Color.orange)
+                    .fill(markerColor)
                     .frame(width: Self.markerLineWidth, height: Self.barHeight)
                     .position(x: markerX, y: Self.barHeight / 2)
                     .gesture(markerGesture(
