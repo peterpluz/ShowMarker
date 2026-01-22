@@ -33,7 +33,11 @@ final class ProjectRepository: ObservableObject {
         )
         project.timelines.append(timeline)
     }
-    
+
+    func addTimeline(_ timeline: Timeline) {
+        project.timelines.append(timeline)
+    }
+
     func removeTimelines(at offsets: IndexSet) {
         // Удаляем аудиофайлы перед удалением таймлайнов
         if let docURL = documentURL {

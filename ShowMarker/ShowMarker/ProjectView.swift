@@ -19,6 +19,11 @@ struct ProjectView: View {
     @State private var isProjectSettingsPresented = false
     @State private var selectedTimelines: Set<UUID> = []
 
+    // Export states
+    @State private var exportData: Data?
+    @State private var isExportPresented = false
+    @State private var isExportingAll = false
+
     private let availableFPS = [25, 30, 50, 60, 100]
 
     init(document: Binding<ShowMarkerDocument>) {
@@ -62,6 +67,19 @@ struct ProjectView: View {
             .sheet(isPresented: $isProjectSettingsPresented) {
                 ProjectSettingsView(repository: repository)
             }
+            .fileExporter(
+                isPresented: $isExportPresented,
+                document: SimpleCSVDocument(data: exportData ?? Data()),
+                contentType: .commaSeparatedText,
+                defaultFilename: isExportingAll ? "\(repository.project.name)_AllTimelines.csv" : "SelectedTimelines.csv"
+            ) { result in
+                switch result {
+                case .success:
+                    print("Export successful")
+                case .failure(let error):
+                    print("Export failed: \(error.localizedDescription)")
+                }
+            }
     }
 
     // MARK: - Main Content
@@ -92,6 +110,9 @@ struct ProjectView: View {
     private var timelineList: some View {
         ForEach(filteredTimelines) { timeline in
             timelineRow(timeline)
+        }
+        .onMove { fromOffsets, toOffset in
+            repository.moveTimelines(from: fromOffsets, to: toOffset)
         }
     }
 
@@ -197,23 +218,74 @@ struct ProjectView: View {
 
     private var toolbarContent: some ToolbarContent {
         Group {
-            // Checkmark button (left)
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    isEditing.toggle()
-                } label: {
-                    Image(systemName: isEditing ? "checkmark" : "checkmark.circle")
-                        .font(.system(size: 20, weight: .semibold))
+            if isEditing {
+                // Select all button (left)
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        selectAllTimelines()
+                    } label: {
+                        Text("Выбрать все")
+                            .font(.system(size: 17))
+                    }
                 }
-            }
 
-            // Settings button (right - will appear after checkmark)
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    isProjectSettingsPresented = true
-                } label: {
-                    Image(systemName: "gear")
-                        .font(.system(size: 20, weight: .semibold))
+                // Selection count (center)
+                ToolbarItem(placement: .principal) {
+                    Text("\(selectedTimelines.count) объекта")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+
+                // Done button (right)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        isEditing = false
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(Color.accentColor))
+                    }
+                }
+
+                // Settings button (always visible)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        isProjectSettingsPresented = true
+                    } label: {
+                        Image(systemName: "gear")
+                            .font(.system(size: 20, weight: .semibold))
+                    }
+                }
+            } else {
+                // Menu with select option
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button {
+                            isEditing = true
+                        } label: {
+                            Label("Выбрать", systemImage: "checkmark.circle")
+                        }
+
+                        Button {
+                            exportAllTimelines()
+                        } label: {
+                            Label("Экспорт CSV всех таймлайнов", systemImage: "square.and.arrow.up")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 20, weight: .semibold))
+                    }
+                }
+
+                // Settings button (right)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        isProjectSettingsPresented = true
+                    } label: {
+                        Image(systemName: "gear")
+                            .font(.system(size: 20, weight: .semibold))
+                    }
                 }
             }
         }
@@ -224,7 +296,7 @@ struct ProjectView: View {
     private var bottomNotesStyleBar: some View {
         HStack(spacing: 12) {
             if isEditing {
-                deleteSelectedButton
+                editingBottomBar
             } else {
                 searchBar
                 addButton
@@ -233,25 +305,43 @@ struct ProjectView: View {
         .padding(16)
     }
 
-    private var deleteSelectedButton: some View {
-        Button {
-            deleteSelectedTimelines()
-        } label: {
-            HStack {
+    private var editingBottomBar: some View {
+        HStack(spacing: 16) {
+            // Share button
+            Button {
+                exportSelectedTimelines()
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .accentColor)
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(selectedTimelines.isEmpty)
+
+            // Duplicate button
+            Button {
+                duplicateSelectedTimelines()
+            } label: {
+                Image(systemName: "plus.square.on.square")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .accentColor)
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(selectedTimelines.isEmpty)
+
+            Spacer()
+
+            // Delete button
+            Button {
+                deleteSelectedTimelines()
+            } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 20, weight: .semibold))
-                Text("Удалить (\(selectedTimelines.count))")
-                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .red)
+                    .frame(width: 44, height: 44)
             }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 48)
-            .background(
-                Capsule()
-                    .fill(selectedTimelines.isEmpty ? Color.gray : Color.red)
-            )
+            .disabled(selectedTimelines.isEmpty)
         }
-        .disabled(selectedTimelines.isEmpty)
     }
 
     private var searchBar: some View {
@@ -300,6 +390,10 @@ struct ProjectView: View {
         }
     }
 
+    private func selectAllTimelines() {
+        selectedTimelines = Set(filteredTimelines.map(\.id))
+    }
+
     private func deleteSelectedTimelines() {
         let indices = IndexSet(
             selectedTimelines.compactMap { id in
@@ -309,6 +403,115 @@ struct ProjectView: View {
         repository.removeTimelines(at: indices)
         selectedTimelines.removeAll()
         isEditing = false
+    }
+
+    private func duplicateSelectedTimelines() {
+        for timelineID in selectedTimelines {
+            guard let timeline = repository.project.timelines.first(where: { $0.id == timelineID }) else {
+                continue
+            }
+
+            let duplicateName = "\(timeline.name) Copy"
+            let newTimeline = Timeline(
+                name: duplicateName,
+                fps: timeline.fps,
+                markers: timeline.markers.map { marker in
+                    TimelineMarker(
+                        timeSeconds: marker.timeSeconds,
+                        name: marker.name,
+                        tagId: marker.tagId
+                    )
+                },
+                audio: timeline.audio
+            )
+
+            repository.addTimeline(newTimeline)
+        }
+
+        selectedTimelines.removeAll()
+        isEditing = false
+    }
+
+    private func exportSelectedTimelines() {
+        let selectedTimelineObjects = repository.project.timelines.filter { selectedTimelines.contains($0.id) }
+
+        if selectedTimelineObjects.count == 1 {
+            // Single timeline - export as CSV
+            if let timeline = selectedTimelineObjects.first {
+                exportData = generateCSV(for: timeline)
+                isExportingAll = false
+                isExportPresented = true
+            }
+        } else if selectedTimelineObjects.count > 1 {
+            // Multiple timelines - export as ZIP
+            exportData = generateZIP(for: selectedTimelineObjects)
+            isExportingAll = true
+            isExportPresented = true
+        }
+    }
+
+    private func exportAllTimelines() {
+        let allTimelines = repository.project.timelines
+
+        if allTimelines.count == 1 {
+            if let timeline = allTimelines.first {
+                exportData = generateCSV(for: timeline)
+                isExportingAll = false
+                isExportPresented = true
+            }
+        } else if allTimelines.count > 1 {
+            exportData = generateZIP(for: allTimelines)
+            isExportingAll = true
+            isExportPresented = true
+        }
+    }
+
+    private func generateCSV(for timeline: Timeline) -> Data {
+        var csv = "Marker Name,Timecode,Time (seconds),Frame Number\n"
+
+        let fps = timeline.fps
+        let sortedMarkers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
+
+        for marker in sortedMarkers {
+            let totalFrames = Int(marker.timeSeconds * Double(fps))
+            let frames = totalFrames % fps
+            let seconds = (totalFrames / fps) % 60
+            let minutes = (totalFrames / fps / 60) % 60
+            let hours = totalFrames / fps / 3600
+
+            let timecode = String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
+            let timeStr = String(format: "%.3f", marker.timeSeconds)
+
+            csv += "\"\(marker.name)\",\(timecode),\(timeStr),\(totalFrames)\n"
+        }
+
+        return csv.data(using: .utf8) ?? Data()
+    }
+
+    private func generateZIP(for timelines: [Timeline]) -> Data {
+        // Generate a single CSV with all timelines
+        // Each row includes the Timeline Name as the first column
+        var csv = "Timeline Name,Marker Name,Timecode,Time (seconds),Frame Number\n"
+
+        for timeline in timelines {
+            let fps = timeline.fps
+            let sortedMarkers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
+
+            for marker in sortedMarkers {
+                let totalFrames = Int(marker.timeSeconds * Double(fps))
+                let frames = totalFrames % fps
+                let seconds = (totalFrames / fps) % 60
+                let minutes = (totalFrames / fps / 60) % 60
+                let hours = totalFrames / fps / 3600
+
+                let timecode = String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
+                let timeStr = String(format: "%.3f", marker.timeSeconds)
+
+                csv += "\"\(timeline.name)\",\"\(marker.name)\",\(timecode),\(timeStr),\(totalFrames)\n"
+            }
+        }
+
+        return csv.data(using: .utf8) ?? Data()
     }
 
     private func startRename(_ timeline: Timeline) {

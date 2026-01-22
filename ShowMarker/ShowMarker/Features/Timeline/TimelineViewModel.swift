@@ -33,6 +33,11 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Marker creation settings
 
     @Published var shouldPauseOnMarkerCreation: Bool = false
+    @Published var shouldShowMarkerPopup: Bool = true  // Toggle for marker creation popup
+
+    // MARK: - Undo/Redo System
+
+    @Published private(set) var undoManager: MarkerUndoManager
 
     // MARK: - Tag filtering
 
@@ -145,6 +150,7 @@ final class TimelineViewModel: ObservableObject {
     init(repository: ProjectRepository, timelineID: UUID) {
         self.repository = repository
         self.timelineID = timelineID
+        self.undoManager = MarkerUndoManager(repository: repository, timelineID: timelineID)
 
         // Initialize selectedTagIds with all tags (show all by default)
         self.selectedTagIds = Set(repository.project.tags.map(\.id))
@@ -486,7 +492,10 @@ final class TimelineViewModel: ObservableObject {
             name: name,
             tagId: tagId
         )
-        repository.addMarker(timelineID: timelineID, marker: marker)
+
+        // Use undo manager for this action
+        let action = AddMarkerAction(marker: marker)
+        undoManager.performAction(action)
 
         print("✅ Marker '\(name)' added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s with tagId: \(tagId)")
     }
@@ -502,32 +511,52 @@ final class TimelineViewModel: ObservableObject {
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
         // ✅ Квантуем время при перемещении маркера
         let quantizedTime = quantizeToFrame(newTime)
-        
-        var updatedMarker = marker
-        updatedMarker.timeSeconds = quantizedTime
-        repository.updateMarker(timelineID: timelineID, marker: updatedMarker)
-        
+
+        // Use undo manager for this action
+        let action = ChangeMarkerTimeAction(
+            markerID: marker.id,
+            oldTime: marker.timeSeconds,
+            newTime: quantizedTime
+        )
+        undoManager.performAction(action)
+
         print("✅ Marker moved to frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", newTime))s)")
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String) {
-        var updatedMarker = marker
-        updatedMarker.name = newName
-        repository.updateMarker(timelineID: timelineID, marker: updatedMarker)
+        // Use undo manager for this action
+        let action = RenameMarkerAction(
+            markerID: marker.id,
+            oldName: marker.name,
+            newName: newName
+        )
+        undoManager.performAction(action)
     }
 
     func updateMarker(_ marker: TimelineMarker) {
         repository.updateMarker(timelineID: timelineID, marker: marker)
     }
 
+    func changeMarkerTag(_ marker: TimelineMarker, to newTagId: UUID) {
+        // Use undo manager for this action
+        let action = ChangeMarkerTagAction(
+            markerID: marker.id,
+            oldTagId: marker.tagId,
+            newTagId: newTagId
+        )
+        undoManager.performAction(action)
+    }
+
     func deleteMarker(_ marker: TimelineMarker) {
-        repository.removeMarker(timelineID: timelineID, markerID: marker.id)
+        // Use undo manager for this action
+        let action = DeleteMarkerAction(marker: marker)
+        undoManager.performAction(action)
     }
 
     func deleteAllMarkers() {
-        markers.forEach { marker in
-            repository.removeMarker(timelineID: timelineID, markerID: marker.id)
-        }
+        // Use undo manager for this action
+        let action = DeleteAllMarkersAction(markers: markers)
+        undoManager.performAction(action)
     }
 
     // MARK: - Timeline

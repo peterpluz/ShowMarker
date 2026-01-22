@@ -251,9 +251,7 @@ struct TimelineScreen: View {
             tags: viewModel.tags,
             selectedTagId: marker.tagId,
             onSelect: { newTagId in
-                var updatedMarker = marker
-                updatedMarker.tagId = newTagId
-                viewModel.updateMarker(updatedMarker)
+                viewModel.changeMarkerTag(marker, to: newTagId)
                 editingTagMarker = nil
             },
             onCancel: {
@@ -314,23 +312,23 @@ struct TimelineScreen: View {
             // Undo button (leading)
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    // TODO: Implement undo functionality
+                    viewModel.undoManager.undo()
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
                         .font(.system(size: 20, weight: .semibold))
                 }
-                .disabled(true)  // Disabled for now
+                .disabled(!viewModel.undoManager.canUndo)
             }
 
             // Redo button (leading)
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    // TODO: Implement redo functionality
+                    viewModel.undoManager.redo()
                 } label: {
                     Image(systemName: "arrow.uturn.forward")
                         .font(.system(size: 20, weight: .semibold))
                 }
-                .disabled(true)  // Disabled for now
+                .disabled(!viewModel.undoManager.canRedo)
             }
 
             // Tag filter button
@@ -354,6 +352,11 @@ struct TimelineScreen: View {
                     // Pause on marker creation toggle
                     Toggle(isOn: $viewModel.shouldPauseOnMarkerCreation) {
                         Label("Останавливать воспроизведение", systemImage: "pause.circle")
+                    }
+
+                    // Show marker popup toggle
+                    Toggle(isOn: $viewModel.shouldShowMarkerPopup) {
+                        Label("Показывать окно создания маркера", systemImage: "square.and.pencil")
                     }
 
                     Divider()
@@ -483,14 +486,27 @@ struct TimelineScreen: View {
             // Save current time for marker creation
             markerCreationTime = viewModel.currentTime
 
-            // Save playback state and pause if needed
-            wasPlayingBeforePopup = viewModel.isPlaying
-            if viewModel.shouldPauseOnMarkerCreation && wasPlayingBeforePopup {
-                viewModel.pausePlayback()
-            }
+            if viewModel.shouldShowMarkerPopup {
+                // Save playback state and pause if needed
+                wasPlayingBeforePopup = viewModel.isPlaying
+                if viewModel.shouldPauseOnMarkerCreation && wasPlayingBeforePopup {
+                    viewModel.pausePlayback()
+                }
 
-            // Show marker name popup
-            isMarkerNamePopupPresented = true
+                // Show marker name popup
+                isMarkerNamePopupPresented = true
+            } else {
+                // Create marker directly with default values
+                let markerNumber = viewModel.markers.count + 1
+                let defaultName = "Marker \(markerNumber)"
+                let defaultTag = viewModel.defaultTag ?? viewModel.tags.first!
+
+                viewModel.addMarker(
+                    name: defaultName,
+                    tagId: defaultTag.id,
+                    at: markerCreationTime
+                )
+            }
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
                 .font(.system(size: 17, weight: .semibold))

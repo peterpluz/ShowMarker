@@ -20,6 +20,13 @@ struct ProjectSettingsView: View {
             }
             .navigationTitle("Настройки проекта")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Закрыть") {
+                        dismiss()
+                    }
+                }
+            }
             .sheet(item: $editingTag) { tag in
                 TagEditorView(
                     tag: tag,
@@ -69,7 +76,8 @@ struct ProjectSettingsView: View {
                     selectedFPS: repository.project.fps,
                     onSelect: { fps in
                         repository.setProjectFPS(fps)
-                    }
+                    },
+                    repository: repository
                 )
             } label: {
                 HStack {
@@ -136,17 +144,29 @@ struct ProjectSettingsView: View {
 struct FPSPickerView: View {
     let selectedFPS: Int
     let onSelect: (Int) -> Void
+    @ObservedObject var repository: ProjectRepository
 
     @Environment(\.dismiss) private var dismiss
+    @State private var pendingFPS: Int?
+    @State private var showConfirmation = false
 
     private let fpsOptions = [24, 25, 30, 50, 60, 100]
+
+    private var hasMarkers: Bool {
+        repository.project.timelines.contains { !$0.markers.isEmpty }
+    }
 
     var body: some View {
         List {
             ForEach(fpsOptions, id: \.self) { fps in
                 Button {
-                    onSelect(fps)
-                    dismiss()
+                    if fps != selectedFPS && hasMarkers {
+                        pendingFPS = fps
+                        showConfirmation = true
+                    } else {
+                        onSelect(fps)
+                        dismiss()
+                    }
                 } label: {
                     HStack {
                         Text("\(fps) FPS")
@@ -162,6 +182,19 @@ struct FPSPickerView: View {
         }
         .navigationTitle("Частота кадров")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Изменить частоту кадров?", isPresented: $showConfirmation) {
+            Button("Изменить", role: .destructive) {
+                if let fps = pendingFPS {
+                    onSelect(fps)
+                    dismiss()
+                }
+            }
+            Button("Отмена", role: .cancel) {
+                pendingFPS = nil
+            }
+        } message: {
+            Text("В проекте уже есть маркеры. При изменении частоты кадров маркеры будут автоматически перемещены к ближайшим точкам квантования новой сетки кадров, что может привести к небольшому смещению их позиций.")
+        }
     }
 }
 
