@@ -47,17 +47,23 @@ struct ShowMarkerDocument: FileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        let decoder = JSONDecoder()
-        let project = try decoder.decode(Project.self, from: data)
-        
+        // Decode in nonisolated context
+        let project = try Self.decodeProject(from: data)
+
         self.repository = ProjectRepository(project: project, documentURL: nil)
+    }
+
+    // Helper method for decoding in nonisolated context
+    private static nonisolated func decodeProject(from data: Data) throws -> Project {
+        let decoder = JSONDecoder()
+        return try decoder.decode(Project.self, from: data)
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let snapshot = repository.project
-        
-        let encoder = JSONEncoder()
-        let projectData = try encoder.encode(snapshot)
+
+        // Encode in nonisolated context
+        let projectData = try Self.encodeProject(snapshot)
         let projectWrapper = FileWrapper(regularFileWithContents: projectData)
 
         var root: [String: FileWrapper] = [
@@ -70,5 +76,11 @@ struct ShowMarkerDocument: FileDocument {
         }
 
         return FileWrapper(directoryWithFileWrappers: root)
+    }
+
+    // Helper method for encoding in nonisolated context
+    private static nonisolated func encodeProject(_ project: Project) throws -> Data {
+        let encoder = JSONEncoder()
+        return try encoder.encode(project)
     }
 }

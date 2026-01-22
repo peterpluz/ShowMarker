@@ -93,11 +93,16 @@ struct WaveformCache {
     nonisolated private static func save(_ cached: CachedWaveformData, cacheKey: String) throws {
         let paths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
         let cacheDir = paths[0].appendingPathComponent("WaveformCache", isDirectory: true)
-        
+
         let fileURL = cacheDir.appendingPathComponent("\(cacheKey).waveform")
-        let data = try JSONEncoder().encode(cached)
+        let data = try encodeWaveform(cached)
         try data.write(to: fileURL, options: .atomic)
         print("✅ Waveform saved to cache: \(fileURL.lastPathComponent)")
+    }
+
+    // Helper method for encoding in nonisolated context
+    private static nonisolated func encodeWaveform(_ data: CachedWaveformData) throws -> Data {
+        return try JSONEncoder().encode(data)
     }
     
     // MARK: - Clear
