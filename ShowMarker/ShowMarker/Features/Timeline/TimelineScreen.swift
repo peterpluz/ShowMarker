@@ -524,7 +524,10 @@ struct TimelineScreen: View {
     // MARK: - Helpers
 
     private func prepareExport() {
-        let csv = MarkersCSVExporter.export(markers: viewModel.markers)
+        let csv = MarkersCSVExporter.export(
+            markers: viewModel.markers,
+            frameRate: Double(viewModel.projectFPS)
+        )
         exportData = csv.data(using: .utf8)
         isExportPresented = true
     }
