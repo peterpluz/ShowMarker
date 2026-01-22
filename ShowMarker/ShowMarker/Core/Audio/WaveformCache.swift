@@ -90,7 +90,7 @@ struct WaveformCache {
     
     // MARK: - Save
 
-    private static func save(_ cached: CachedWaveformData, cacheKey: String) throws {
+    nonisolated private static func save(_ cached: CachedWaveformData, cacheKey: String) throws {
         let paths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
         let cacheDir = paths[0].appendingPathComponent("WaveformCache", isDirectory: true)
 

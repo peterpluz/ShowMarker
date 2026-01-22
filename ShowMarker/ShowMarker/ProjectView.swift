@@ -531,16 +531,16 @@ struct ProjectView: View {
                 try file.data.write(to: fileURL)
             }
 
-            // Create ZIP using zip command
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-            process.arguments = ["-j", "-q", zipPath.path] + files.map { tempDir.appendingPathComponent($0.name).path }
+            // Create ZIP using ditto command (more compatible on macOS)
+            let task = NSTask()
+            task.launchPath = "/usr/bin/ditto"
+            task.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", tempDir.path, zipPath.path]
 
-            try process.run()
-            process.waitUntilExit()
+            task.launch()
+            task.waitUntilExit()
 
-            guard process.terminationStatus == 0 else {
-                print("ZIP creation failed with status: \(process.terminationStatus)")
+            guard task.terminationStatus == 0 else {
+                print("ZIP creation failed with status: \(task.terminationStatus)")
                 try? FileManager.default.removeItem(at: tempDir)
                 try? FileManager.default.removeItem(at: zipPath)
                 return nil
