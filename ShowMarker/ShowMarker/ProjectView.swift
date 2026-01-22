@@ -17,6 +17,7 @@ struct ProjectView: View {
 
     @State private var isEditing = false
     @State private var isProjectSettingsPresented = false
+    @State private var selectedTimelines: Set<UUID> = []
 
     private let availableFPS = [25, 30, 50, 60, 100]
 
@@ -47,6 +48,11 @@ struct ProjectView: View {
             .environment(\.editMode, .constant(isEditing ? .active : .inactive))
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) { bottomNotesStyleBar }
+            .onChange(of: isEditing) { oldValue, newValue in
+                if !newValue {
+                    selectedTimelines.removeAll()
+                }
+            }
             .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
                 addTimelineAlert
             }
@@ -87,26 +93,47 @@ struct ProjectView: View {
         ForEach(filteredTimelines) { timeline in
             timelineRow(timeline)
         }
-        .onDelete { repository.removeTimelines(at: $0) }
-        .onMove { repository.moveTimelines(from: $0, to: $1) }
     }
 
     private func timelineRow(_ timeline: Timeline) -> some View {
-        NavigationLink {
-            TimelineScreen(
-                repository: repository,
-                timelineID: timeline.id
-            )
-        } label: {
-            Text(timeline.name)
-                .foregroundColor(.primary)
-                .padding(.vertical, 6)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            timelineSwipeActions(timeline)
-        }
-        .contextMenu {
-            timelineContextMenu(timeline)
+        Group {
+            if isEditing {
+                // Selection mode with checkbox
+                Button {
+                    toggleSelection(timeline.id)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: selectedTimelines.contains(timeline.id) ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 22))
+                            .foregroundColor(selectedTimelines.contains(timeline.id) ? .accentColor : .secondary)
+
+                        Text(timeline.name)
+                            .foregroundColor(.primary)
+                            .padding(.vertical, 6)
+
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Normal mode with NavigationLink
+                NavigationLink {
+                    TimelineScreen(
+                        repository: repository,
+                        timelineID: timeline.id
+                    )
+                } label: {
+                    Text(timeline.name)
+                        .foregroundColor(.primary)
+                        .padding(.vertical, 6)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    timelineSwipeActions(timeline)
+                }
+                .contextMenu {
+                    timelineContextMenu(timeline)
+                }
+            }
         }
     }
 
@@ -196,10 +223,35 @@ struct ProjectView: View {
 
     private var bottomNotesStyleBar: some View {
         HStack(spacing: 12) {
-            searchBar
-            addButton
+            if isEditing {
+                deleteSelectedButton
+            } else {
+                searchBar
+                addButton
+            }
         }
         .padding(16)
+    }
+
+    private var deleteSelectedButton: some View {
+        Button {
+            deleteSelectedTimelines()
+        } label: {
+            HStack {
+                Image(systemName: "trash")
+                    .font(.system(size: 20, weight: .semibold))
+                Text("Удалить (\(selectedTimelines.count))")
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(
+                Capsule()
+                    .fill(selectedTimelines.isEmpty ? Color.gray : Color.red)
+            )
+        }
+        .disabled(selectedTimelines.isEmpty)
     }
 
     private var searchBar: some View {
@@ -239,6 +291,25 @@ struct ProjectView: View {
     }
 
     // MARK: - Helpers
+
+    private func toggleSelection(_ timelineID: UUID) {
+        if selectedTimelines.contains(timelineID) {
+            selectedTimelines.remove(timelineID)
+        } else {
+            selectedTimelines.insert(timelineID)
+        }
+    }
+
+    private func deleteSelectedTimelines() {
+        let indices = IndexSet(
+            selectedTimelines.compactMap { id in
+                repository.project.timelines.firstIndex(where: { $0.id == id })
+            }
+        )
+        repository.removeTimelines(at: indices)
+        selectedTimelines.removeAll()
+        isEditing = false
+    }
 
     private func startRename(_ timeline: Timeline) {
         renamingTimelineID = timeline.id

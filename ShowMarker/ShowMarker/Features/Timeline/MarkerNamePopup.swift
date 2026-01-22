@@ -34,21 +34,20 @@ struct MarkerNamePopup: View {
 
     var body: some View {
         ZStack {
-            // Dimmed background with blur effect (iOS style)
-            Color.black.opacity(0.25)
-                .background(.ultraThinMaterial)
+            // Dimmed background (modern iOS style)
+            Color.black.opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture {
                     onCancel()
                 }
 
             // Popup content
-            VStack(spacing: 16) {
+            VStack(spacing: 20) {
                 // Title
                 Text("Название маркера")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.primary)
-                    .padding(.top, 20)
+                    .padding(.top, 24)
 
                 // Text field with clear button
                 HStack(spacing: 8) {
@@ -115,7 +114,7 @@ struct MarkerNamePopup: View {
                 .padding(.horizontal, 16)
 
                 // Buttons
-                HStack(spacing: 8) {
+                HStack(spacing: 12) {
                     // Cancel button
                     Button {
                         onCancel()
@@ -124,10 +123,10 @@ struct MarkerNamePopup: View {
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundColor(.primary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 50)
+                            .frame(height: 54)
                             .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color(.tertiarySystemFill))
+                                Capsule()
+                                    .fill(Color(.systemGray6))
                             )
                     }
                     .buttonStyle(.plain)
@@ -141,25 +140,24 @@ struct MarkerNamePopup: View {
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 50)
+                            .frame(height: 54)
                             .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                Capsule()
                                     .fill(Color.accentColor)
                             )
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 20)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
             }
-            .frame(width: 320)
+            .frame(width: 340)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(.systemBackground))
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: .black.opacity(0.15), radius: 30, x: 0, y: 10)
-            .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 5)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.3), radius: 40, x: 0, y: 15)
         }
         .onAppear {
             // Auto-focus text field when popup appears

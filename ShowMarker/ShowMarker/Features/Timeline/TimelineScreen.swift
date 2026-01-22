@@ -30,6 +30,9 @@ struct TimelineScreen: View {
     // ✅ FIX: Force timeline redraw during List scroll
     @State private var timelineRedrawTrigger: Bool = false
 
+    // Delete all markers confirmation
+    @State private var showDeleteAllMarkersConfirmation = false
+
     private static func makeViewModel(
         repository: ProjectRepository,
         timelineID: UUID
@@ -103,6 +106,14 @@ struct TimelineScreen: View {
                     renamingMarker = nil
                 }
             }
+            .alert("Удалить все маркеры?", isPresented: $showDeleteAllMarkersConfirmation) {
+                Button("Удалить", role: .destructive) {
+                    viewModel.deleteAllMarkers()
+                }
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Вы уверены, что хотите удалить все маркеры этого таймлайна?")
+            }
             .fileImporter(
                 isPresented: $isPickerPresented,
                 allowedContentTypes: [.audio],
@@ -124,7 +135,7 @@ struct TimelineScreen: View {
         ScrollViewReader { proxy in
             List {
                 Section {
-                    ForEach(viewModel.markers) { marker in
+                    ForEach(viewModel.visibleMarkers) { marker in
                         markerRow(marker)
                             .id(marker.id)  // ✅ Required for ScrollViewReader
                     }
@@ -186,6 +197,12 @@ struct TimelineScreen: View {
             timePickerMarker = marker
         } label: {
             Label("Изменить время маркера", systemImage: "clock")
+        }
+
+        Button {
+            editingTagMarker = marker
+        } label: {
+            Label("Изменить тег", systemImage: "tag")
         }
 
         Divider()
@@ -294,6 +311,28 @@ struct TimelineScreen: View {
 
     private var toolbarContent: some ToolbarContent {
         Group {
+            // Undo button (leading)
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    // TODO: Implement undo functionality
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 20, weight: .semibold))
+                }
+                .disabled(true)  // Disabled for now
+            }
+
+            // Redo button (leading)
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    // TODO: Implement redo functionality
+                } label: {
+                    Image(systemName: "arrow.uturn.forward")
+                        .font(.system(size: 20, weight: .semibold))
+                }
+                .disabled(true)  // Disabled for now
+            }
+
             // Tag filter button
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -344,6 +383,13 @@ struct TimelineScreen: View {
                 }
 
                 Divider()
+
+                Button(role: .destructive) {
+                    showDeleteAllMarkersConfirmation = true
+                } label: {
+                    Label("Удалить все маркеры", systemImage: "trash.fill")
+                }
+                .disabled(viewModel.markers.isEmpty)
 
                 Button {
                     prepareExport()

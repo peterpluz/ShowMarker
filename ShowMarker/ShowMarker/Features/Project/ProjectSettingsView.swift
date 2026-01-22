@@ -20,18 +20,6 @@ struct ProjectSettingsView: View {
             }
             .navigationTitle("Настройки проекта")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Назад")
-                        }
-                    }
-                }
-            }
             .sheet(item: $editingTag) { tag in
                 TagEditorView(
                     tag: tag,

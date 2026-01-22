@@ -66,7 +66,7 @@ struct MarkerCard: View {
             } label: {
                 Label("Тег", systemImage: "tag.fill")
             }
-            .tint(tag.map { Color(hex: $0.colorHex) } ?? .accentColor)
+            .tint(.orange)
         }
         .onLongPressGesture {
             onTagEdit()

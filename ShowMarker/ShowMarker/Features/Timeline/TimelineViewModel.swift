@@ -24,7 +24,7 @@ final class TimelineViewModel: ObservableObject {
 
     // MARK: - Auto-scroll state
 
-    @Published var isAutoScrollEnabled: Bool = false
+    @Published var isAutoScrollEnabled: Bool = true  // Enabled by default
 
     /// ID of the next marker after current playhead position
     /// Used for auto-scrolling the marker list
@@ -523,7 +523,13 @@ final class TimelineViewModel: ObservableObject {
     func deleteMarker(_ marker: TimelineMarker) {
         repository.removeMarker(timelineID: timelineID, markerID: marker.id)
     }
-    
+
+    func deleteAllMarkers() {
+        markers.forEach { marker in
+            repository.removeMarker(timelineID: timelineID, markerID: marker.id)
+        }
+    }
+
     // MARK: - Timeline
 
     func renameTimeline(to newName: String) {
