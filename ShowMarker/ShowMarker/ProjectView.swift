@@ -414,6 +414,7 @@ struct ProjectView: View {
             let duplicateName = "\(timeline.name) Copy"
             let newTimeline = Timeline(
                 name: duplicateName,
+                audio: timeline.audio,
                 fps: timeline.fps,
                 markers: timeline.markers.map { marker in
                     TimelineMarker(
@@ -421,8 +422,7 @@ struct ProjectView: View {
                         name: marker.name,
                         tagId: marker.tagId
                     )
-                },
-                audio: timeline.audio
+                }
             )
 
             repository.addTimeline(newTimeline)
