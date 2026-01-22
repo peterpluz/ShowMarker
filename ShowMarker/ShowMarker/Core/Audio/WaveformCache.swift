@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 import AVFoundation
 
 // MARK: - Cached Data Structure
@@ -95,14 +95,9 @@ struct WaveformCache {
         let cacheDir = paths[0].appendingPathComponent("WaveformCache", isDirectory: true)
 
         let fileURL = cacheDir.appendingPathComponent("\(cacheKey).waveform")
-        let data = try encodeWaveform(cached)
+        let data = try JSONEncoder().encode(cached)
         try data.write(to: fileURL, options: .atomic)
         print("✅ Waveform saved to cache: \(fileURL.lastPathComponent)")
-    }
-
-    // Helper method for encoding in nonisolated context
-    nonisolated(unsafe) private static func encodeWaveform(_ data: CachedWaveformData) throws -> Data {
-        return try JSONEncoder().encode(data)
     }
     
     // MARK: - Clear

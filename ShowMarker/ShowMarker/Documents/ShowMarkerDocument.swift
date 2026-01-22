@@ -1,6 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import Foundation
+@preconcurrency import Foundation
 
 // MARK: - UTType Extension
 
@@ -47,23 +47,17 @@ struct ShowMarkerDocument: FileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        // Decode in nonisolated context
-        let project = try Self.decodeProject(from: data)
+        let decoder = JSONDecoder()
+        let project = try decoder.decode(Project.self, from: data)
 
         self.repository = ProjectRepository(project: project, documentURL: nil)
-    }
-
-    // Helper method for decoding in nonisolated context
-    nonisolated(unsafe) private static func decodeProject(from data: Data) throws -> Project {
-        let decoder = JSONDecoder()
-        return try decoder.decode(Project.self, from: data)
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let snapshot = repository.project
 
-        // Encode in nonisolated context
-        let projectData = try Self.encodeProject(snapshot)
+        let encoder = JSONEncoder()
+        let projectData = try encoder.encode(snapshot)
         let projectWrapper = FileWrapper(regularFileWithContents: projectData)
 
         var root: [String: FileWrapper] = [
@@ -76,11 +70,5 @@ struct ShowMarkerDocument: FileDocument {
         }
 
         return FileWrapper(directoryWithFileWrappers: root)
-    }
-
-    // Helper method for encoding in nonisolated context
-    nonisolated(unsafe) private static func encodeProject(_ project: Project) throws -> Data {
-        let encoder = JSONEncoder()
-        return try encoder.encode(project)
     }
 }

@@ -532,7 +532,7 @@ struct ProjectView: View {
             }
 
             // Create ZIP using zip command
-            let process = Process()
+            let process = Foundation.Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
             process.arguments = ["-j", "-q", zipPath.path] + files.map { tempDir.appendingPathComponent($0.name).path }
 
