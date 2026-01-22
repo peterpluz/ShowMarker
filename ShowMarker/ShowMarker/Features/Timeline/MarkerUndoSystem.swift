@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 // MARK: - Undo/Redo System for Marker Operations
 

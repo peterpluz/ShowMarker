@@ -139,7 +139,6 @@ struct TimelineBarView: View {
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
                     .offset(x: {
-                        let playheadAbsoluteX = totalWidth * timeRatio
                         let idealCapsuleCenter = totalWidth * timeRatio
                         let actualCapsuleCenter = capsuleCenter
                         let capsuleShift = actualCapsuleCenter - idealCapsuleCenter
