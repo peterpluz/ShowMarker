@@ -24,6 +24,9 @@ struct TimelineScreen: View {
     // Marker tag editing state
     @State private var editingTagMarker: TimelineMarker?
 
+    // Tag filter state
+    @State private var isTagFilterPresented = false
+
     // ✅ FIX: Force timeline redraw during List scroll
     @State private var timelineRedrawTrigger: Bool = false
 
@@ -48,6 +51,11 @@ struct TimelineScreen: View {
         viewModel.audio != nil
     }
 
+    // Check if filter is active (not all tags selected)
+    private var hasActiveFilter: Bool {
+        !viewModel.selectedTagIds.isEmpty && viewModel.selectedTagIds.count < viewModel.tags.count
+    }
+
     var body: some View {
         ZStack {
             mainContent
@@ -60,6 +68,9 @@ struct TimelineScreen: View {
                 }
                 .sheet(item: $editingTagMarker) { marker in
                     tagPickerSheet(for: marker)
+                }
+                .sheet(isPresented: $isTagFilterPresented) {
+                    tagFilterSheet
                 }
 
             // Marker name popup overlay
@@ -234,6 +245,17 @@ struct TimelineScreen: View {
         )
     }
 
+    private var tagFilterSheet: some View {
+        TagFilterView(
+            tags: viewModel.tags,
+            selectedTagIds: $viewModel.selectedTagIds,
+            onClose: {
+                isTagFilterPresented = false
+            }
+        )
+        .presentationDetents([.medium])
+    }
+
     private var markerNamePopupOverlay: some View {
         MarkerNamePopup(
             defaultName: "Маркер \(viewModel.markers.count + 1)",
@@ -271,19 +293,31 @@ struct TimelineScreen: View {
     // MARK: - Toolbar
 
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarTrailing) {
-            Menu {
-                // ✅ Auto-scroll toggle (moved to menu)
-                Toggle(isOn: $viewModel.isAutoScrollEnabled) {
-                    Label("Автоскролл маркеров", systemImage: "arrow.down.circle")
+        Group {
+            // Tag filter button
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isTagFilterPresented = true
+                } label: {
+                    Image(systemName: hasActiveFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 20, weight: .semibold))
                 }
+            }
 
-                // Pause on marker creation toggle
-                Toggle(isOn: $viewModel.shouldPauseOnMarkerCreation) {
-                    Label("Останавливать воспроизведение", systemImage: "pause.circle")
-                }
+            // Settings menu
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    // ✅ Auto-scroll toggle (moved to menu)
+                    Toggle(isOn: $viewModel.isAutoScrollEnabled) {
+                        Label("Автоскролл маркеров", systemImage: "arrow.down.circle")
+                    }
 
-                Divider()
+                    // Pause on marker creation toggle
+                    Toggle(isOn: $viewModel.shouldPauseOnMarkerCreation) {
+                        Label("Останавливать воспроизведение", systemImage: "pause.circle")
+                    }
+
+                    Divider()
                 
                 // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
                 if hasAudio {
@@ -318,9 +352,10 @@ struct TimelineScreen: View {
                 }
                 .disabled(viewModel.markers.isEmpty)
 
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .semibold))
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .semibold))
+                }
             }
         }
     }
@@ -354,6 +389,7 @@ struct TimelineScreen: View {
             currentTime: viewModel.currentTime,
             waveform: viewModel.visibleWaveform,
             markers: viewModel.visibleMarkers,
+            tags: viewModel.tags,
             hasAudio: hasAudio,
             onAddAudio: { isPickerPresented = true },
             onSeek: { viewModel.seek(to: $0) },

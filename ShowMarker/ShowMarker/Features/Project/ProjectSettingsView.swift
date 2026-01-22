@@ -20,6 +20,18 @@ struct ProjectSettingsView: View {
             }
             .navigationTitle("Настройки проекта")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Назад")
+                        }
+                    }
+                }
+            }
             .sheet(item: $editingTag) { tag in
                 TagEditorView(
                     tag: tag,
@@ -91,7 +103,7 @@ struct ProjectSettingsView: View {
                     // Color circle
                     Circle()
                         .fill(Color(hex: tag.colorHex))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 14, height: 14)
 
                     // Tag name
                     Text(tag.name)

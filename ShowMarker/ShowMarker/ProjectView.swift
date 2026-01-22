@@ -170,21 +170,23 @@ struct ProjectView: View {
 
     private var toolbarContent: some ToolbarContent {
         Group {
+            // Checkmark button (left)
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isEditing.toggle()
+                } label: {
+                    Image(systemName: isEditing ? "checkmark" : "checkmark.circle")
+                        .font(.system(size: 20, weight: .semibold))
+                }
+            }
+
+            // Settings button (right - will appear after checkmark)
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     isProjectSettingsPresented = true
                 } label: {
                     Image(systemName: "gear")
                         .font(.system(size: 20, weight: .semibold))
-                }
-            }
-
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    isEditing.toggle()
-                } label: {
-                    Text(isEditing ? "Готово" : "Выбрать")
-                        .font(.system(size: 17))
                 }
             }
         }

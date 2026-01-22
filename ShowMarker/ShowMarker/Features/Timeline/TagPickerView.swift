@@ -17,7 +17,7 @@ struct TagPickerView: View {
                             // Color circle
                             Circle()
                                 .fill(Color(hex: tag.colorHex))
-                                .frame(width: 20, height: 20)
+                                .frame(width: 14, height: 14)
 
                             // Tag name
                             Text(tag.name)

@@ -17,10 +17,10 @@ struct MarkerCard: View {
     var body: some View {
         HStack(spacing: 12) {
 
-            Image(systemName: "bookmark.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.accentColor)
-                .frame(width: 24)
+            // Vertical colored stripe instead of bookmark icon
+            Rectangle()
+                .fill(tag.map { Color(hex: $0.colorHex) } ?? Color.accentColor)
+                .frame(width: 4, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(marker.name)
@@ -35,10 +35,10 @@ struct MarkerCard: View {
 
             Spacer()
 
-            // Tag indicator
+            // Tag indicator (larger text)
             if let tag = tag {
                 Text(tag.name)
-                    .font(.system(size: 13))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundColor(Color(hex: tag.colorHex))
                     .lineLimit(1)
             }

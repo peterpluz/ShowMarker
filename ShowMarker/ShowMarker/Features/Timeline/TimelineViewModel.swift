@@ -34,6 +34,10 @@ final class TimelineViewModel: ObservableObject {
 
     @Published var shouldPauseOnMarkerCreation: Bool = false
 
+    // MARK: - Tag filtering
+
+    @Published var selectedTagIds: Set<UUID> = []
+
     // MARK: - Marker Crossing Detection
 
     // Event stream for marker flash events
@@ -91,9 +95,17 @@ final class TimelineViewModel: ObservableObject {
     }
 
     // MARK: - Computed
-    
+
     var visibleMarkers: [TimelineMarker] {
-        markers
+        // If no tags selected or all tags selected, show all markers
+        if selectedTagIds.isEmpty || selectedTagIds.count == tags.count {
+            return markers
+        }
+
+        // Filter markers by selected tags
+        return markers.filter { marker in
+            selectedTagIds.contains(marker.tagId)
+        }
     }
     
     var visibleWaveform: [Float] {
@@ -133,6 +145,9 @@ final class TimelineViewModel: ObservableObject {
     init(repository: ProjectRepository, timelineID: UUID) {
         self.repository = repository
         self.timelineID = timelineID
+
+        // Initialize selectedTagIds with all tags (show all by default)
+        self.selectedTagIds = Set(repository.project.tags.map(\.id))
 
         setupBindings()
         setupRepositoryObserver()
