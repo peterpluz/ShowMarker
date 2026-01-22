@@ -101,7 +101,7 @@ struct WaveformCache {
     }
 
     // Helper method for encoding in nonisolated context
-    private static nonisolated func encodeWaveform(_ data: CachedWaveformData) throws -> Data {
+    nonisolated(unsafe) private static func encodeWaveform(_ data: CachedWaveformData) throws -> Data {
         return try JSONEncoder().encode(data)
     }
     

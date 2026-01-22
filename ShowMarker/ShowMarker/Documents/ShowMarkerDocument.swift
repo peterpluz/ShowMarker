@@ -54,7 +54,7 @@ struct ShowMarkerDocument: FileDocument {
     }
 
     // Helper method for decoding in nonisolated context
-    private static nonisolated func decodeProject(from data: Data) throws -> Project {
+    nonisolated(unsafe) private static func decodeProject(from data: Data) throws -> Project {
         let decoder = JSONDecoder()
         return try decoder.decode(Project.self, from: data)
     }
@@ -79,7 +79,7 @@ struct ShowMarkerDocument: FileDocument {
     }
 
     // Helper method for encoding in nonisolated context
-    private static nonisolated func encodeProject(_ project: Project) throws -> Data {
+    nonisolated(unsafe) private static func encodeProject(_ project: Project) throws -> Data {
         let encoder = JSONEncoder()
         return try encoder.encode(project)
     }
