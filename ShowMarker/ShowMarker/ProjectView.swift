@@ -26,6 +26,11 @@ struct ProjectView: View {
     @State private var isCSVExportPresented = false
     @State private var exportFilename = ""
 
+    // ZIP export states
+    @State private var zipExportData: Data?
+    @State private var isZIPExportPresented = false
+    @State private var zipExportFilename = ""
+
     private let availableFPS = [25, 30, 50, 60, 100]
 
     init(document: Binding<ShowMarkerDocument>) {
@@ -80,6 +85,19 @@ struct ProjectView: View {
                     print("CSV export successful")
                 case .failure(let error):
                     print("CSV export failed: \(error.localizedDescription)")
+                }
+            }
+            .fileExporter(
+                isPresented: $isZIPExportPresented,
+                document: SimpleZIPDocument(zipData: zipExportData ?? Data()),
+                contentType: .zip,
+                defaultFilename: zipExportFilename
+            ) { result in
+                switch result {
+                case .success:
+                    print("ZIP export successful")
+                case .failure(let error):
+                    print("ZIP export failed: \(error.localizedDescription)")
                 }
             }
     }
@@ -445,11 +463,11 @@ struct ProjectView: View {
                 isCSVExportPresented = true
             }
         } else if selectedTimelineObjects.count > 1 {
-            // Multiple timelines - export as combined CSV
-            if let csvData = generateZIP(for: selectedTimelineObjects) {
-                csvExportData = csvData
-                exportFilename = "SelectedTimelines.csv"
-                isCSVExportPresented = true
+            // Multiple timelines - export as ZIP archive with separate CSV files
+            if let zipData = generateZIP(for: selectedTimelineObjects) {
+                zipExportData = zipData
+                zipExportFilename = "\(repository.project.name) CSV.zip"
+                isZIPExportPresented = true
             }
         }
     }
@@ -464,10 +482,10 @@ struct ProjectView: View {
                 isCSVExportPresented = true
             }
         } else if allTimelines.count > 1 {
-            if let csvData = generateZIP(for: allTimelines) {
-                csvExportData = csvData
-                exportFilename = "\(repository.project.name)_AllTimelines.csv"
-                isCSVExportPresented = true
+            if let zipData = generateZIP(for: allTimelines) {
+                zipExportData = zipData
+                zipExportFilename = "\(repository.project.name) CSV.zip"
+                isZIPExportPresented = true
             }
         }
     }
@@ -481,24 +499,26 @@ struct ProjectView: View {
     }
 
     private func generateZIP(for timelines: [Timeline]) -> Data? {
-        // Generate separate CSV file for each timeline combined into one file
-        // TODO: In future, create actual ZIP archive with separate files
-        var allCSV = ""
+        // Create separate CSV file for each timeline
+        var files: [String: Data] = [:]
 
-        for (index, timeline) in timelines.enumerated() {
-            if index > 0 {
-                allCSV += "\n\n"
-            }
-
-            allCSV += "// Timeline: \(timeline.name)\n"
+        for timeline in timelines {
             let csv = MarkersCSVExporter.export(
                 markers: timeline.markers,
                 frameRate: Double(repository.project.fps)
             )
-            allCSV += csv
+
+            if let csvData = csv.data(using: .utf8) {
+                // Sanitize filename to remove invalid characters
+                let sanitizedName = timeline.name
+                    .replacingOccurrences(of: "/", with: "-")
+                    .replacingOccurrences(of: ":", with: "-")
+                let filename = "\(sanitizedName).csv"
+                files[filename] = csvData
+            }
         }
 
-        return allCSV.data(using: .utf8)
+        return ZIPArchiveCreator.createZIP(files: files)
     }
 
     private func startRename(_ timeline: Timeline) {
