@@ -21,3 +21,23 @@ struct SimpleCSVDocument: FileDocument {
         FileWrapper(regularFileWithContents: data)
     }
 }
+
+// MARK: - ZIP Document
+
+struct SimpleZIPDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.zip] }
+
+    var directoryWrapper: FileWrapper
+
+    init(directoryWrapper: FileWrapper) {
+        self.directoryWrapper = directoryWrapper
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        self.directoryWrapper = configuration.file
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        return directoryWrapper
+    }
+}
