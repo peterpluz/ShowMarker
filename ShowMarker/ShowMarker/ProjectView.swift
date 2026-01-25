@@ -32,6 +32,7 @@ struct ProjectView: View {
         _document = document
         // ✅ КРИТИЧНО: безопасное извлечение repository
         _repository = ObservedObject(wrappedValue: document.wrappedValue.repository)
+        print("🔄 [ProjectView.init] ProjectView initialized")
     }
 
     private var isRenamingPresented: Binding<Bool> {
@@ -62,6 +63,9 @@ struct ProjectView: View {
             }
             .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
                 addTimelineAlert
+            }
+            .onChange(of: isAddTimelinePresented) { oldValue, newValue in
+                print("📝 [Alert] isAddTimelinePresented changed: \(oldValue) → \(newValue)")
             }
             .alert("Переименовать таймлайн", isPresented: isRenamingPresented) {
                 renameTimelineAlert

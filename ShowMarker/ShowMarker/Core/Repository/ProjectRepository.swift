@@ -4,13 +4,23 @@ import Combine
 
 // ✅ ИСПРАВЛЕНО: убран @MainActor для совместимости
 final class ProjectRepository: ObservableObject {
-    
+
     @Published var project: Project
-    var documentURL: URL?
-    
+
+    var documentURL: URL? {
+        didSet {
+            if let url = documentURL {
+                print("📁 [ProjectRepository] documentURL set: \(url.lastPathComponent)")
+            } else {
+                print("📁 [ProjectRepository] documentURL cleared (nil)")
+            }
+        }
+    }
+
     init(project: Project, documentURL: URL? = nil) {
         self.project = project
         self.documentURL = documentURL
+        print("📁 [ProjectRepository.init] documentURL: \(documentURL?.lastPathComponent ?? "nil")")
     }
     
     // MARK: - Project
