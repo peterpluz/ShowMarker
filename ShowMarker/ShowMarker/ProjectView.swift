@@ -27,7 +27,7 @@ struct ProjectView: View {
     @State private var exportFilename = ""
 
     // ZIP export states
-    @State private var zipExportWrapper: FileWrapper?
+    @State private var zipExportData: Data?
     @State private var isZIPExportPresented = false
     @State private var zipExportFilename = ""
 
@@ -89,7 +89,7 @@ struct ProjectView: View {
             }
             .fileExporter(
                 isPresented: $isZIPExportPresented,
-                document: SimpleZIPDocument(directoryWrapper: zipExportWrapper ?? FileWrapper(directoryWithFileWrappers: [:])),
+                document: SimpleZIPDocument(zipData: zipExportData ?? Data()),
                 contentType: .zip,
                 defaultFilename: zipExportFilename
             ) { result in
@@ -464,9 +464,9 @@ struct ProjectView: View {
             }
         } else if selectedTimelineObjects.count > 1 {
             // Multiple timelines - export as ZIP archive with separate CSV files
-            if let wrapper = generateZIPWrapper(for: selectedTimelineObjects) {
-                zipExportWrapper = wrapper
-                zipExportFilename = "SelectedTimelines.zip"
+            if let zipData = generateZIP(for: selectedTimelineObjects) {
+                zipExportData = zipData
+                zipExportFilename = "\(repository.project.name) CSV.zip"
                 isZIPExportPresented = true
             }
         }
@@ -482,9 +482,9 @@ struct ProjectView: View {
                 isCSVExportPresented = true
             }
         } else if allTimelines.count > 1 {
-            if let wrapper = generateZIPWrapper(for: allTimelines) {
-                zipExportWrapper = wrapper
-                zipExportFilename = "\(repository.project.name)_AllTimelines.zip"
+            if let zipData = generateZIP(for: allTimelines) {
+                zipExportData = zipData
+                zipExportFilename = "\(repository.project.name) CSV.zip"
                 isZIPExportPresented = true
             }
         }
@@ -498,7 +498,7 @@ struct ProjectView: View {
         return csv.data(using: .utf8) ?? Data()
     }
 
-    private func generateZIPWrapper(for timelines: [Timeline]) -> FileWrapper? {
+    private func generateZIP(for timelines: [Timeline]) -> Data? {
         // Create separate CSV file for each timeline
         var files: [String: Data] = [:]
 
@@ -518,7 +518,7 @@ struct ProjectView: View {
             }
         }
 
-        return ZIPArchiveCreator.createDirectoryWrapper(files: files)
+        return ZIPArchiveCreator.createZIP(files: files)
     }
 
     private func startRename(_ timeline: Timeline) {

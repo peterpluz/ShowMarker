@@ -27,17 +27,17 @@ struct SimpleCSVDocument: FileDocument {
 struct SimpleZIPDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.zip] }
 
-    var directoryWrapper: FileWrapper
+    var zipData: Data
 
-    init(directoryWrapper: FileWrapper) {
-        self.directoryWrapper = directoryWrapper
+    init(zipData: Data) {
+        self.zipData = zipData
     }
 
     init(configuration: ReadConfiguration) throws {
-        self.directoryWrapper = configuration.file
+        zipData = configuration.file.regularFileContents ?? Data()
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        return directoryWrapper
+        FileWrapper(regularFileWithContents: zipData)
     }
 }
