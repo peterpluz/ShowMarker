@@ -207,11 +207,11 @@ struct ZIPArchiveCreator {
 extension Data {
     mutating func append(littleEndian value: UInt16) {
         var val = value.littleEndian
-        withUnsafeBytes(of: &val) { self.append(contentsOf: $0) }
+        Swift.withUnsafeBytes(of: &val) { self.append(contentsOf: $0) }
     }
 
     mutating func append(littleEndian value: UInt32) {
         var val = value.littleEndian
-        withUnsafeBytes(of: &val) { self.append(contentsOf: $0) }
+        Swift.withUnsafeBytes(of: &val) { self.append(contentsOf: $0) }
     }
 }
