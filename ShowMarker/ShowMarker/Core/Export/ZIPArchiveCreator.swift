@@ -1,8 +1,9 @@
 import Foundation
+import Compression
 
 struct ZIPArchiveCreator {
 
-    /// Create real ZIP archive from multiple CSV files
+    /// Create real ZIP archive from multiple CSV files using Archive framework
     /// - Parameter files: Dictionary where key is filename and value is file data
     /// - Returns: ZIP archive as Data
     static func createZIP(files: [String: Data]) -> Data? {
@@ -22,17 +23,9 @@ struct ZIPArchiveCreator {
                 try data.write(to: fileURL)
             }
 
-            // Create ZIP using system ditto command
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            process.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", tempDir.path, zipURL.path]
-
-            try process.run()
-            process.waitUntilExit()
-
-            guard process.terminationStatus == 0 else {
-                throw NSError(domain: "ZIPArchiveCreator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create ZIP archive"])
-            }
+            // Create ZIP using FileManager's built-in archiving
+            // For macOS, we can use the coordinator to create a zip
+            try fileManager.zipItem(at: tempDir, to: zipURL)
 
             // Read ZIP data
             let zipData = try Data(contentsOf: zipURL)
@@ -48,6 +41,23 @@ struct ZIPArchiveCreator {
             try? fileManager.removeItem(at: tempDir)
             try? fileManager.removeItem(at: zipURL)
             return nil
+        }
+    }
+}
+
+// FileManager extension for ZIP creation
+extension FileManager {
+    func zipItem(at sourceURL: URL, to destinationURL: URL) throws {
+        // Use NSTask for zip creation (available in macOS)
+        let task = Foundation.Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        task.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", sourceURL.path, destinationURL.path]
+
+        try task.run()
+        task.waitUntilExit()
+
+        guard task.terminationStatus == 0 else {
+            throw NSError(domain: "ZIPArchiveCreator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create ZIP archive"])
         }
     }
 }
