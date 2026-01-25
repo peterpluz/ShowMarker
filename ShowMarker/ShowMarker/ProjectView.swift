@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -21,9 +22,9 @@ struct ProjectView: View {
     @State private var selectedTimelines: Set<UUID> = []
 
     // Export states
-    @State private var exportData: Data?
-    @State private var isExportPresented = false
-    @State private var isExportingAll = false
+    @State private var csvExportData: Data?
+    @State private var isCSVExportPresented = false
+    @State private var exportFilename = ""
 
     private let availableFPS = [25, 30, 50, 60, 100]
 
@@ -69,16 +70,16 @@ struct ProjectView: View {
                 ProjectSettingsView(repository: repository)
             }
             .fileExporter(
-                isPresented: $isExportPresented,
-                document: SimpleCSVDocument(data: exportData ?? Data()),
+                isPresented: $isCSVExportPresented,
+                document: SimpleCSVDocument(data: csvExportData ?? Data()),
                 contentType: .commaSeparatedText,
-                defaultFilename: isExportingAll ? "\(repository.project.name)_AllTimelines.csv" : "SelectedTimelines.csv"
+                defaultFilename: exportFilename
             ) { result in
                 switch result {
                 case .success:
-                    print("Export successful")
+                    print("CSV export successful")
                 case .failure(let error):
-                    print("Export failed: \(error.localizedDescription)")
+                    print("CSV export failed: \(error.localizedDescription)")
                 }
             }
     }
@@ -439,15 +440,17 @@ struct ProjectView: View {
         if selectedTimelineObjects.count == 1 {
             // Single timeline - export as CSV
             if let timeline = selectedTimelineObjects.first {
-                exportData = generateCSV(for: timeline)
-                isExportingAll = false
-                isExportPresented = true
+                csvExportData = generateCSV(for: timeline)
+                exportFilename = "\(timeline.name).csv"
+                isCSVExportPresented = true
             }
         } else if selectedTimelineObjects.count > 1 {
-            // Multiple timelines - export as ZIP
-            exportData = generateZIP(for: selectedTimelineObjects)
-            isExportingAll = true
-            isExportPresented = true
+            // Multiple timelines - export as combined CSV
+            if let csvData = generateZIP(for: selectedTimelineObjects) {
+                csvExportData = csvData
+                exportFilename = "SelectedTimelines.csv"
+                isCSVExportPresented = true
+            }
         }
     }
 
@@ -456,63 +459,46 @@ struct ProjectView: View {
 
         if allTimelines.count == 1 {
             if let timeline = allTimelines.first {
-                exportData = generateCSV(for: timeline)
-                isExportingAll = false
-                isExportPresented = true
+                csvExportData = generateCSV(for: timeline)
+                exportFilename = "\(timeline.name).csv"
+                isCSVExportPresented = true
             }
         } else if allTimelines.count > 1 {
-            exportData = generateZIP(for: allTimelines)
-            isExportingAll = true
-            isExportPresented = true
+            if let csvData = generateZIP(for: allTimelines) {
+                csvExportData = csvData
+                exportFilename = "\(repository.project.name)_AllTimelines.csv"
+                isCSVExportPresented = true
+            }
         }
     }
 
     private func generateCSV(for timeline: Timeline) -> Data {
-        var csv = "Marker Name,Timecode,Time (seconds),Frame Number\n"
-
-        let fps = timeline.fps
-        let sortedMarkers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
-
-        for marker in sortedMarkers {
-            let totalFrames = Int(marker.timeSeconds * Double(fps))
-            let frames = totalFrames % fps
-            let seconds = (totalFrames / fps) % 60
-            let minutes = (totalFrames / fps / 60) % 60
-            let hours = totalFrames / fps / 3600
-
-            let timecode = String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
-            let timeStr = String(format: "%.3f", marker.timeSeconds)
-
-            csv += "\"\(marker.name)\",\(timecode),\(timeStr),\(totalFrames)\n"
-        }
-
+        let csv = MarkersCSVExporter.export(
+            markers: timeline.markers,
+            frameRate: Double(repository.project.fps)
+        )
         return csv.data(using: .utf8) ?? Data()
     }
 
-    private func generateZIP(for timelines: [Timeline]) -> Data {
-        // Generate a single CSV with all timelines
-        // Each row includes the Timeline Name as the first column
-        var csv = "Timeline Name,Marker Name,Timecode,Time (seconds),Frame Number\n"
+    private func generateZIP(for timelines: [Timeline]) -> Data? {
+        // Generate separate CSV file for each timeline combined into one file
+        // TODO: In future, create actual ZIP archive with separate files
+        var allCSV = ""
 
-        for timeline in timelines {
-            let fps = timeline.fps
-            let sortedMarkers = timeline.markers.sorted { $0.timeSeconds < $1.timeSeconds }
-
-            for marker in sortedMarkers {
-                let totalFrames = Int(marker.timeSeconds * Double(fps))
-                let frames = totalFrames % fps
-                let seconds = (totalFrames / fps) % 60
-                let minutes = (totalFrames / fps / 60) % 60
-                let hours = totalFrames / fps / 3600
-
-                let timecode = String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
-                let timeStr = String(format: "%.3f", marker.timeSeconds)
-
-                csv += "\"\(timeline.name)\",\"\(marker.name)\",\(timecode),\(timeStr),\(totalFrames)\n"
+        for (index, timeline) in timelines.enumerated() {
+            if index > 0 {
+                allCSV += "\n\n"
             }
+
+            allCSV += "// Timeline: \(timeline.name)\n"
+            let csv = MarkersCSVExporter.export(
+                markers: timeline.markers,
+                frameRate: Double(repository.project.fps)
+            )
+            allCSV += csv
         }
 
-        return csv.data(using: .utf8) ?? Data()
+        return allCSV.data(using: .utf8)
     }
 
     private func startRename(_ timeline: Timeline) {

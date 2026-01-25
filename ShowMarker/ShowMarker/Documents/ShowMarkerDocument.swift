@@ -1,6 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import Foundation
+@preconcurrency import Foundation
 
 // MARK: - UTType Extension
 
@@ -49,13 +49,13 @@ struct ShowMarkerDocument: FileDocument {
 
         let decoder = JSONDecoder()
         let project = try decoder.decode(Project.self, from: data)
-        
+
         self.repository = ProjectRepository(project: project, documentURL: nil)
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let snapshot = repository.project
-        
+
         let encoder = JSONEncoder()
         let projectData = try encoder.encode(snapshot)
         let projectWrapper = FileWrapper(regularFileWithContents: projectData)

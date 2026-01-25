@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 import AVFoundation
 
 // MARK: - Cached Data Structure
@@ -89,11 +89,11 @@ struct WaveformCache {
     }
     
     // MARK: - Save
-    
+
     nonisolated private static func save(_ cached: CachedWaveformData, cacheKey: String) throws {
         let paths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
         let cacheDir = paths[0].appendingPathComponent("WaveformCache", isDirectory: true)
-        
+
         let fileURL = cacheDir.appendingPathComponent("\(cacheKey).waveform")
         let data = try JSONEncoder().encode(cached)
         try data.write(to: fileURL, options: .atomic)

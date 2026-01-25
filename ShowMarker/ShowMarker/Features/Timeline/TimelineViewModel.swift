@@ -99,6 +99,10 @@ final class TimelineViewModel: ObservableObject {
         repository.getDefaultTag()
     }
 
+    var projectFPS: Int {
+        repository.project.fps
+    }
+
     // MARK: - Computed
 
     var visibleMarkers: [TimelineMarker] {
