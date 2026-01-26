@@ -4,13 +4,32 @@ import Combine
 
 // ✅ ИСПРАВЛЕНО: убран @MainActor для совместимости
 final class ProjectRepository: ObservableObject {
-    
+
     @Published var project: Project
     var documentURL: URL?
-    
+
+    /// Хранилище для новых аудио файлов, которые ещё не сохранены в документ
+    /// Ключ - относительный путь (Audio/filename.mp3), значение - данные файла
+    var pendingAudioFiles: [String: Data] = [:]
+
+    /// Временная директория для аудио файлов текущего документа
+    /// Используется для воспроизведения аудио, так как прямой доступ к File Provider Storage запрещён
+    lazy var audioTempDirectory: URL = {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ShowMarker")
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        return tempDir
+    }()
+
     init(project: Project, documentURL: URL? = nil) {
         self.project = project
         self.documentURL = documentURL
+    }
+
+    /// Получить URL для воспроизведения аудио (из временной директории)
+    func audioPlaybackURL(relativePath: String) -> URL {
+        return audioTempDirectory.appendingPathComponent(relativePath)
     }
     
     // MARK: - Project
@@ -40,19 +59,21 @@ final class ProjectRepository: ObservableObject {
 
     func removeTimelines(at offsets: IndexSet) {
         // Удаляем аудиофайлы перед удалением таймлайнов
-        if let docURL = documentURL {
-            let manager = AudioFileManager(documentURL: docURL)
+        let manager = AudioFileManager(tempDirectory: audioTempDirectory)
 
-            for index in offsets {
-                if let audio = project.timelines[index].audio {
-                    do {
-                        try manager.deleteAudioFile(fileName: audio.relativePath)
-                        print("✅ Audio file deleted: \(audio.relativePath)")
-                    } catch {
-                        print("⚠️ Failed to delete audio file: \(error.localizedDescription)")
-                        // Continue with timeline deletion even if file deletion fails
-                    }
+        for index in offsets {
+            if let audio = project.timelines[index].audio {
+                // Удаляем из временной директории
+                do {
+                    try manager.deleteAudioFile(relativePath: audio.relativePath)
+                    print("✅ Audio file deleted from temp: \(audio.relativePath)")
+                } catch {
+                    print("⚠️ Failed to delete audio file: \(error.localizedDescription)")
+                    // Continue with timeline deletion even if file deletion fails
                 }
+
+                // Удаляем из pending (если было добавлено, но ещё не сохранено)
+                pendingAudioFiles.removeValue(forKey: audio.relativePath)
             }
         }
 
