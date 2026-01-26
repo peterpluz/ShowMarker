@@ -84,6 +84,8 @@ struct ShowMarkerDocument: FileDocument {
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        print("📦 [Document] fileWrapper called - autosave triggered")
+
         let snapshot = repository.project
 
         let encoder = JSONEncoder()

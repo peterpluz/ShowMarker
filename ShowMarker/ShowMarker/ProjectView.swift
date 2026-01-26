@@ -71,6 +71,13 @@ struct ProjectView: View {
             .alert("Переименовать таймлайн", isPresented: isRenamingPresented) {
                 renameTimelineAlert
             }
+            .onChange(of: renamingTimelineID) { oldValue, newValue in
+                if newValue != nil {
+                    print("📝 [Rename] Alert opened for timeline")
+                } else if oldValue != nil {
+                    print("📝 [Rename] Alert closed")
+                }
+            }
             .sheet(isPresented: $isProjectSettingsPresented) {
                 ProjectSettingsView(repository: repository)
             }
