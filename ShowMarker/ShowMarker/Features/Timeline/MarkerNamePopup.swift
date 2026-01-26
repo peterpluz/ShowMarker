@@ -178,7 +178,7 @@ struct MarkerNamePopup: View {
             .frame(width: 320)
             .background(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color(.systemBackground).opacity(0.8))
+                    .fill(Color(.systemGray6).opacity(0.9))
                     .background(
                         RoundedRectangle(cornerRadius: 28, style: .continuous)
                             .fill(.ultraThickMaterial)

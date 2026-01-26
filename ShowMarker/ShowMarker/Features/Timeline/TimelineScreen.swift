@@ -33,6 +33,9 @@ struct TimelineScreen: View {
     // Delete all markers confirmation
     @State private var showDeleteAllMarkersConfirmation = false
 
+    // Add marker button interaction
+    @State private var isAddMarkerButtonPressed = false
+
     private static func makeViewModel(
         repository: ProjectRepository,
         timelineID: UUID
@@ -520,6 +523,20 @@ struct TimelineScreen: View {
         }
         .disabled(!hasAudio)
         .opacity(hasAudio ? 1 : 0.5)
+        .scaleEffect(isAddMarkerButtonPressed ? 0.95 : 1.0)
+        .gesture(
+            DragGesture()
+                .onChanged { _ in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isAddMarkerButtonPressed = true
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isAddMarkerButtonPressed = false
+                    }
+                }
+        )
     }
 
     // MARK: - Helpers

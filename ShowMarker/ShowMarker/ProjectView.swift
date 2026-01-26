@@ -10,6 +10,8 @@ struct ProjectView: View {
     @ObservedObject private var repository: ProjectRepository
 
     @State private var searchText = ""
+    @State private var isSearchPressed = false
+    @State private var isAddButtonPressed = false
 
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
@@ -148,22 +150,21 @@ struct ProjectView: View {
         Group {
             if isEditing {
                 // Selection mode with checkbox
-                Button {
-                    toggleSelection(timeline.id)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: selectedTimelines.contains(timeline.id) ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 22))
-                            .foregroundColor(selectedTimelines.contains(timeline.id) ? .accentColor : .secondary)
+                HStack(spacing: 12) {
+                    Image(systemName: selectedTimelines.contains(timeline.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 22))
+                        .foregroundColor(selectedTimelines.contains(timeline.id) ? .accentColor : .secondary)
 
-                        Text(timeline.name)
-                            .foregroundColor(.primary)
-                            .padding(.vertical, 6)
+                    Text(timeline.name)
+                        .foregroundColor(.primary)
+                        .padding(.vertical, 6)
 
-                        Spacer()
-                    }
+                    Spacer()
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    toggleSelection(timeline.id)
+                }
             } else {
                 // Normal mode with NavigationLink
                 NavigationLink {
@@ -275,16 +276,6 @@ struct ProjectView: View {
                             .background(Circle().fill(Color.accentColor))
                     }
                 }
-
-                // Settings button (always visible)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isProjectSettingsPresented = true
-                    } label: {
-                        Image(systemName: "gear")
-                            .font(.system(size: 20, weight: .semibold))
-                    }
-                }
             } else {
                 // Menu with select option
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -301,7 +292,7 @@ struct ProjectView: View {
                             Label("Экспорт CSV всех таймлайнов", systemImage: "square.and.arrow.up")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
                             .font(.system(size: 20, weight: .semibold))
                     }
                 }
@@ -334,15 +325,20 @@ struct ProjectView: View {
     }
 
     private var editingBottomBar: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             // Share button
             Button {
                 exportSelectedTimelines()
             } label: {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .accentColor)
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        Capsule()
+                            .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
+                    )
             }
             .disabled(selectedTimelines.isEmpty)
 
@@ -351,22 +347,30 @@ struct ProjectView: View {
                 duplicateSelectedTimelines()
             } label: {
                 Image(systemName: "plus.square.on.square")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .accentColor)
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        Capsule()
+                            .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
+                    )
             }
             .disabled(selectedTimelines.isEmpty)
-
-            Spacer()
 
             // Delete button
             Button {
                 deleteSelectedTimelines()
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .red)
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        Capsule()
+                            .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : .red)
+                    )
             }
             .disabled(selectedTimelines.isEmpty)
         }
@@ -397,6 +401,21 @@ struct ProjectView: View {
             Capsule()
                 .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
         )
+        .scaleEffect(isSearchPressed ? 0.95 : 1.0)
+        .opacity(isSearchPressed ? 0.8 : 1.0)
+        .gesture(
+            DragGesture()
+                .onChanged { _ in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isSearchPressed = true
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isSearchPressed = false
+                    }
+                }
+        )
     }
 
     private var addButton: some View {
@@ -418,6 +437,21 @@ struct ProjectView: View {
         }
         .buttonStyle(.plain)
         .brightness(0.1)
+        .scaleEffect(isAddButtonPressed ? 0.92 : 1.0)
+        .opacity(isAddButtonPressed ? 0.8 : 1.0)
+        .gesture(
+            DragGesture()
+                .onChanged { _ in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isAddButtonPressed = true
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        isAddButtonPressed = false
+                    }
+                }
+        )
     }
 
     // MARK: - Helpers
