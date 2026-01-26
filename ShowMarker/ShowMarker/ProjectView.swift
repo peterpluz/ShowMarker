@@ -130,8 +130,9 @@ struct ProjectView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        .frame(maxHeight: .infinity)
         .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
     private var timelineList: some View {
@@ -375,20 +376,26 @@ struct ProjectView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
+                .font(.system(size: 16, weight: .semibold))
 
             TextField("Поиск", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
+                .font(.system(size: 16, weight: .regular))
         }
-        .padding(.horizontal, 16)
-        .frame(height: 48)
+        .padding(.horizontal, 12)
+        .frame(height: 44)
         .background(
             Capsule()
-                .fill(.regularMaterial)
+                .fill(Color(.systemGray6).opacity(0.5))
+                .background(
+                    Capsule()
+                        .fill(.ultraThickMaterial)
+                )
         )
         .overlay(
             Capsule()
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
         )
     }
 
@@ -397,14 +404,20 @@ struct ProjectView: View {
             isAddTimelinePresented = true
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(.white)
-                .frame(width: 48, height: 48)
+                .frame(width: 44, height: 44)
                 .background(
                     Circle()
                         .fill(Color.accentColor)
+                        .background(
+                            Circle()
+                                .fill(.thinMaterial)
+                        )
                 )
         }
+        .buttonStyle(.plain)
+        .brightness(0.1)
     }
 
     // MARK: - Helpers

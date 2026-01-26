@@ -462,20 +462,20 @@ struct TimelineScreen: View {
     }
 
     private var playbackControls: some View {
-        HStack(spacing: 40) {
+        HStack(spacing: 32) {
             Button { viewModel.seekBackward() } label: {
                 Image(systemName: "gobackward.5")
-                    .font(.system(size: 22))
+                    .font(.system(size: 24, weight: .regular))
             }
 
             Button { viewModel.togglePlayPause() } label: {
                 Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 28))
+                    .font(.system(size: 24, weight: .regular))
             }
 
             Button { viewModel.seekForward() } label: {
                 Image(systemName: "goforward.5")
-                    .font(.system(size: 22))
+                    .font(.system(size: 24, weight: .regular))
             }
         }
         .foregroundColor(.primary)
@@ -509,16 +509,17 @@ struct TimelineScreen: View {
             }
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: 56)
+                .frame(height: 50)
                 .background(
-                    Capsule().fill(Color.accentColor)
+                    Capsule()
+                        .fill(Color.accentColor)
                 )
         }
         .disabled(!hasAudio)
-        .opacity(hasAudio ? 1 : 0.4)
+        .opacity(hasAudio ? 1 : 0.5)
     }
 
     // MARK: - Helpers
