@@ -28,28 +28,34 @@ enum AudioFileError: LocalizedError {
     }
 }
 
-/// Управляет аудиофайлами внутри .smark package
+/// Управляет аудиофайлами для ShowMarker документов
+///
+/// ВАЖНО: На iOS нельзя напрямую записывать в documentURL (File Provider Storage).
+/// Вместо этого используем временную директорию:
+/// 1. Новые аудио файлы сохраняются во временную директорию для воспроизведения
+/// 2. Данные сохраняются в pendingAudioFiles для последующего включения в FileWrapper
+/// 3. При открытии документа аудио извлекается из FileWrapper во временную директорию
 struct AudioFileManager {
-    
-    let documentURL: URL
-    
-    init(documentURL: URL) {
-        self.documentURL = documentURL
+
+    let tempDirectory: URL
+
+    init(tempDirectory: URL) {
+        self.tempDirectory = tempDirectory
     }
-    
+
     // MARK: - Audio Directory
-    
+
     private var audioDirectory: URL {
-        documentURL.appendingPathComponent("Audio")
+        tempDirectory.appendingPathComponent("Audio")
     }
-    
+
     // MARK: - Read
 
-    func readAudioFile(fileName: String) throws -> Data {
-        let fileURL = audioDirectory.appendingPathComponent(fileName)
+    func readAudioFile(relativePath: String) throws -> Data {
+        let fileURL = tempDirectory.appendingPathComponent(relativePath)
 
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            throw AudioFileError.fileNotFound(fileName)
+            throw AudioFileError.fileNotFound(relativePath)
         }
 
         do {
@@ -59,30 +65,32 @@ struct AudioFileManager {
         }
     }
 
-    func audioFileURL(fileName: String) -> URL {
-        audioDirectory.appendingPathComponent(fileName)
+    func audioFileURL(relativePath: String) -> URL {
+        tempDirectory.appendingPathComponent(relativePath)
     }
 
     // MARK: - Write
 
-    func addAudioFile(sourceData: Data, fileName: String) throws {
+    /// Сохраняет аудио файл во временную директорию для воспроизведения
+    func saveAudioToTemp(sourceData: Data, relativePath: String) throws {
         do {
             try createAudioDirectoryIfNeeded()
         } catch {
             throw AudioFileError.directoryCreationFailed(error)
         }
 
-        let targetURL = audioDirectory.appendingPathComponent(fileName)
+        let targetURL = tempDirectory.appendingPathComponent(relativePath)
 
         do {
             try sourceData.write(to: targetURL, options: .atomic)
+            print("✅ Audio saved to temp: \(targetURL)")
         } catch {
             throw AudioFileError.writeFailed(error)
         }
     }
 
-    func deleteAudioFile(fileName: String) throws {
-        let fileURL = audioDirectory.appendingPathComponent(fileName)
+    func deleteAudioFile(relativePath: String) throws {
+        let fileURL = tempDirectory.appendingPathComponent(relativePath)
 
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             // File doesn't exist, nothing to delete - not an error
@@ -106,9 +114,14 @@ struct AudioFileManager {
             )
         }
     }
-    
-    func audioFileExists(fileName: String) -> Bool {
-        let fileURL = audioDirectory.appendingPathComponent(fileName)
+
+    func audioFileExists(relativePath: String) -> Bool {
+        let fileURL = tempDirectory.appendingPathComponent(relativePath)
         return FileManager.default.fileExists(atPath: fileURL.path)
+    }
+
+    /// Очищает временную директорию (вызывается при закрытии документа)
+    func cleanup() {
+        try? FileManager.default.removeItem(at: tempDirectory)
     }
 }

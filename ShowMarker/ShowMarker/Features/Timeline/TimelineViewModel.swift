@@ -163,15 +163,16 @@ final class TimelineViewModel: ObservableObject {
         setupRepositoryObserver()
 
         // Load initial audio and duration from timeline
-        if let timelineAudio = timeline?.audio, let docURL = repository.documentURL {
+        // Используем временную директорию для воспроизведения (аудио извлекается туда при открытии документа)
+        if let timelineAudio = timeline?.audio {
             self.duration = timelineAudio.duration
 
             // ✅ CRITICAL FIX: Load audio into player on initialization
-            let audioURL = docURL.appendingPathComponent(timelineAudio.relativePath)
+            let audioURL = repository.audioPlaybackURL(relativePath: timelineAudio.relativePath)
             audioPlayer.load(url: audioURL)
             print("✅ Audio loaded into player on init: \(audioURL)")
 
-            loadWaveformCache(for: timelineAudio, documentURL: docURL)
+            loadWaveformCache(for: timelineAudio, documentURL: repository.audioTempDirectory)
         }
     }
 
@@ -374,7 +375,7 @@ final class TimelineViewModel: ObservableObject {
     }
     
     // MARK: - Audio
-    
+
     func addAudio(
         sourceData: Data,
         originalFileName: String,
@@ -383,29 +384,27 @@ final class TimelineViewModel: ObservableObject {
     ) throws {
         print("🎵 addAudio called: \(originalFileName), duration: \(audioDuration)s")
 
-        guard let docURL = repository.documentURL else {
-            print("❌ documentURL is nil")
-            throw NSError(domain: "Timeline", code: 1)
-        }
-
-        print("✅ documentURL: \(docURL)")
-
-        let manager = AudioFileManager(documentURL: docURL)
         let fileName = "\(UUID().uuidString).\(fileExtension)"
-
-        print("🎵 Adding audio file: \(fileName)")
-        try manager.addAudioFile(sourceData: sourceData, fileName: fileName)
-        print("✅ Audio file written")
-
         let relativePath = "Audio/\(fileName)"
+
+        // 1. Сохраняем во временную директорию для воспроизведения
+        let manager = AudioFileManager(tempDirectory: repository.audioTempDirectory)
+        print("🎵 Saving audio to temp directory: \(repository.audioTempDirectory)")
+        try manager.saveAudioToTemp(sourceData: sourceData, relativePath: relativePath)
+
+        // 2. Сохраняем данные в pending для включения в FileWrapper при сохранении документа
+        repository.pendingAudioFiles[relativePath] = sourceData
+        print("✅ Audio added to pending files for document save")
+
+        // 3. Создаём модель аудио
         let newAudio = TimelineAudio(
             relativePath: relativePath,
             originalFileName: originalFileName,
             duration: audioDuration
         )
 
+        // 4. Обновляем таймлайн
         print("🎵 Updating timeline audio...")
-
         if let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) {
             repository.project.timelines[idx].audio = newAudio
             print("✅ Timeline audio updated in repository")
@@ -413,43 +412,47 @@ final class TimelineViewModel: ObservableObject {
             print("❌ Timeline not found in repository")
         }
 
-        // Update ViewModel-specific state
+        // 5. Обновляем состояние ViewModel
         self.duration = audioDuration
 
+        // 6. Загружаем аудио в плеер из временной директории
         print("🎵 Loading audio into player...")
-        let audioURL = docURL.appendingPathComponent(newAudio.relativePath)
+        let audioURL = repository.audioPlaybackURL(relativePath: relativePath)
         audioPlayer.load(url: audioURL)
         print("✅ Audio loaded into player: \(audioURL)")
 
+        // 7. Генерируем waveform
         let cacheKey = "\(timelineID.uuidString)_\(newAudio.id.uuidString)"
         self.waveformCacheKey = cacheKey
 
         print("🎵 Starting waveform generation...")
+        let tempDir = repository.audioTempDirectory
         Task {
-            await generateWaveformCache(audio: newAudio, documentURL: docURL, cacheKey: cacheKey)
+            await generateWaveformCache(audio: newAudio, documentURL: tempDir, cacheKey: cacheKey)
             print("✅ Waveform generation task started")
         }
     }
     
     func removeAudio() {
-        guard
-            let audioFile = audio,
-            let docURL = repository.documentURL
-        else {
-            print("⚠️ Cannot remove audio: audio or documentURL is nil")
+        guard let audioFile = audio else {
+            print("⚠️ Cannot remove audio: audio is nil")
             return
         }
 
-        let manager = AudioFileManager(documentURL: docURL)
-
+        // Удаляем из временной директории
+        let manager = AudioFileManager(tempDirectory: repository.audioTempDirectory)
         do {
-            try manager.deleteAudioFile(fileName: audioFile.relativePath)
-            print("✅ Audio file deleted: \(audioFile.relativePath)")
+            try manager.deleteAudioFile(relativePath: audioFile.relativePath)
+            print("✅ Audio file deleted from temp: \(audioFile.relativePath)")
         } catch {
             print("⚠️ Failed to delete audio file: \(error.localizedDescription)")
             // Continue with removing audio reference even if file deletion fails
         }
 
+        // Удаляем из pending (если было добавлено, но ещё не сохранено)
+        repository.pendingAudioFiles.removeValue(forKey: audioFile.relativePath)
+
+        // Удаляем ссылку из таймлайна
         if let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) {
             repository.project.timelines[idx].audio = nil
             print("✅ Audio reference removed from timeline")
