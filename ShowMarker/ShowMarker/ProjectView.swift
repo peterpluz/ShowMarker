@@ -279,7 +279,6 @@ struct ProjectView: View {
                             .clipShape(Circle())
                     }
                 }
-            }
             } else {
                 // Settings button (left)
                 ToolbarItem(placement: .navigationBarTrailing) {
