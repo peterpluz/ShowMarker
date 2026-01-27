@@ -26,6 +26,12 @@ struct TimelineBarView: View {
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
 
+    // Double-tap zoom state
+    @State private var isDoubleTapZoomMode: Bool = false
+    @State private var doubleTapStartZoom: CGFloat = 1.0
+    @State private var lastTapTime: Date?
+    @State private var doubleTapZoomStartX: CGFloat = 0
+
     @State private var capsuleDragStart: CGFloat?
 
     // MARK: - Marker Drag State (Bindings to ViewModel)
@@ -481,6 +487,7 @@ struct TimelineBarView: View {
                 .frame(width: Self.playheadLineWidth, height: Self.barHeight)
                 .position(x: centerX, y: Self.barHeight / 2)
         }
+        .gesture(doubleTapGesture())
         .gesture(playheadDrag(secondsPerPixel: secondsPerPixel))
         .simultaneousGesture(pinchGesture())
     }
@@ -502,11 +509,37 @@ struct TimelineBarView: View {
 
     // MARK: - Gestures
 
+    private func doubleTapGesture() -> some Gesture {
+        TapGesture(count: 2)
+            .onEnded { _ in
+                // Enable double-tap zoom mode
+                isDoubleTapZoomMode = true
+                doubleTapStartZoom = zoomScale
+            }
+    }
+
     private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
         DragGesture()
             .onChanged { value in
                 guard draggedMarkerID == nil, !isPinching else { return }
 
+                // Handle double-tap zoom mode
+                if isDoubleTapZoomMode {
+                    if doubleTapZoomStartX == 0 {
+                        doubleTapZoomStartX = value.startLocation.x
+                    }
+
+                    let translation = value.location.x - doubleTapZoomStartX
+                    // Dragging right increases zoom, left decreases zoom
+                    // Sensitivity: every 50 pixels of drag = 1x zoom multiplier
+                    let zoomMultiplier = 1.0 + (Double(translation) / 50.0)
+                    let newScale = doubleTapStartZoom * max(zoomMultiplier, 0.5) // Prevent negative zoom
+                    let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
+                    zoomScale = clamped
+                    return
+                }
+
+                // Regular playhead seeking
                 if dragStartTime == nil {
                     dragStartTime = currentTime
                     dragCurrentTime = currentTime
@@ -520,9 +553,16 @@ struct TimelineBarView: View {
                 onSeek(dragCurrentTime)
             }
             .onEnded { _ in
-                dragStartTime = nil
-                isTimelineDragging = false
-                dragEndTime = Date()
+                if isDoubleTapZoomMode {
+                    // Reset zoom mode after drag ends
+                    isDoubleTapZoomMode = false
+                    doubleTapZoomStartX = 0
+                } else {
+                    // Regular playhead seeking cleanup
+                    dragStartTime = nil
+                    isTimelineDragging = false
+                    dragEndTime = Date()
+                }
             }
     }
     
