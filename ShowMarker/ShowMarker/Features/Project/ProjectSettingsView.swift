@@ -86,10 +86,9 @@ struct ProjectSettingsView: View {
     private var hapticFeedbackSection: some View {
         Section {
             Toggle("Вибрация маркера", isOn: Binding(
-                get: { repository.project.settings.isMarkerHapticFeedbackEnabled },
+                get: { repository.project.isMarkerHapticFeedbackEnabled },
                 set: { newValue in
-                    repository.project.settings.isMarkerHapticFeedbackEnabled = newValue
-                    repository.saveProject()
+                    repository.project.isMarkerHapticFeedbackEnabled = newValue
                 }
             ))
         } header: {

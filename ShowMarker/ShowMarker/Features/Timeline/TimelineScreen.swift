@@ -200,7 +200,7 @@ struct TimelineScreen: View {
             draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime,
             currentTime: viewModel.currentTime,
             markerIndex: index,
-            isHapticFeedbackEnabled: viewModel.repository.project.settings.isMarkerHapticFeedbackEnabled,
+            isHapticFeedbackEnabled: viewModel.isMarkerHapticFeedbackEnabled,
             onTagEdit: {
                 editingTagMarker = marker
             }

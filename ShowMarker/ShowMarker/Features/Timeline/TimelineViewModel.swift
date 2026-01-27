@@ -103,6 +103,10 @@ final class TimelineViewModel: ObservableObject {
         repository.project.fps
     }
 
+    var isMarkerHapticFeedbackEnabled: Bool {
+        repository.project.isMarkerHapticFeedbackEnabled
+    }
+
     // MARK: - Computed
 
     var visibleMarkers: [TimelineMarker] {
