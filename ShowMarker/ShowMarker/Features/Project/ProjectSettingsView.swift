@@ -10,37 +10,47 @@ struct ProjectSettingsView: View {
     @State private var showDeleteConfirmation = false
 
     var body: some View {
-        NavigationView {
-            List {
-                // FPS Section
-                fpsSection
+        ZStack {
+            NavigationView {
+                List {
+                    // FPS Section
+                    fpsSection
 
-                // Tags Section
-                tagsSection
-            }
-            .navigationTitle("Настройки проекта")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Закрыть") {
-                        dismiss()
+                    // Haptic Feedback Section
+                    hapticFeedbackSection
+
+                    // Tags Section
+                    tagsSection
+                }
+                .navigationTitle("Настройки проекта")
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarBackButtonHidden(true)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
                     }
                 }
-            }
-            .sheet(item: $editingTag) { tag in
-                TagEditorView(
-                    tag: tag,
-                    allTags: repository.project.tags,
-                    onSave: { updatedTag in
-                        repository.updateTag(updatedTag)
-                        editingTag = nil
-                    },
-                    onCancel: {
-                        editingTag = nil
+                .alert("Удалить тег?", isPresented: $showDeleteConfirmation, presenting: tagToDelete) { tag in
+                    Button("Удалить", role: .destructive) {
+                        repository.deleteTag(id: tag.id)
+                        tagToDelete = nil
                     }
-                )
+                    Button("Отмена", role: .cancel) {
+                        tagToDelete = nil
+                    }
+                } message: { tag in
+                    Text("Все маркеры с тегом \"\(tag.name)\" будут переведены на первый тег в списке.")
+                }
             }
-            .sheet(isPresented: $isAddingTag) {
+
+            // Tag editor pop-up overlay for adding new tag
+            if isAddingTag {
                 TagEditorView(
                     tag: nil,
                     allTags: repository.project.tags,
@@ -53,17 +63,36 @@ struct ProjectSettingsView: View {
                     }
                 )
             }
-            .alert("Удалить тег?", isPresented: $showDeleteConfirmation, presenting: tagToDelete) { tag in
-                Button("Удалить", role: .destructive) {
-                    repository.deleteTag(id: tag.id)
-                    tagToDelete = nil
-                }
-                Button("Отмена", role: .cancel) {
-                    tagToDelete = nil
-                }
-            } message: { tag in
-                Text("Все маркеры с тегом \"\(tag.name)\" будут переведены на первый тег в списке.")
+
+            // Tag editor pop-up overlay for editing existing tag
+            if let tag = editingTag {
+                TagEditorView(
+                    tag: tag,
+                    allTags: repository.project.tags,
+                    onSave: { updatedTag in
+                        repository.updateTag(updatedTag)
+                        editingTag = nil
+                    },
+                    onCancel: {
+                        editingTag = nil
+                    }
+                )
             }
+        }
+    }
+
+    // MARK: - Haptic Feedback Section
+
+    private var hapticFeedbackSection: some View {
+        Section {
+            Toggle("Вибрация маркера", isOn: Binding(
+                get: { repository.project.isMarkerHapticFeedbackEnabled },
+                set: { newValue in
+                    repository.project.isMarkerHapticFeedbackEnabled = newValue
+                }
+            ))
+        } header: {
+            Text("Обратная связь")
         }
     }
 
@@ -130,8 +159,30 @@ struct ProjectSettingsView: View {
             Button {
                 isAddingTag = true
             } label: {
-                Text("Добавить тег")
-                    .foregroundColor(.secondary)
+                HStack(spacing: 10) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(.green))
+
+                    Text("Добавить тег")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.primary)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(Color(.systemGray5).opacity(0.6))
+                        .background(Capsule().fill(.regularMaterial))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
             }
         } header: {
             Text("Теги")

@@ -11,10 +11,16 @@ struct TimelineScreen: View {
     @State private var renameText = ""
 
     @State private var renamingMarker: TimelineMarker?
+    @State private var renamingMarkerOldName: String = ""
     @State private var timePickerMarker: TimelineMarker?
 
     @State private var exportData: Data?
     @State private var isExportPresented = false
+
+    // CSV import state
+    @State private var isCSVImportPresented = false
+    @State private var csvImportError: String?
+    @State private var showCSVImportError = false
 
     // Marker creation popup state
     @State private var isMarkerNamePopupPresented = false
@@ -32,6 +38,18 @@ struct TimelineScreen: View {
 
     // Delete all markers confirmation
     @State private var showDeleteAllMarkersConfirmation = false
+
+    // Add marker button interaction
+    @State private var isAddMarkerButtonPressed = false
+
+    // History menu states
+    @State private var showUndoHistory = false
+    @State private var showRedoHistory = false
+
+    // Play button animation states
+    @State private var playButtonScale: CGFloat = 1.0
+    @State private var rippleRadius: CGFloat = 0
+    @State private var rippleOpacity: Double = 1.0
 
     private static func makeViewModel(
         repository: ProjectRepository,
@@ -69,12 +87,14 @@ struct TimelineScreen: View {
                 .sheet(item: $timePickerMarker) { marker in
                     timecodePickerSheet(for: marker)
                 }
-                .sheet(item: $editingTagMarker) { marker in
-                    tagPickerSheet(for: marker)
-                }
                 .sheet(isPresented: $isTagFilterPresented) {
                     tagFilterSheet
                 }
+
+            // Tag picker menu overlay
+            if let marker = editingTagMarker {
+                tagPickerMenuOverlay(for: marker)
+            }
 
             // Marker name popup overlay
             if isMarkerNamePopupPresented {
@@ -98,7 +118,7 @@ struct TimelineScreen: View {
                 )
                 Button("Готово") {
                     if let marker = renamingMarker {
-                        viewModel.renameMarker(marker, to: marker.name)
+                        viewModel.renameMarker(marker, to: marker.name, oldName: renamingMarkerOldName)
                     }
                     renamingMarker = nil
                 }
@@ -127,6 +147,17 @@ struct TimelineScreen: View {
                 defaultFilename: "\(viewModel.name)_Markers",
                 onCompletion: { _ in }
             )
+            .fileImporter(
+                isPresented: $isCSVImportPresented,
+                allowedContentTypes: [.commaSeparatedText],
+                allowsMultipleSelection: false,
+                onCompletion: handleCSVImport
+            )
+            .alert("Ошибка импорта", isPresented: $showCSVImportError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(csvImportError ?? "Неизвестная ошибка")
+            }
     }
 
     // MARK: - Main Content
@@ -135,8 +166,8 @@ struct TimelineScreen: View {
         ScrollViewReader { proxy in
             List {
                 Section {
-                    ForEach(viewModel.visibleMarkers) { marker in
-                        markerRow(marker)
+                    ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
+                        markerRow(marker, index: index + 1)
                             .id(marker.id)  // ✅ Required for ScrollViewReader
                     }
                 }
@@ -159,7 +190,7 @@ struct TimelineScreen: View {
 
     // MARK: - Marker Row
 
-    private func markerRow(_ marker: TimelineMarker) -> some View {
+    private func markerRow(_ marker: TimelineMarker, index: Int = 1) -> some View {
         MarkerCard(
             marker: marker,
             tag: viewModel.tags.first(where: { $0.id == marker.tagId }),
@@ -167,6 +198,9 @@ struct TimelineScreen: View {
             markerFlashPublisher: viewModel.markerFlashPublisher,
             draggedMarkerID: viewModel.draggedMarkerID,
             draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime,
+            currentTime: viewModel.currentTime,
+            markerIndex: index,
+            isHapticFeedbackEnabled: viewModel.isMarkerHapticFeedbackEnabled,
             onTagEdit: {
                 editingTagMarker = marker
             }
@@ -180,7 +214,7 @@ struct TimelineScreen: View {
         .contextMenu {
             markerContextMenu(for: marker)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             markerSwipeActions(for: marker)
         }
     }
@@ -189,6 +223,7 @@ struct TimelineScreen: View {
     private func markerContextMenu(for marker: TimelineMarker) -> some View {
         Button {
             renamingMarker = marker
+            renamingMarkerOldName = marker.name
         } label: {
             Label("Переименовать", systemImage: "pencil")
         }
@@ -221,13 +256,6 @@ struct TimelineScreen: View {
         } label: {
             Label("Удалить", systemImage: "trash")
         }
-
-        Button {
-            renamingMarker = marker
-        } label: {
-            Label("Переименовать", systemImage: "pencil")
-        }
-        .tint(.blue)
     }
 
     // MARK: - Sheets
@@ -246,12 +274,12 @@ struct TimelineScreen: View {
         .presentationDragIndicator(.visible)
     }
 
-    private func tagPickerSheet(for marker: TimelineMarker) -> some View {
-        TagPickerView(
+    private func tagPickerMenuOverlay(for marker: TimelineMarker) -> some View {
+        MarkerTagPopup(
             tags: viewModel.tags,
             selectedTagId: marker.tagId,
-            onSelect: { newTagId in
-                viewModel.changeMarkerTag(marker, to: newTagId)
+            onTagSelected: { tagId in
+                viewModel.changeMarkerTag(marker, to: tagId)
                 editingTagMarker = nil
             },
             onCancel: {
@@ -309,38 +337,6 @@ struct TimelineScreen: View {
 
     private var toolbarContent: some ToolbarContent {
         Group {
-            // Undo button (leading)
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    viewModel.undoManager.undo()
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 20, weight: .semibold))
-                }
-                .disabled(!viewModel.undoManager.canUndo)
-            }
-
-            // Redo button (leading)
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    viewModel.undoManager.redo()
-                } label: {
-                    Image(systemName: "arrow.uturn.forward")
-                        .font(.system(size: 20, weight: .semibold))
-                }
-                .disabled(!viewModel.undoManager.canRedo)
-            }
-
-            // Tag filter button
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    isTagFilterPresented = true
-                } label: {
-                    Image(systemName: hasActiveFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 20, weight: .semibold))
-                }
-            }
-
             // Settings menu
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -395,6 +391,12 @@ struct TimelineScreen: View {
                 .disabled(viewModel.markers.isEmpty)
 
                 Button {
+                    isCSVImportPresented = true
+                } label: {
+                    Label("Import markers (CSV)", systemImage: "square.and.arrow.up")
+                }
+
+                Button {
                     prepareExport()
                 } label: {
                     Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
@@ -403,7 +405,7 @@ struct TimelineScreen: View {
 
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 17, weight: .regular))
                 }
             }
         }
@@ -413,6 +415,82 @@ struct TimelineScreen: View {
 
     private var bottomPanel: some View {
         VStack(spacing: 16) {
+            // Undo/Redo buttons above timeline
+            HStack {
+                Spacer()
+                HStack(spacing: 12) {
+                    // Undo button with long press menu
+                    Menu {
+                        ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
+                            Button {
+                                viewModel.undoManager.undoToIndex(offset)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.description)
+                                        .font(.system(size: 15, weight: .regular))
+                                    Text(item.timeAgo)
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    } label: {
+                        Button {
+                            viewModel.undoManager.undo()
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(.secondary)
+                        }
+                        .disabled(!viewModel.undoManager.canUndo)
+                    }
+                    .disabled(!viewModel.undoManager.canUndo)
+
+                    // Redo button with long press menu
+                    Menu {
+                        ForEach(Array(viewModel.undoManager.getRedoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
+                            Button {
+                                viewModel.undoManager.redoToIndex(offset)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.description)
+                                        .font(.system(size: 15, weight: .regular))
+                                    Text(item.timeAgo)
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    } label: {
+                        Button {
+                            viewModel.undoManager.redo()
+                        } label: {
+                            Image(systemName: "arrow.uturn.forward")
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(.secondary)
+                        }
+                        .disabled(!viewModel.undoManager.canRedo)
+                    }
+                    .disabled(!viewModel.undoManager.canRedo)
+
+                    // Tag filter button
+                    Button {
+                        isTagFilterPresented = true
+                    } label: {
+                        Image(systemName: "line.horizontal.3.decrease")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.2))
+                )
+            }
+            .padding(.bottom, 8)
+
             timelineBar
 
             // ИСПРАВЛЕНО: тайм и контролы видимы только с аудио
@@ -437,8 +515,10 @@ struct TimelineScreen: View {
             duration: viewModel.duration,
             currentTime: viewModel.currentTime,
             waveform: viewModel.visibleWaveform,
+            waveform2: nil,  // TODO: Add multi-channel support
             markers: viewModel.visibleMarkers,
             tags: viewModel.tags,
+            fps: viewModel.fps,
             hasAudio: hasAudio,
             onAddAudio: { isPickerPresented = true },
             onSeek: { viewModel.seek(to: $0) },
@@ -458,27 +538,72 @@ struct TimelineScreen: View {
     private var timecode: some View {
         Text(viewModel.timecode())
             .font(.system(size: 32, weight: .bold))
+            .foregroundColor(viewModel.isPlaying ? .green : .primary)
             .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)  // ✅ FIX: Force redraw on trigger toggle
+            .frame(minWidth: 140, alignment: .center)
     }
 
     private var playbackControls: some View {
-        HStack(spacing: 40) {
+        HStack(spacing: 48) {
             Button { viewModel.seekBackward() } label: {
                 Image(systemName: "gobackward.5")
-                    .font(.system(size: 22))
+                    .font(.system(size: 32, weight: .medium))
             }
 
-            Button { viewModel.togglePlayPause() } label: {
-                Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 28))
+            // Play/Pause button with animation
+            ZStack {
+                // Ripple effect circle
+                Circle()
+                    .stroke(Color.accentColor.opacity(rippleOpacity), lineWidth: 1.5)
+                    .frame(width: rippleRadius * 2, height: rippleRadius * 2)
+                    .opacity(rippleOpacity)
+
+                // Play/Pause button
+                Button { playButtonAction() } label: {
+                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 40, weight: .medium))
+                }
+                .scaleEffect(playButtonScale)
             }
 
             Button { viewModel.seekForward() } label: {
                 Image(systemName: "goforward.5")
-                    .font(.system(size: 22))
+                    .font(.system(size: 32, weight: .medium))
             }
         }
         .foregroundColor(.primary)
+    }
+
+    private func playButtonAction() {
+        // Trigger scale animation (120-180ms)
+        withAnimation(.easeOut(duration: 0.15)) {
+            playButtonScale = 0.97
+        }
+
+        // Reset scale after brief delay
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+            withAnimation(.easeOut(duration: 0.1)) {
+                playButtonScale = 1.0
+            }
+        }
+
+        // Trigger ripple effect
+        withAnimation(.linear(duration: 0.6)) {
+            rippleRadius = 32
+            rippleOpacity = 0
+        }
+
+        // Reset ripple for next press
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)  // 600ms
+            playButtonScale = 1.0
+            rippleRadius = 0
+            rippleOpacity = 1.0
+        }
+
+        // Toggle playback
+        viewModel.togglePlayPause()
     }
 
     private var addMarkerButton: some View {
@@ -509,16 +634,32 @@ struct TimelineScreen: View {
             }
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 16, weight: .regular))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: 56)
+                .frame(height: 50)
                 .background(
-                    Capsule().fill(Color.accentColor)
+                    Capsule()
+                        .fill(Color.accentColor)
                 )
         }
         .disabled(!hasAudio)
-        .opacity(hasAudio ? 1 : 0.4)
+        .opacity(hasAudio ? 1 : 0.5)
+        .scaleEffect(isAddMarkerButtonPressed ? 0.95 : 1.0)
+        .brightness(isAddMarkerButtonPressed ? -0.05 : 0)
+        .gesture(
+            DragGesture()
+                .onChanged { _ in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isAddMarkerButtonPressed = true
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isAddMarkerButtonPressed = false
+                    }
+                }
+        )
     }
 
     // MARK: - Helpers
@@ -580,4 +721,35 @@ struct TimelineScreen: View {
             print("❌ Audio file reading error: \(error)")
         }
     }
+
+    private func handleCSVImport(_ result: Result<[URL], Error>) {
+        guard
+            case .success(let urls) = result,
+            let url = urls.first
+        else { return }
+
+        guard url.startAccessingSecurityScopedResource() else {
+            csvImportError = "Не удалось получить доступ к файлу"
+            showCSVImportError = true
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        do {
+            let data = try Data(contentsOf: url)
+            guard let csvContent = String(data: data, encoding: .utf8) else {
+                csvImportError = "Не удалось декодировать файл как текст"
+                showCSVImportError = true
+                return
+            }
+
+            viewModel.importMarkersFromCSV(csvContent)
+            print("✅ CSV import completed")
+        } catch {
+            csvImportError = "Ошибка при чтении файла: \(error.localizedDescription)"
+            showCSVImportError = true
+            print("❌ CSV import error: \(error)")
+        }
+    }
+
 }

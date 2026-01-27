@@ -9,7 +9,7 @@ struct MarkerNamePopup: View {
 
     @State private var markerName: String
     @State private var selectedTagId: UUID
-    @State private var showTagPicker = false
+    @State private var showTagMenu = false
     @FocusState private var isTextFieldFocused: Bool
 
     init(
@@ -34,55 +34,80 @@ struct MarkerNamePopup: View {
 
     var body: some View {
         ZStack {
-            // Dimmed background (modern iOS style)
-            Color.black.opacity(0.4)
+            // Dimmed background with blur
+            Color.black.opacity(0.3)
                 .ignoresSafeArea()
                 .onTapGesture {
                     onCancel()
                 }
 
-            // Popup content
+            // Popup content with Liquid Glass style
             VStack(spacing: 20) {
                 // Title
                 Text("Название маркера")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.primary)
                     .padding(.top, 24)
 
-                // Text field with clear button
-                HStack(spacing: 8) {
+                // Text field with darker Liquid Glass style
+                HStack(spacing: 0) {
                     TextField("", text: $markerName)
-                        .font(.system(size: 17))
+                        .font(.system(size: 16, weight: .regular))
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color(.tertiarySystemFill))
-                        )
                         .focused($isTextFieldFocused)
 
-                    // Clear button
+                    // Clear button inside field
                     if !markerName.isEmpty {
                         Button {
                             markerName = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(Color(.tertiaryLabel))
-                                .font(.system(size: 20))
+                                .font(.system(size: 18, weight: .semibold))
                         }
-                        .padding(.trailing, 4)
+                        .padding(.trailing, 8)
                     }
                 }
+                .background(
+                    Capsule()
+                        .fill(Color(.systemGray5).opacity(0.6))
+                        .background(
+                            Capsule()
+                                .fill(.regularMaterial)
+                        )
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
                 .padding(.horizontal, 16)
 
-                // Tag selector
-                Button {
-                    showTagPicker = true
+                // Tag selector with darker Liquid Glass style
+                Menu {
+                    ForEach(tags) { tag in
+                        Button {
+                            selectedTagId = tag.id
+                        } label: {
+                            HStack(spacing: 12) {
+                                Circle()
+                                    .fill(Color(hex: tag.colorHex))
+                                    .frame(width: 14, height: 14)
+                                Text(tag.name)
+                                    .foregroundColor(Color(hex: tag.colorHex))
+                                if selectedTagId == tag.id {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(Color(hex: tag.colorHex))
+                                }
+                            }
+                        }
+                    }
                 } label: {
                     HStack {
                         Text("Тег")
-                            .font(.system(size: 17))
+                            .font(.system(size: 16, weight: .regular))
                             .foregroundColor(.primary)
 
                         Spacer()
@@ -91,42 +116,57 @@ struct MarkerNamePopup: View {
                             HStack(spacing: 8) {
                                 Circle()
                                     .fill(Color(hex: tag.colorHex))
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: 14, height: 14)
 
                                 Text(tag.name)
-                                    .font(.system(size: 17))
+                                    .font(.system(size: 16, weight: .regular))
                                     .foregroundColor(Color(hex: tag.colorHex))
 
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .semibold))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 13, weight: .semibold))
                                     .foregroundColor(.secondary)
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color(.tertiarySystemFill))
+                        Capsule()
+                            .fill(Color(.systemGray5).opacity(0.6))
+                            .background(
+                                Capsule()
+                                    .fill(.regularMaterial)
+                            )
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                     )
                 }
-                .buttonStyle(.plain)
                 .padding(.horizontal, 16)
 
-                // Buttons
+                // Buttons with Liquid Glass style
                 HStack(spacing: 12) {
                     // Cancel button
                     Button {
                         onCancel()
                     } label: {
                         Text("Отмена")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.primary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 54)
+                            .frame(height: 48)
                             .background(
                                 Capsule()
-                                    .fill(Color(.systemGray6))
+                                    .fill(Color(.systemGray5).opacity(0.6))
+                                    .background(
+                                        Capsule()
+                                            .fill(.regularMaterial)
+                                    )
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                             )
                     }
                     .buttonStyle(.plain)
@@ -137,10 +177,10 @@ struct MarkerNamePopup: View {
                         onSave(finalName.isEmpty ? defaultName : finalName, selectedTagId)
                     } label: {
                         Text("Сохранить")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 54)
+                            .frame(height: 48)
                             .background(
                                 Capsule()
                                     .fill(Color.accentColor)
@@ -148,35 +188,30 @@ struct MarkerNamePopup: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
-            .frame(width: 340)
+            .frame(width: 320)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(.systemBackground))
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color(.systemGray6).opacity(0.9))
+                    .background(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(.ultraThickMaterial)
+                    )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: .black.opacity(0.3), radius: 40, x: 0, y: 15)
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 10)
         }
         .onAppear {
             // Auto-focus text field when popup appears
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isTextFieldFocused = true
             }
-        }
-        .sheet(isPresented: $showTagPicker) {
-            TagPickerView(
-                tags: tags,
-                selectedTagId: selectedTagId,
-                onSelect: { tagId in
-                    selectedTagId = tagId
-                    showTagPicker = false
-                },
-                onCancel: {
-                    showTagPicker = false
-                }
-            )
         }
     }
 }

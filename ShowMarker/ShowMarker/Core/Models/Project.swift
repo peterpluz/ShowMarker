@@ -10,11 +10,13 @@ struct Project: Codable, Identifiable, Sendable {
     var fps: Int
     var tags: [Tag]                      // Global project tags
     var timelines: [Timeline]
+    var isMarkerHapticFeedbackEnabled: Bool = true
 
     init(
         name: String,
         fps: Int = 30,
         tags: [Tag] = Tag.defaultTags,
+        isMarkerHapticFeedbackEnabled: Bool = true,
         formatVersion: Int = Self.currentFormatVersion
     ) {
         self.formatVersion = formatVersion
@@ -22,6 +24,7 @@ struct Project: Codable, Identifiable, Sendable {
         self.name = name
         self.fps = fps
         self.tags = tags
+        self.isMarkerHapticFeedbackEnabled = isMarkerHapticFeedbackEnabled
         self.timelines = []
     }
 }

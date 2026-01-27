@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 
 struct MarkerCard: View {
 
@@ -9,10 +10,14 @@ struct MarkerCard: View {
     let markerFlashPublisher: PassthroughSubject<TimelineViewModel.MarkerFlashEvent, Never>
     let draggedMarkerID: UUID?
     let draggedMarkerPreviewTime: Double?
+    let currentTime: Double  // Current playhead time
+    let markerIndex: Int  // 1-based index number for display
+    let isHapticFeedbackEnabled: Bool  // Whether to trigger haptic feedback
     let onTagEdit: () -> Void  // Callback for tag editing
 
     @State private var flashOpacity: Double = 0
     @State private var pulsePhase: Double = 0
+    @State private var animationTimer: Timer?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -20,35 +25,32 @@ struct MarkerCard: View {
             // Vertical colored stripe instead of bookmark icon
             Rectangle()
                 .fill(tag.map { Color(hex: $0.colorHex) } ?? Color.accentColor)
+                .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
                 .frame(width: 4, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(marker.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text("\(markerIndex)")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .frame(width: 20, alignment: .center)
+
+                    Text(marker.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                }
+                .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
 
                 Text(timecode())
-                    .font(.system(size: 12))
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundColor(.secondary)
+                    .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
             }
-
-            Spacer()
-
-            // Tag indicator (larger text)
-            if let tag = tag {
-                Text(tag.name)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(Color(hex: tag.colorHex))
-                    .lineLimit(1)
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.secondary.opacity(0.5))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(UIColor.secondarySystemGroupedBackground))
@@ -74,22 +76,26 @@ struct MarkerCard: View {
         .onReceive(markerFlashPublisher) { event in
             // Only process events for THIS marker
             guard event.markerID == marker.id else { return }
-            
+
             print("   📥 [MarkerCard] '\(marker.name)' received event #\(event.eventID)")
             print("   ⚡️ [MarkerCard] '\(marker.name)' will trigger flash animation")
             triggerFlashEffect()
         }
-        .onChange(of: isDragging) { oldValue, dragging in
-            if dragging {
+        .onChange(of: draggedMarkerID) { oldValue, newValue in
+            if newValue == marker.id {
                 startPulseAnimation()
-            } else {
+            } else if oldValue == marker.id {
                 stopPulseAnimation()
             }
         }
         .onAppear {
-            if isDragging {
+            if draggedMarkerID == marker.id {
                 startPulseAnimation()
             }
+        }
+        .onDisappear {
+            animationTimer?.invalidate()
+            animationTimer = nil
         }
     }
 
@@ -130,25 +136,31 @@ struct MarkerCard: View {
 
     private func triggerFlashEffect() {
         print("      💥 [MarkerCard] '\(marker.name)' FLASH TRIGGERED")
-        
+
+        // Trigger haptic feedback if enabled
+        if isHapticFeedbackEnabled {
+            let impact = UIImpactFeedbackGenerator(style: .medium)
+            impact.impactOccurred()
+        }
+
         // ✅ CRITICAL FIX: Use withAnimation(.none) to ensure instant attack
         // This prevents SwiftUI from applying implicit animations
         withAnimation(.none) {
             flashOpacity = 1.0
         }
         print("      ⚡️ [MarkerCard] '\(marker.name)' flashOpacity set to 1.0 (instant)")
-        
+
         // ✅ Add small delay before decay to ensure attack completes
         // This gives SwiftUI time to render the full opacity before starting fade
         Task { @MainActor in
             // Wait one frame to ensure the full opacity is rendered
             try? await Task.sleep(nanoseconds: 16_000_000)  // ~1 frame at 60fps
-            
+
             print("      🌊 [MarkerCard] '\(marker.name)' starting decay animation")
             withAnimation(.easeOut(duration: 0.5)) {
                 flashOpacity = 0
             }
-            
+
             // Log after animation completes
             try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
             print("      ✅ [MarkerCard] '\(marker.name)' FLASH COMPLETED")
@@ -156,14 +168,21 @@ struct MarkerCard: View {
     }
 
     private func startPulseAnimation() {
-        // Start continuous sine wave animation
-        withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-            pulsePhase = .pi * 2
+        // Stop existing timer if any
+        animationTimer?.invalidate()
+
+        // Use a timer for reliable continuous animation
+        let startTime = Date()
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { _ in
+            let elapsed = Date().timeIntervalSince(startTime)
+            let phase = elapsed * (2 * Double.pi / 1.2)
+            pulsePhase = phase.truncatingRemainder(dividingBy: 2 * Double.pi)
         }
     }
 
     private func stopPulseAnimation() {
-        // Stop animation and reset phase
+        animationTimer?.invalidate()
+        animationTimer = nil
         withAnimation(.linear(duration: 0.2)) {
             pulsePhase = 0
         }

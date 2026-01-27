@@ -10,6 +10,8 @@ struct ProjectView: View {
     @ObservedObject private var repository: ProjectRepository
 
     @State private var searchText = ""
+    @State private var isSearchPressed = false
+    @State private var isAddButtonPressed = false
 
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
@@ -30,6 +32,11 @@ struct ProjectView: View {
     @State private var zipExportData: Data?
     @State private var isZIPExportPresented = false
     @State private var zipExportFilename = ""
+
+    // CSV batch import states
+    @State private var isCSVBatchImportPresented = false
+    @State private var csvImportError: String?
+    @State private var showCSVImportError = false
 
     private let availableFPS = [25, 30, 50, 60, 100]
 
@@ -56,7 +63,7 @@ struct ProjectView: View {
 
     var body: some View {
         mainContent
-            .navigationTitle(repository.project.name)
+            .navigationTitle(isEditing ? "" : repository.project.name)
             .environment(\.editMode, .constant(isEditing ? .active : .inactive))
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) { bottomNotesStyleBar }
@@ -107,6 +114,17 @@ struct ProjectView: View {
                     print("ZIP export failed: \(error.localizedDescription)")
                 }
             }
+            .fileImporter(
+                isPresented: $isCSVBatchImportPresented,
+                allowedContentTypes: [.commaSeparatedText],
+                allowsMultipleSelection: true,
+                onCompletion: handleCSVBatchImport
+            )
+            .alert("Ошибка импорта", isPresented: $showCSVImportError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(csvImportError ?? "Неизвестная ошибка")
+            }
     }
 
     // MARK: - Main Content
@@ -117,21 +135,28 @@ struct ProjectView: View {
                 emptyState
             } else {
                 timelineList
+                    .transition(.opacity.combined(with: .scale))
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: isEditing)
     }
 
     private var emptyState: some View {
         VStack(spacing: 8) {
+            Spacer()
+
             Text("Нет таймлайнов")
                 .foregroundColor(.secondary)
             Text("Создайте новый таймлайн")
                 .font(.footnote)
                 .foregroundColor(.secondary)
+
+            Spacer()
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        .frame(maxHeight: .infinity)
         .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
     private var timelineList: some View {
@@ -147,22 +172,22 @@ struct ProjectView: View {
         Group {
             if isEditing {
                 // Selection mode with checkbox
-                Button {
-                    toggleSelection(timeline.id)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: selectedTimelines.contains(timeline.id) ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 22))
-                            .foregroundColor(selectedTimelines.contains(timeline.id) ? .accentColor : .secondary)
+                HStack(spacing: 12) {
+                    Image(systemName: selectedTimelines.contains(timeline.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(selectedTimelines.contains(timeline.id) ? .accentColor : .secondary)
+                        .frame(width: 28, height: 28, alignment: .center)
 
-                        Text(timeline.name)
-                            .foregroundColor(.primary)
-                            .padding(.vertical, 6)
+                    Text(timeline.name)
+                        .foregroundColor(.primary)
+                        .padding(.vertical, 6)
 
-                        Spacer()
-                    }
+                    Spacer()
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    toggleSelection(timeline.id)
+                }
             } else {
                 // Normal mode with NavigationLink
                 NavigationLink {
@@ -174,6 +199,14 @@ struct ProjectView: View {
                     Text(timeline.name)
                         .foregroundColor(.primary)
                         .padding(.vertical, 6)
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                    Button {
+                        duplicateTimeline(timeline)
+                    } label: {
+                        Label("Дублировать", systemImage: "doc.on.doc")
+                    }
+                    .tint(.green)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     timelineSwipeActions(timeline)
@@ -194,9 +227,9 @@ struct ProjectView: View {
         }
 
         Button {
-            startRename(timeline)
+            shareTimeline(timeline)
         } label: {
-            Label("Переименовать", systemImage: "pencil")
+            Label("Поделиться", systemImage: "square.and.arrow.up")
         }
         .tint(.blue)
     }
@@ -208,6 +241,22 @@ struct ProjectView: View {
         } label: {
             Label("Переименовать", systemImage: "pencil")
         }
+
+        Divider()
+
+        Button {
+            duplicateTimeline(timeline)
+        } label: {
+            Label("Дублировать", systemImage: "doc.on.doc")
+        }
+
+        Button {
+            shareTimeline(timeline)
+        } label: {
+            Label("Поделиться", systemImage: "square.and.arrow.up")
+        }
+
+        Divider()
 
         Button(role: .destructive) {
             deleteTimeline(timeline)
@@ -252,14 +301,14 @@ struct ProjectView: View {
                         selectAllTimelines()
                     } label: {
                         Text("Выбрать все")
-                            .font(.system(size: 17))
+                            .font(.system(size: 17, weight: .regular))
                     }
                 }
 
                 // Selection count (center)
                 ToolbarItem(placement: .principal) {
                     Text("\(selectedTimelines.count) объекта")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 17, weight: .regular))
                 }
 
                 // Done button (right)
@@ -268,24 +317,25 @@ struct ProjectView: View {
                         isEditing = false
                     } label: {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 16, weight: .regular))
                             .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Circle().fill(Color.accentColor))
                     }
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(Color.accentColor))
+                    .clipShape(Circle())
                 }
-
-                // Settings button (always visible)
+            } else {
+                // Settings button (left)
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         isProjectSettingsPresented = true
                     } label: {
                         Image(systemName: "gear")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 20, weight: .regular))
                     }
                 }
-            } else {
-                // Menu with select option
+
+                // Menu with select option (right)
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button {
@@ -295,23 +345,19 @@ struct ProjectView: View {
                         }
 
                         Button {
+                            isCSVBatchImportPresented = true
+                        } label: {
+                            Label("Импорт маркеров из CSV", systemImage: "square.and.arrow.down")
+                        }
+
+                        Button {
                             exportAllTimelines()
                         } label: {
                             Label("Экспорт CSV всех таймлайнов", systemImage: "square.and.arrow.up")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 20, weight: .semibold))
-                    }
-                }
-
-                // Settings button (right)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isProjectSettingsPresented = true
-                    } label: {
-                        Image(systemName: "gear")
-                            .font(.system(size: 20, weight: .semibold))
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 20, weight: .regular))
                     }
                 }
             }
@@ -321,74 +367,107 @@ struct ProjectView: View {
     // MARK: - Bottom bar
 
     private var bottomNotesStyleBar: some View {
-        HStack(spacing: 12) {
+        Group {
             if isEditing {
                 editingBottomBar
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
             } else {
-                searchBar
-                addButton
+                HStack(spacing: 12) {
+                    searchBar
+                    addButton
+                }
+                .padding(16)
             }
         }
-        .padding(16)
     }
 
     private var editingBottomBar: some View {
-        HStack(spacing: 16) {
-            // Share button
-            Button {
-                exportSelectedTimelines()
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .accentColor)
-                    .frame(width: 44, height: 44)
-            }
-            .disabled(selectedTimelines.isEmpty)
+        HStack(spacing: 12) {
+                // Share button
+                Button {
+                    exportSelectedTimelines()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundColor(.white)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            Circle()
+                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
+                        )
+                }
+                .disabled(selectedTimelines.isEmpty)
 
-            // Duplicate button
-            Button {
-                duplicateSelectedTimelines()
-            } label: {
-                Image(systemName: "plus.square.on.square")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .accentColor)
-                    .frame(width: 44, height: 44)
-            }
-            .disabled(selectedTimelines.isEmpty)
+                // Duplicate button
+                Button {
+                    duplicateSelectedTimelines()
+                } label: {
+                    Image(systemName: "plus.square.on.square")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundColor(.white)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            Circle()
+                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
+                        )
+                }
+                .disabled(selectedTimelines.isEmpty)
 
-            Spacer()
+                Spacer()
 
-            // Delete button
-            Button {
-                deleteSelectedTimelines()
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(selectedTimelines.isEmpty ? .secondary : .red)
-                    .frame(width: 44, height: 44)
+                // Delete button
+                Button {
+                    deleteSelectedTimelines()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundColor(.white)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            Circle()
+                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : .red)
+                        )
+                }
+                .disabled(selectedTimelines.isEmpty)
             }
-            .disabled(selectedTimelines.isEmpty)
-        }
     }
 
     private var searchBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
+                .font(.system(size: 16, weight: .semibold))
 
             TextField("Поиск", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
+                .font(.system(size: 16, weight: .regular))
         }
-        .padding(.horizontal, 16)
-        .frame(height: 48)
+        .padding(.horizontal, 12)
+        .frame(height: 44)
         .background(
             Capsule()
-                .fill(.regularMaterial)
+                .fill(.ultraThinMaterial)
         )
         .overlay(
             Capsule()
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+        )
+        .scaleEffect(isSearchPressed ? 0.95 : 1.0)
+        .brightness(isSearchPressed ? -0.05 : 0)
+        .gesture(
+            DragGesture()
+                .onChanged { _ in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isSearchPressed = true
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isSearchPressed = false
+                    }
+                }
         )
     }
 
@@ -397,14 +476,27 @@ struct ProjectView: View {
             isAddTimelinePresented = true
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 20, weight: .regular))
                 .foregroundColor(.white)
-                .frame(width: 48, height: 48)
-                .background(
-                    Circle()
-                        .fill(Color.accentColor)
-                )
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(Color.accentColor))
         }
+        .buttonStyle(.plain)
+        .scaleEffect(isAddButtonPressed ? 0.92 : 1.0)
+        .brightness(isAddButtonPressed ? -0.1 : 0)
+        .gesture(
+            DragGesture()
+                .onChanged { _ in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isAddButtonPressed = true
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isAddButtonPressed = false
+                    }
+                }
+        )
     }
 
     // MARK: - Helpers
@@ -457,6 +549,35 @@ struct ProjectView: View {
 
         selectedTimelines.removeAll()
         isEditing = false
+    }
+
+    private func duplicateTimeline(_ timeline: Timeline) {
+        let duplicateName = "\(timeline.name) Copy"
+        let newTimeline = Timeline(
+            name: duplicateName,
+            audio: timeline.audio,
+            fps: timeline.fps,
+            markers: timeline.markers.map { marker in
+                TimelineMarker(
+                    timeSeconds: marker.timeSeconds,
+                    name: marker.name,
+                    tagId: marker.tagId
+                )
+            }
+        )
+
+        // Insert after the original timeline instead of at the end
+        if let currentIndex = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) {
+            repository.project.timelines.insert(newTimeline, at: currentIndex + 1)
+        } else {
+            repository.addTimeline(newTimeline)
+        }
+    }
+
+    private func shareTimeline(_ timeline: Timeline) {
+        csvExportData = generateCSV(for: timeline)
+        exportFilename = "\(timeline.name).csv"
+        isCSVExportPresented = true
     }
 
     private func exportSelectedTimelines() {
@@ -551,5 +672,57 @@ struct ProjectView: View {
     private func deleteTimeline(_ timeline: Timeline) {
         guard let index = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) else { return }
         repository.removeTimelines(at: IndexSet(integer: index))
+    }
+
+    private func handleCSVBatchImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result else { return }
+
+        for url in urls {
+            guard url.startAccessingSecurityScopedResource() else {
+                csvImportError = "Не удалось получить доступ к файлу: \(url.lastPathComponent)"
+                showCSVImportError = true
+                continue
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+
+            do {
+                let data = try Data(contentsOf: url)
+                guard let csvContent = String(data: data, encoding: .utf8) else {
+                    csvImportError = "Не удалось декодировать файл как текст: \(url.lastPathComponent)"
+                    showCSVImportError = true
+                    continue
+                }
+
+                // Parse markers from CSV
+                let importedMarkers = MarkersCSVImporter.importFromCSV(csvContent, fps: repository.project.fps)
+
+                // Create timeline from filename (without .csv extension)
+                var timelineName = url.deletingPathExtension().lastPathComponent
+                if timelineName.trimmingCharacters(in: .whitespaces).isEmpty {
+                    timelineName = "Imported Timeline"
+                }
+
+                // Create new timeline
+                let newTimeline = Timeline(
+                    id: UUID(),
+                    name: timelineName,
+                    createdAt: Date(),
+                    audio: nil,
+                    fps: repository.project.fps,
+                    markers: importedMarkers
+                )
+
+                repository.addTimeline(newTimeline)
+                print("✅ Created timeline '\(timelineName)' with \(importedMarkers.count) markers from CSV")
+            } catch {
+                csvImportError = "Ошибка при чтении файла \(url.lastPathComponent): \(error.localizedDescription)"
+                showCSVImportError = true
+                print("❌ CSV batch import error: \(error)")
+            }
+        }
+
+        if !urls.isEmpty && csvImportError == nil {
+            print("✅ Batch CSV import completed: \(urls.count) files imported")
+        }
     }
 }

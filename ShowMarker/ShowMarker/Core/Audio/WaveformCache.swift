@@ -3,7 +3,7 @@ import AVFoundation
 
 // MARK: - Cached Data Structure
 
-struct CachedWaveformData: Codable, Sendable {
+struct CachedWaveformData: Codable, @unchecked Sendable {
     let mipmaps: [[Float]]
     let generatedAt: Date
     let audioID: String

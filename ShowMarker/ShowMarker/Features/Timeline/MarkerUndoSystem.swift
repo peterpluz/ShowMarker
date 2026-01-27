@@ -7,12 +7,24 @@ import Combine
 protocol UndoableAction {
     func execute(in repository: ProjectRepository, timelineID: UUID)
     func undo(in repository: ProjectRepository, timelineID: UUID)
+    var actionDescription: String { get }
+    var timestamp: Date { get }
 }
 
 // MARK: - Add Marker Action
 
 struct AddMarkerAction: UndoableAction {
     let marker: TimelineMarker
+    let timestamp: Date
+
+    var actionDescription: String {
+        "Добавить маркер '\(marker.name)'"
+    }
+
+    init(marker: TimelineMarker, timestamp: Date = Date()) {
+        self.marker = marker
+        self.timestamp = timestamp
+    }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
         repository.addMarker(timelineID: timelineID, marker: marker)
@@ -27,6 +39,16 @@ struct AddMarkerAction: UndoableAction {
 
 struct DeleteMarkerAction: UndoableAction {
     let marker: TimelineMarker
+    let timestamp: Date
+
+    var actionDescription: String {
+        "Удалить маркер '\(marker.name)'"
+    }
+
+    init(marker: TimelineMarker, timestamp: Date = Date()) {
+        self.marker = marker
+        self.timestamp = timestamp
+    }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
         repository.removeMarker(timelineID: timelineID, markerID: marker.id)
@@ -43,6 +65,18 @@ struct RenameMarkerAction: UndoableAction {
     let markerID: UUID
     let oldName: String
     let newName: String
+    let timestamp: Date
+
+    var actionDescription: String {
+        "Переименовать маркер '\(oldName)' → '\(newName)'"
+    }
+
+    init(markerID: UUID, oldName: String, newName: String, timestamp: Date = Date()) {
+        self.markerID = markerID
+        self.oldName = oldName
+        self.newName = newName
+        self.timestamp = timestamp
+    }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
         guard let timeline = repository.project.timelines.first(where: { $0.id == timelineID }),
@@ -69,6 +103,18 @@ struct ChangeMarkerTimeAction: UndoableAction {
     let markerID: UUID
     let oldTime: Double
     let newTime: Double
+    let timestamp: Date
+
+    var actionDescription: String {
+        "Переместить маркер"
+    }
+
+    init(markerID: UUID, oldTime: Double, newTime: Double, timestamp: Date = Date()) {
+        self.markerID = markerID
+        self.oldTime = oldTime
+        self.newTime = newTime
+        self.timestamp = timestamp
+    }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
         guard let timeline = repository.project.timelines.first(where: { $0.id == timelineID }),
@@ -95,6 +141,18 @@ struct ChangeMarkerTagAction: UndoableAction {
     let markerID: UUID
     let oldTagId: UUID
     let newTagId: UUID
+    let timestamp: Date
+
+    var actionDescription: String {
+        "Изменить тег маркера"
+    }
+
+    init(markerID: UUID, oldTagId: UUID, newTagId: UUID, timestamp: Date = Date()) {
+        self.markerID = markerID
+        self.oldTagId = oldTagId
+        self.newTagId = newTagId
+        self.timestamp = timestamp
+    }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
         guard let timeline = repository.project.timelines.first(where: { $0.id == timelineID }),
@@ -119,6 +177,16 @@ struct ChangeMarkerTagAction: UndoableAction {
 
 struct DeleteAllMarkersAction: UndoableAction {
     let markers: [TimelineMarker]
+    let timestamp: Date
+
+    var actionDescription: String {
+        "Удалить все маркеры (\(markers.count))"
+    }
+
+    init(markers: [TimelineMarker], timestamp: Date = Date()) {
+        self.markers = markers
+        self.timestamp = timestamp
+    }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
         markers.forEach { marker in
@@ -131,6 +199,13 @@ struct DeleteAllMarkersAction: UndoableAction {
             repository.addMarker(timelineID: timelineID, marker: marker)
         }
     }
+}
+
+// MARK: - History Item
+
+struct HistoryItem {
+    let description: String
+    let timeAgo: String
 }
 
 // MARK: - Undo Manager
@@ -193,6 +268,57 @@ class MarkerUndoManager: ObservableObject {
         undoStack.removeAll()
         redoStack.removeAll()
         updateState()
+    }
+
+    // MARK: - History Access
+
+    private func formatTimeAgo(_ date: Date) -> String {
+        let interval = Date().timeIntervalSince(date)
+
+        if interval < 60 {
+            let seconds = Int(interval)
+            return seconds == 1 ? "1 сек назад" : "\(seconds) сек назад"
+        } else if interval < 3600 {
+            let minutes = Int(interval / 60)
+            return minutes == 1 ? "1 мин назад" : "\(minutes) мин назад"
+        } else {
+            let hours = Int(interval / 3600)
+            return hours == 1 ? "1 ч назад" : "\(hours) ч назад"
+        }
+    }
+
+    func getUndoHistory(limit: Int = 10) -> [HistoryItem] {
+        return undoStack.suffix(limit).reversed().map { action in
+            HistoryItem(
+                description: action.actionDescription,
+                timeAgo: formatTimeAgo(action.timestamp)
+            )
+        }
+    }
+
+    func getRedoHistory(limit: Int = 10) -> [HistoryItem] {
+        return redoStack.suffix(limit).reversed().map { action in
+            HistoryItem(
+                description: action.actionDescription,
+                timeAgo: formatTimeAgo(action.timestamp)
+            )
+        }
+    }
+
+    func undoToIndex(_ index: Int) {
+        guard index < undoStack.count else { return }
+        let count = undoStack.count - index - 1
+        for _ in 0..<count {
+            undo()
+        }
+    }
+
+    func redoToIndex(_ index: Int) {
+        guard index < redoStack.count else { return }
+        let count = redoStack.count - index - 1
+        for _ in 0..<count {
+            redo()
+        }
     }
 
     private func updateState() {

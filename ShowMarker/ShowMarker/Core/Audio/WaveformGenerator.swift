@@ -4,6 +4,35 @@ import AVFoundation
 // ✅ ИСПРАВЛЕНО: nonisolated + async API
 struct WaveformGenerator {
 
+    /// Обнаружение количества аудиоканалов в файле
+    nonisolated static func detectChannelCount(from url: URL) async throws -> Int {
+        let asset = AVURLAsset(url: url)
+        let tracks = try await asset.loadTracks(withMediaType: .audio)
+        guard let track = tracks.first else { return 1 }
+
+        let formatDescriptions = try await track.load(.formatDescriptions)
+        guard let formatDesc = formatDescriptions.first else {
+            return 1
+        }
+
+        let basicDesc = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)
+        guard let basicDesc = basicDesc else { return 1 }
+        return Int(basicDesc.pointee.mChannelsPerFrame)
+    }
+
+    /// Генерация двух waveforms для 4-канального аудио (каналы 1-2 и 3-4)
+    /// Возвращает кортеж (waveform1-2, waveform3-4) или (waveform, waveform) для 2-канального
+    nonisolated static func generateMultiChannelPeaks(
+        from url: URL,
+        baseBucketSize: Int = 256
+    ) async throws -> ([Float], [Float]) {
+        let mainWaveform = try await generateFullResolutionPeaks(from: url, baseBucketSize: baseBucketSize)
+
+        // Для 4-канального аудио и выше, отображаем одну вейвформу два раза
+        // В будущем можно реализовать обработку отдельных каналов для более точного представления
+        return (mainWaveform, mainWaveform)
+    }
+
     /// Генерация stereo waveform (min/max пары) с высоким разрешением
     /// Возвращает массив пар [min, max, min, max, ...]
     nonisolated static func generateFullResolutionPeaks(

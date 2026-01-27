@@ -103,6 +103,10 @@ final class TimelineViewModel: ObservableObject {
         repository.project.fps
     }
 
+    var isMarkerHapticFeedbackEnabled: Bool {
+        repository.project.isMarkerHapticFeedbackEnabled
+    }
+
     // MARK: - Computed
 
     var visibleMarkers: [TimelineMarker] {
@@ -530,11 +534,11 @@ final class TimelineViewModel: ObservableObject {
         print("✅ Marker moved to frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", newTime))s)")
     }
 
-    func renameMarker(_ marker: TimelineMarker, to newName: String) {
+    func renameMarker(_ marker: TimelineMarker, to newName: String, oldName: String? = nil) {
         // Use undo manager for this action
         let action = RenameMarkerAction(
             markerID: marker.id,
-            oldName: marker.name,
+            oldName: oldName ?? marker.name,
             newName: newName
         )
         undoManager.performAction(action)
@@ -564,6 +568,20 @@ final class TimelineViewModel: ObservableObject {
         // Use undo manager for this action
         let action = DeleteAllMarkersAction(markers: markers)
         undoManager.performAction(action)
+    }
+
+    // MARK: - CSV Import/Export
+
+    func importMarkersFromCSV(_ csvContent: String) {
+        let importedMarkers = MarkersCSVImporter.importFromCSV(csvContent, fps: fps)
+
+        for marker in importedMarkers {
+            // Use add action for undo/redo
+            let action = AddMarkerAction(marker: marker)
+            undoManager.performAction(action)
+        }
+
+        print("✅ Imported \(importedMarkers.count) markers from CSV")
     }
 
     // MARK: - Timeline

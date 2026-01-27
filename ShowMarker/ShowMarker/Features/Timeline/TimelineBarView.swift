@@ -6,8 +6,11 @@ struct TimelineBarView: View {
     let currentTime: Double
 
     let waveform: [Float]
+    let waveform2: [Float]?  // Second waveform for 4-channel audio (channels 3-4)
     let markers: [TimelineMarker]
     let tags: [Tag]  // Tags for coloring markers
+
+    let fps: Int  // Project FPS for frame-based ruler divisions
 
     let hasAudio: Bool
 
@@ -22,6 +25,12 @@ struct TimelineBarView: View {
     @Binding var zoomScale: CGFloat
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
+
+    // Double-tap zoom state
+    @State private var isDoubleTapZoomMode: Bool = false
+    @State private var doubleTapStartZoom: CGFloat = 1.0
+    @State private var lastTapTime: Date?
+    @State private var doubleTapZoomStartX: CGFloat = 0
 
     @State private var capsuleDragStart: CGFloat?
 
@@ -278,11 +287,33 @@ struct TimelineBarView: View {
         // Target: 80-150 pixels between major ticks
         let targetMajorSpacing: CGFloat = 100
         let targetSecondsPerMajor = Double(targetMajorSpacing) * secondsPerPixel
-        
-        // Predefined "nice" intervals with subdivisions
-        // Format: (interval in seconds, subdivisions)
-        let intervals: [(Double, Int)] = [
-            // Frames/milliseconds (for very high zoom)
+
+        // Build intervals list with FPS-based divisions at very high zoom
+        var intervals: [(Double, Int)] = []
+
+        // At very high zoom (when fps intervals would be useful)
+        let frameInterval = 1.0 / Double(fps)
+
+        // Add frame-based intervals dynamically if at high zoom
+        if secondsPerPixel < frameInterval * 2 {
+            // For each frame multiple (1 frame, 2 frames, 5 frames, 10 frames, etc.)
+            let frameMultiples = [1, 2, 5, 10, 20, 50, 100]
+            for multiple in frameMultiples {
+                let interval = frameInterval * Double(multiple)
+                // Choose subdivision count based on multiple
+                let subdivisions = multiple <= 5 ? 5 : (multiple <= 10 ? 10 : 5)
+                intervals.append((interval, subdivisions))
+
+                // Stop adding if interval gets too large
+                if interval > 0.5 {
+                    break
+                }
+            }
+        }
+
+        // Add standard intervals
+        let standardIntervals: [(Double, Int)] = [
+            // Milliseconds/centiseconds (for very high zoom)
             (0.01, 10),    // 10ms, 10 subdivisions = 1ms minor
             (0.02, 10),    // 20ms
             (0.05, 5),     // 50ms, 5 subdivisions = 10ms minor
@@ -305,11 +336,13 @@ struct TimelineBarView: View {
             (1800, 6),     // 30min
             (3600, 6),     // 1h
         ]
-        
+
+        intervals.append(contentsOf: standardIntervals)
+
         // Find the interval closest to target
         var bestInterval = intervals[0]
         var bestDiff = Double.infinity
-        
+
         for interval in intervals {
             let diff = abs(interval.0 - targetSecondsPerMajor)
             if diff < bestDiff {
@@ -317,7 +350,7 @@ struct TimelineBarView: View {
                 bestInterval = interval
             }
         }
-        
+
         // Verify spacing won't cause overlap
         let pixelsPerMajor = bestInterval.0 / secondsPerPixel
         if pixelsPerMajor < 50 {
@@ -329,7 +362,7 @@ struct TimelineBarView: View {
                 }
             }
         }
-        
+
         return bestInterval
     }
     
@@ -342,12 +375,35 @@ struct TimelineBarView: View {
     
     /// Format time label based on the interval scale
     private func formatTimeLabel(_ seconds: Double, interval: Double) -> String {
+        let frameInterval = 1.0 / Double(fps)
+
+        // Check if this is a frame-based interval
+        if interval < frameInterval * 1.5 && interval > 0 {
+            // Frame-based display
+            let totalFrames = Int(round(seconds * Double(fps)))
+            let frames = totalFrames % fps
+            let totalSeconds = totalFrames / fps
+            let secs = totalSeconds % 60
+            let minutes = totalSeconds / 60
+            let hours = minutes / 60
+            let mins = minutes % 60
+
+            if hours > 0 {
+                return String(format: "%d:%02d:%02d:%02d", hours, mins, secs, frames)
+            } else if minutes > 0 {
+                return String(format: "%d:%02d:%02d", minutes, secs, frames)
+            } else {
+                return String(format: "%d:%02d", secs, frames)
+            }
+        }
+
+        // Standard time-based display
         let totalSeconds = Int(seconds)
         let minutes = totalSeconds / 60
         let secs = totalSeconds % 60
         let hours = minutes / 60
         let mins = minutes % 60
-        
+
         if interval >= 3600 {
             // Hours scale
             return "\(hours)h"
@@ -383,7 +439,7 @@ struct TimelineBarView: View {
             cachedWaveformView(width: contentWidth)
                 .offset(x: centerX - offset)
 
-            ForEach(markers) { marker in
+            ForEach(Array(markers.enumerated()), id: \.element.id) { index, marker in
                 let displayTime: Double = {
                     if draggedMarkerID == marker.id, let previewTime = draggedMarkerPreviewTime {
                         return previewTime
@@ -402,15 +458,28 @@ struct TimelineBarView: View {
                     return .orange // Fallback color
                 }()
 
-                Rectangle()
-                    .fill(markerColor)
-                    .frame(width: Self.markerLineWidth, height: Self.barHeight)
-                    .position(x: markerX, y: Self.barHeight / 2)
-                    .gesture(markerGesture(
-                        marker: marker,
-                        centerX: centerX,
-                        contentWidth: contentWidth
-                    ))
+                ZStack(alignment: .top) {
+                    Rectangle()
+                        .fill(markerColor)
+                        .frame(width: Self.markerLineWidth, height: Self.barHeight)
+
+                    // Marker number label at the top
+                    Text("\(index + 1)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 18)
+                        .background(markerColor)
+                        .cornerRadius(3)
+                }
+                .position(x: markerX, y: Self.barHeight / 2)
+                .simultaneousGesture(TapGesture().onEnded {
+                    onSeek(marker.timeSeconds)
+                })
+                .gesture(markerGesture(
+                    marker: marker,
+                    centerX: centerX,
+                    contentWidth: contentWidth
+                ))
             }
 
             Rectangle()
@@ -418,6 +487,7 @@ struct TimelineBarView: View {
                 .frame(width: Self.playheadLineWidth, height: Self.barHeight)
                 .position(x: centerX, y: Self.barHeight / 2)
         }
+        .gesture(doubleTapGesture())
         .gesture(playheadDrag(secondsPerPixel: secondsPerPixel))
         .simultaneousGesture(pinchGesture())
     }
@@ -439,11 +509,37 @@ struct TimelineBarView: View {
 
     // MARK: - Gestures
 
+    private func doubleTapGesture() -> some Gesture {
+        TapGesture(count: 2)
+            .onEnded { _ in
+                // Enable double-tap zoom mode
+                isDoubleTapZoomMode = true
+                doubleTapStartZoom = zoomScale
+            }
+    }
+
     private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
         DragGesture()
             .onChanged { value in
                 guard draggedMarkerID == nil, !isPinching else { return }
 
+                // Handle double-tap zoom mode
+                if isDoubleTapZoomMode {
+                    if doubleTapZoomStartX == 0 {
+                        doubleTapZoomStartX = value.startLocation.x
+                    }
+
+                    let translation = value.location.x - doubleTapZoomStartX
+                    // Dragging right increases zoom, left decreases zoom
+                    // Sensitivity: every 50 pixels of drag = 1x zoom multiplier
+                    let zoomMultiplier = 1.0 + (Double(translation) / 50.0)
+                    let newScale = doubleTapStartZoom * max(zoomMultiplier, 0.5) // Prevent negative zoom
+                    let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
+                    zoomScale = clamped
+                    return
+                }
+
+                // Regular playhead seeking
                 if dragStartTime == nil {
                     dragStartTime = currentTime
                     dragCurrentTime = currentTime
@@ -457,9 +553,16 @@ struct TimelineBarView: View {
                 onSeek(dragCurrentTime)
             }
             .onEnded { _ in
-                dragStartTime = nil
-                isTimelineDragging = false
-                dragEndTime = Date()
+                if isDoubleTapZoomMode {
+                    // Reset zoom mode after drag ends
+                    isDoubleTapZoomMode = false
+                    doubleTapZoomStartX = 0
+                } else {
+                    // Regular playhead seeking cleanup
+                    dragStartTime = nil
+                    isTimelineDragging = false
+                    dragEndTime = Date()
+                }
             }
     }
     
@@ -470,7 +573,16 @@ struct TimelineBarView: View {
                     isPinching = true
                     lastMagnification = 1.0
                 }
-                
+
+                // Only apply zoom if value changed meaningfully
+                // If value returns to ~1.0, it means a finger was lifted
+                if abs(value - 1.0) < 0.05 && lastMagnification != 1.0 {
+                    // Finger was likely lifted, stop pinching
+                    isPinching = false
+                    lastMagnification = 1.0
+                    return
+                }
+
                 let delta = value / lastMagnification
                 let newScale = zoomScale * delta
                 let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
@@ -537,46 +649,59 @@ struct TimelineBarView: View {
                 let pairCount = waveform.count / 2
                 guard pairCount > 0 else { return }
 
-                let centerY = Self.barHeight / 2
                 let canvasWidth = size.width
                 let amplitudeScale: CGFloat = 0.85
+                let fillColor = Color.secondary.opacity(0.5)
 
-                var upperPath = Path()
-                var lowerPath = Path()
+                // For 4-channel audio, display two waveforms (top and bottom)
+                let hasSecondWaveform = waveform2 != nil && (waveform2?.isEmpty == false)
+                let waveformCount = hasSecondWaveform ? 2 : 1
+                let barHeightPerWaveform = Self.barHeight / CGFloat(waveformCount)
 
-                for i in 0..<pairCount {
-                    let minIndex = i * 2
-                    let maxIndex = i * 2 + 1
+                // Draw waveforms
+                for waveformIndex in 0..<waveformCount {
+                    let currentWaveform = waveformIndex == 0 ? waveform : (waveform2 ?? [])
+                    let currentPairCount = currentWaveform.count / 2
+                    guard currentPairCount > 0 else { continue }
 
-                    guard maxIndex < waveform.count else { break }
+                    let centerY = (CGFloat(waveformIndex) + 0.5) * barHeightPerWaveform
 
-                    let minValue = waveform[minIndex]
-                    let maxValue = waveform[maxIndex]
+                    var upperPath = Path()
+                    var lowerPath = Path()
 
-                    let normalizedPosition = Double(i) / Double(max(pairCount - 1, 1))
-                    let x = normalizedPosition * canvasWidth
+                    for i in 0..<currentPairCount {
+                        let minIndex = i * 2
+                        let maxIndex = i * 2 + 1
 
-                    let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
-                    let bottomY = centerY - CGFloat(minValue) * (Self.barHeight / 2) * amplitudeScale
+                        guard maxIndex < currentWaveform.count else { break }
 
-                    if i == 0 {
-                        upperPath.move(to: CGPoint(x: x, y: centerY))
-                        lowerPath.move(to: CGPoint(x: x, y: centerY))
+                        let minValue = currentWaveform[minIndex]
+                        let maxValue = currentWaveform[maxIndex]
+
+                        let normalizedPosition = Double(i) / Double(max(currentPairCount - 1, 1))
+                        let x = normalizedPosition * canvasWidth
+
+                        let topY = centerY - CGFloat(maxValue) * (barHeightPerWaveform / 2) * amplitudeScale
+                        let bottomY = centerY - CGFloat(minValue) * (barHeightPerWaveform / 2) * amplitudeScale
+
+                        if i == 0 {
+                            upperPath.move(to: CGPoint(x: x, y: centerY))
+                            lowerPath.move(to: CGPoint(x: x, y: centerY))
+                        }
+
+                        upperPath.addLine(to: CGPoint(x: x, y: topY))
+                        lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
                     }
 
-                    upperPath.addLine(to: CGPoint(x: x, y: topY))
-                    lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
+                    upperPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
+                    lowerPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
+
+                    upperPath.closeSubpath()
+                    lowerPath.closeSubpath()
+
+                    context.fill(upperPath, with: .color(fillColor))
+                    context.fill(lowerPath, with: .color(fillColor))
                 }
-
-                upperPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
-                lowerPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
-
-                upperPath.closeSubpath()
-                lowerPath.closeSubpath()
-
-                let fillColor = Color.secondary.opacity(0.5)
-                context.fill(upperPath, with: .color(fillColor))
-                context.fill(lowerPath, with: .color(fillColor))
             }
             .frame(width: width, height: Self.barHeight)
         }
