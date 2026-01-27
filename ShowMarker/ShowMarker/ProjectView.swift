@@ -174,8 +174,9 @@ struct ProjectView: View {
                 // Selection mode with checkbox
                 HStack(spacing: 12) {
                     Image(systemName: selectedTimelines.contains(timeline.id) ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
+                        .font(.system(size: 24, weight: .semibold))
                         .foregroundColor(selectedTimelines.contains(timeline.id) ? .accentColor : .secondary)
+                        .frame(width: 28, height: 28, alignment: .center)
 
                     Text(timeline.name)
                         .foregroundColor(.primary)
