@@ -17,6 +17,7 @@ struct MarkerCard: View {
 
     @State private var flashOpacity: Double = 0
     @State private var pulsePhase: Double = 0
+    @State private var animationTimer: Timer?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -42,28 +43,14 @@ struct MarkerCard: View {
                 .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
 
                 Text(timecode())
-                    .font(.system(size: 12))
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundColor(.secondary)
                     .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
             }
-
-            Spacer()
-
-            // Tag indicator (larger text)
-            if let tag = tag {
-                Text(tag.name)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(Color(hex: tag.colorHex))
-                    .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
-                    .lineLimit(1)
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.secondary.opacity(0.5))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(UIColor.secondarySystemGroupedBackground))
@@ -105,6 +92,10 @@ struct MarkerCard: View {
             if draggedMarkerID == marker.id {
                 startPulseAnimation()
             }
+        }
+        .onDisappear {
+            animationTimer?.invalidate()
+            animationTimer = nil
         }
     }
 
@@ -158,18 +149,18 @@ struct MarkerCard: View {
             flashOpacity = 1.0
         }
         print("      ⚡️ [MarkerCard] '\(marker.name)' flashOpacity set to 1.0 (instant)")
-        
+
         // ✅ Add small delay before decay to ensure attack completes
         // This gives SwiftUI time to render the full opacity before starting fade
         Task { @MainActor in
             // Wait one frame to ensure the full opacity is rendered
             try? await Task.sleep(nanoseconds: 16_000_000)  // ~1 frame at 60fps
-            
+
             print("      🌊 [MarkerCard] '\(marker.name)' starting decay animation")
             withAnimation(.easeOut(duration: 0.5)) {
                 flashOpacity = 0
             }
-            
+
             // Log after animation completes
             try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
             print("      ✅ [MarkerCard] '\(marker.name)' FLASH COMPLETED")
@@ -177,14 +168,21 @@ struct MarkerCard: View {
     }
 
     private func startPulseAnimation() {
-        // Start continuous sine wave animation
-        withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-            pulsePhase = .pi * 2
+        // Stop existing timer if any
+        animationTimer?.invalidate()
+
+        // Use a timer for reliable continuous animation
+        let startTime = Date()
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { _ in
+            let elapsed = Date().timeIntervalSince(startTime)
+            let phase = elapsed * (2 * Double.pi / 1.2)
+            pulsePhase = phase.truncatingRemainder(dividingBy: 2 * Double.pi)
         }
     }
 
     private func stopPulseAnimation() {
-        // Stop animation and reset phase
+        animationTimer?.invalidate()
+        animationTimer = nil
         withAnimation(.linear(duration: 0.2)) {
             pulsePhase = 0
         }
