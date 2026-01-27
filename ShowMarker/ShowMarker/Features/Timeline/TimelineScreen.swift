@@ -425,11 +425,11 @@ struct TimelineScreen: View {
                 HStack(spacing: 12) {
                     // Undo button with long press menu
                     Menu {
-                        ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.element.1.action.actionDescription) { index, item in
+                        ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
                             Button {
-                                viewModel.undoManager.undoToIndex(index)
+                                viewModel.undoManager.undoToIndex(offset)
                             } label: {
-                                Text(item.1.description)
+                                Text(item.description)
                             }
                         }
                     } label: {
@@ -445,11 +445,11 @@ struct TimelineScreen: View {
 
                     // Redo button with long press menu
                     Menu {
-                        ForEach(Array(viewModel.undoManager.getRedoHistory(limit: 10).enumerated()), id: \.element.1.action.actionDescription) { index, item in
+                        ForEach(Array(viewModel.undoManager.getRedoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
                             Button {
-                                viewModel.undoManager.redoToIndex(index)
+                                viewModel.undoManager.redoToIndex(offset)
                             } label: {
-                                Text(item.1.description)
+                                Text(item.description)
                             }
                         }
                     } label: {
