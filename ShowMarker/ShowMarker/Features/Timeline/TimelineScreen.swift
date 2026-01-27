@@ -487,6 +487,7 @@ struct TimelineScreen: View {
             duration: viewModel.duration,
             currentTime: viewModel.currentTime,
             waveform: viewModel.visibleWaveform,
+            waveform2: nil,  // TODO: Add multi-channel support
             markers: viewModel.visibleMarkers,
             tags: viewModel.tags,
             hasAudio: hasAudio,

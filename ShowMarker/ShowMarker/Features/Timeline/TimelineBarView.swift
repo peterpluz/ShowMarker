@@ -6,6 +6,7 @@ struct TimelineBarView: View {
     let currentTime: Double
 
     let waveform: [Float]
+    let waveform2: [Float]?  // Second waveform for 4-channel audio (channels 3-4)
     let markers: [TimelineMarker]
     let tags: [Tag]  // Tags for coloring markers
 
@@ -537,46 +538,59 @@ struct TimelineBarView: View {
                 let pairCount = waveform.count / 2
                 guard pairCount > 0 else { return }
 
-                let centerY = Self.barHeight / 2
                 let canvasWidth = size.width
                 let amplitudeScale: CGFloat = 0.85
+                let fillColor = Color.secondary.opacity(0.5)
 
-                var upperPath = Path()
-                var lowerPath = Path()
+                // For 4-channel audio, display two waveforms (top and bottom)
+                let hasSecondWaveform = waveform2 != nil && (waveform2?.isEmpty == false)
+                let waveformCount = hasSecondWaveform ? 2 : 1
+                let barHeightPerWaveform = Self.barHeight / CGFloat(waveformCount)
 
-                for i in 0..<pairCount {
-                    let minIndex = i * 2
-                    let maxIndex = i * 2 + 1
+                // Draw waveforms
+                for waveformIndex in 0..<waveformCount {
+                    let currentWaveform = waveformIndex == 0 ? waveform : (waveform2 ?? [])
+                    let currentPairCount = currentWaveform.count / 2
+                    guard currentPairCount > 0 else { continue }
 
-                    guard maxIndex < waveform.count else { break }
+                    let centerY = (CGFloat(waveformIndex) + 0.5) * barHeightPerWaveform
 
-                    let minValue = waveform[minIndex]
-                    let maxValue = waveform[maxIndex]
+                    var upperPath = Path()
+                    var lowerPath = Path()
 
-                    let normalizedPosition = Double(i) / Double(max(pairCount - 1, 1))
-                    let x = normalizedPosition * canvasWidth
+                    for i in 0..<currentPairCount {
+                        let minIndex = i * 2
+                        let maxIndex = i * 2 + 1
 
-                    let topY = centerY - CGFloat(maxValue) * (Self.barHeight / 2) * amplitudeScale
-                    let bottomY = centerY - CGFloat(minValue) * (Self.barHeight / 2) * amplitudeScale
+                        guard maxIndex < currentWaveform.count else { break }
 
-                    if i == 0 {
-                        upperPath.move(to: CGPoint(x: x, y: centerY))
-                        lowerPath.move(to: CGPoint(x: x, y: centerY))
+                        let minValue = currentWaveform[minIndex]
+                        let maxValue = currentWaveform[maxIndex]
+
+                        let normalizedPosition = Double(i) / Double(max(currentPairCount - 1, 1))
+                        let x = normalizedPosition * canvasWidth
+
+                        let topY = centerY - CGFloat(maxValue) * (barHeightPerWaveform / 2) * amplitudeScale
+                        let bottomY = centerY - CGFloat(minValue) * (barHeightPerWaveform / 2) * amplitudeScale
+
+                        if i == 0 {
+                            upperPath.move(to: CGPoint(x: x, y: centerY))
+                            lowerPath.move(to: CGPoint(x: x, y: centerY))
+                        }
+
+                        upperPath.addLine(to: CGPoint(x: x, y: topY))
+                        lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
                     }
 
-                    upperPath.addLine(to: CGPoint(x: x, y: topY))
-                    lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
+                    upperPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
+                    lowerPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
+
+                    upperPath.closeSubpath()
+                    lowerPath.closeSubpath()
+
+                    context.fill(upperPath, with: .color(fillColor))
+                    context.fill(lowerPath, with: .color(fillColor))
                 }
-
-                upperPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
-                lowerPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
-
-                upperPath.closeSubpath()
-                lowerPath.closeSubpath()
-
-                let fillColor = Color.secondary.opacity(0.5)
-                context.fill(upperPath, with: .color(fillColor))
-                context.fill(lowerPath, with: .color(fillColor))
             }
             .frame(width: width, height: Self.barHeight)
         }
