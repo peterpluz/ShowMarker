@@ -169,10 +169,15 @@ struct TimelineScreen: View {
                     ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
                         markerRow(marker, index: index + 1)
                             .id(marker.id)  // ✅ Required for ScrollViewReader
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.95)),
+                                removal: .opacity
+                            ))
                     }
                 }
             }
             .listStyle(.insetGrouped)
+            .animation(.easeInOut(duration: 0.3), value: viewModel.visibleMarkers.map(\.id))  // ✅ Animate marker reordering
             .navigationTitle(viewModel.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
@@ -180,7 +185,7 @@ struct TimelineScreen: View {
             .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
                 // ✅ Auto-scroll to next marker if enabled
                 guard viewModel.isAutoScrollEnabled, let nextID = nextID else { return }
-                
+
                 withAnimation(.easeInOut(duration: 0.3)) {
                     proxy.scrollTo(nextID, anchor: .center)
                 }
@@ -415,9 +420,26 @@ struct TimelineScreen: View {
 
     private var bottomPanel: some View {
         VStack(spacing: 16) {
-            // Undo/Redo buttons above timeline
+            // Undo/Redo and Tag Filter buttons above timeline
             HStack {
+                // Tag filter button (left side, separate)
+                Button {
+                    isTagFilterPresented = true
+                } label: {
+                    Image(systemName: hasActiveFilter ? "line.horizontal.3.decrease.circle.fill" : "line.horizontal.3.decrease")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(hasActiveFilter ? .accentColor : .secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.2))
+                )
+
                 Spacer()
+
+                // Undo/Redo buttons (right side)
                 HStack(spacing: 12) {
                     // Undo button with long press menu
                     Menu {
@@ -472,15 +494,6 @@ struct TimelineScreen: View {
                         .disabled(!viewModel.undoManager.canRedo)
                     }
                     .disabled(!viewModel.undoManager.canRedo)
-
-                    // Tag filter button
-                    Button {
-                        isTagFilterPresented = true
-                    } label: {
-                        Image(systemName: "line.horizontal.3.decrease")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(.secondary)
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -549,27 +562,28 @@ struct TimelineScreen: View {
                 Image(systemName: "gobackward.5")
                     .font(.system(size: 32, weight: .medium))
             }
+            .frame(width: 44, height: 44)
 
             // Play/Pause button with animation
-            ZStack {
-                // Ripple effect circle
+            Button { playButtonAction() } label: {
+                Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 40, weight: .medium))
+            }
+            .frame(width: 64, height: 64)
+            .scaleEffect(playButtonScale)
+            .background(
+                // Ripple effect circle - fixed size container
                 Circle()
                     .stroke(Color.accentColor.opacity(rippleOpacity), lineWidth: 1.5)
-                    .frame(width: rippleRadius * 2, height: rippleRadius * 2)
+                    .scaleEffect(rippleRadius / 32)  // Scale from center instead of changing frame
                     .opacity(rippleOpacity)
-
-                // Play/Pause button
-                Button { playButtonAction() } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 40, weight: .medium))
-                }
-                .scaleEffect(playButtonScale)
-            }
+            )
 
             Button { viewModel.seekForward() } label: {
                 Image(systemName: "goforward.5")
                     .font(.system(size: 32, weight: .medium))
             }
+            .frame(width: 44, height: 44)
         }
         .foregroundColor(.primary)
     }

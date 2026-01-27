@@ -25,12 +25,15 @@ struct TimelineBarView: View {
     @Binding var zoomScale: CGFloat
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
+    @GestureState private var pinchMagnification: CGFloat = 1.0  // Resets automatically when gesture ends
+    @State private var pinchBaseZoom: CGFloat = 1.0  // Base zoom when pinch started
 
-    // Double-tap zoom state
+    // Double-tap zoom state (hold second tap + drag)
     @State private var isDoubleTapZoomMode: Bool = false
     @State private var doubleTapStartZoom: CGFloat = 1.0
     @State private var lastTapTime: Date?
     @State private var doubleTapZoomStartX: CGFloat = 0
+    @State private var doubleTapHoldStartLocation: CGPoint?
 
     @State private var capsuleDragStart: CGFloat?
 
@@ -510,11 +513,10 @@ struct TimelineBarView: View {
     // MARK: - Gestures
 
     private func doubleTapGesture() -> some Gesture {
-        TapGesture(count: 2)
+        TapGesture(count: 1)
             .onEnded { _ in
-                // Enable double-tap zoom mode
-                isDoubleTapZoomMode = true
-                doubleTapStartZoom = zoomScale
+                // Record tap time for double-tap-hold detection
+                lastTapTime = Date()
             }
     }
 
@@ -523,12 +525,23 @@ struct TimelineBarView: View {
             .onChanged { value in
                 guard draggedMarkerID == nil, !isPinching else { return }
 
-                // Handle double-tap zoom mode
-                if isDoubleTapZoomMode {
-                    if doubleTapZoomStartX == 0 {
-                        doubleTapZoomStartX = value.startLocation.x
+                // Check for double-tap-hold zoom gesture:
+                // If there was a recent tap (< 300ms before drag started), enter zoom mode
+                if !isDoubleTapZoomMode && doubleTapHoldStartLocation == nil {
+                    if let tapTime = lastTapTime {
+                        let timeSinceTap = Date().timeIntervalSince(tapTime)
+                        if timeSinceTap < 0.3 {
+                            // This is a double-tap-hold gesture - enable zoom mode
+                            isDoubleTapZoomMode = true
+                            doubleTapStartZoom = zoomScale
+                            doubleTapHoldStartLocation = value.startLocation
+                            doubleTapZoomStartX = value.startLocation.x
+                        }
                     }
+                }
 
+                // Handle double-tap-hold zoom mode
+                if isDoubleTapZoomMode {
                     let translation = value.location.x - doubleTapZoomStartX
                     // Dragging right increases zoom, left decreases zoom
                     // Sensitivity: every 50 pixels of drag = 1x zoom multiplier
@@ -557,6 +570,8 @@ struct TimelineBarView: View {
                     // Reset zoom mode after drag ends
                     isDoubleTapZoomMode = false
                     doubleTapZoomStartX = 0
+                    doubleTapHoldStartLocation = nil
+                    lastTapTime = nil
                 } else {
                     // Regular playhead seeking cleanup
                     dragStartTime = nil
@@ -568,30 +583,25 @@ struct TimelineBarView: View {
     
     private func pinchGesture() -> some Gesture {
         MagnificationGesture()
+            .updating($pinchMagnification) { currentState, gestureState, _ in
+                // Update gesture state - this automatically resets when gesture ends
+                gestureState = currentState
+            }
             .onChanged { value in
                 if !isPinching {
                     isPinching = true
-                    lastMagnification = 1.0
+                    pinchBaseZoom = zoomScale
                 }
 
-                // Only apply zoom if value changed meaningfully
-                // If value returns to ~1.0, it means a finger was lifted
-                if abs(value - 1.0) < 0.05 && lastMagnification != 1.0 {
-                    // Finger was likely lifted, stop pinching
-                    isPinching = false
-                    lastMagnification = 1.0
-                    return
-                }
-
-                let delta = value / lastMagnification
-                let newScale = zoomScale * delta
+                // Calculate new zoom directly from base zoom * magnification
+                // This ensures zoom only changes with actual two-finger pinch
+                let newScale = pinchBaseZoom * value
                 let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
                 zoomScale = clamped
-                lastMagnification = value
             }
             .onEnded { _ in
                 isPinching = false
-                lastMagnification = 1.0
+                pinchBaseZoom = zoomScale
             }
     }
 
