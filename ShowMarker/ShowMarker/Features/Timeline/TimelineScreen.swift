@@ -46,6 +46,11 @@ struct TimelineScreen: View {
     @State private var showUndoHistory = false
     @State private var showRedoHistory = false
 
+    // Play button animation states
+    @State private var playButtonScale: CGFloat = 1.0
+    @State private var rippleRadius: CGFloat = 0
+    @State private var rippleOpacity: Double = 1.0
+
     private static func makeViewModel(
         repository: ProjectRepository,
         timelineID: UUID
@@ -545,9 +550,20 @@ struct TimelineScreen: View {
                     .font(.system(size: 32, weight: .medium))
             }
 
-            Button { viewModel.togglePlayPause() } label: {
-                Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 40, weight: .medium))
+            // Play/Pause button with animation
+            ZStack {
+                // Ripple effect circle
+                Circle()
+                    .stroke(Color.accentColor.opacity(rippleOpacity), lineWidth: 1.5)
+                    .frame(width: rippleRadius * 2, height: rippleRadius * 2)
+                    .opacity(rippleOpacity)
+
+                // Play/Pause button
+                Button { playButtonAction() } label: {
+                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 40, weight: .medium))
+                }
+                .scaleEffect(playButtonScale)
             }
 
             Button { viewModel.seekForward() } label: {
@@ -556,6 +572,38 @@ struct TimelineScreen: View {
             }
         }
         .foregroundColor(.primary)
+    }
+
+    private func playButtonAction() {
+        // Trigger scale animation (120-180ms)
+        withAnimation(.easeOut(duration: 0.15)) {
+            playButtonScale = 0.97
+        }
+
+        // Reset scale after brief delay
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+            withAnimation(.easeOut(duration: 0.1)) {
+                playButtonScale = 1.0
+            }
+        }
+
+        // Trigger ripple effect
+        withAnimation(.linear(duration: 0.6)) {
+            rippleRadius = 32
+            rippleOpacity = 0
+        }
+
+        // Reset ripple for next press
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)  // 600ms
+            playButtonScale = 1.0
+            rippleRadius = 0
+            rippleOpacity = 1.0
+        }
+
+        // Toggle playback
+        viewModel.togglePlayPause()
     }
 
     private var addMarkerButton: some View {
