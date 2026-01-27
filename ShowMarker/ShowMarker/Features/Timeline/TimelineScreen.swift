@@ -72,8 +72,9 @@ struct TimelineScreen: View {
                 .sheet(item: $timePickerMarker) { marker in
                     timecodePickerSheet(for: marker)
                 }
-                .sheet(item: $editingTagMarker) { marker in
-                    tagPickerSheet(for: marker)
+                // Tag picker menu overlay
+                if let marker = editingTagMarker {
+                    tagPickerMenuOverlay(for: marker)
                 }
                 .sheet(isPresented: $isTagFilterPresented) {
                     tagFilterSheet
@@ -249,18 +250,64 @@ struct TimelineScreen: View {
         .presentationDragIndicator(.visible)
     }
 
-    private func tagPickerSheet(for marker: TimelineMarker) -> some View {
-        TagPickerView(
-            tags: viewModel.tags,
-            selectedTagId: marker.tagId,
-            onSelect: { newTagId in
-                viewModel.changeMarkerTag(marker, to: newTagId)
-                editingTagMarker = nil
-            },
-            onCancel: {
-                editingTagMarker = nil
+    private func tagPickerMenuOverlay(for marker: TimelineMarker) -> some View {
+        ZStack {
+            // Dimmed background
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    editingTagMarker = nil
+                }
+
+            // Menu popup
+            Menu {
+                ForEach(viewModel.tags) { tag in
+                    Button {
+                        viewModel.changeMarkerTag(marker, to: tag.id)
+                        editingTagMarker = nil
+                    } label: {
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(Color(hex: tag.colorHex))
+                                .frame(width: 14, height: 14)
+                            Text(tag.name)
+                                .foregroundColor(.primary)
+                            if marker.tagId == tag.id {
+                                Spacer()
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.accentColor)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Text("Выбрать тег")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(
+                        Capsule()
+                            .fill(Color.accentColor)
+                    )
+                    .padding(16)
             }
-        )
+            .frame(width: 300)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color(.systemGray6).opacity(0.9))
+                    .background(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(.ultraThickMaterial)
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 10)
+        }
     }
 
     private var tagFilterSheet: some View {
@@ -460,25 +507,26 @@ struct TimelineScreen: View {
 
     private var timecode: some View {
         Text(viewModel.timecode())
-            .font(.system(size: 32, weight: .bold))
+            .font(.system(size: 32, weight: .bold, design: .monospaced))
+            .monospacedDigit()
             .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)  // ✅ FIX: Force redraw on trigger toggle
     }
 
     private var playbackControls: some View {
-        HStack(spacing: 32) {
+        HStack(spacing: 48) {
             Button { viewModel.seekBackward() } label: {
                 Image(systemName: "gobackward.5")
-                    .font(.system(size: 24, weight: .regular))
+                    .font(.system(size: 32, weight: .medium))
             }
 
             Button { viewModel.togglePlayPause() } label: {
                 Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 24, weight: .regular))
+                    .font(.system(size: 40, weight: .medium))
             }
 
             Button { viewModel.seekForward() } label: {
                 Image(systemName: "goforward.5")
-                    .font(.system(size: 24, weight: .regular))
+                    .font(.system(size: 32, weight: .medium))
             }
         }
         .foregroundColor(.primary)

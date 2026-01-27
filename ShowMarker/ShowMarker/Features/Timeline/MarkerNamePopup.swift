@@ -90,13 +90,16 @@ struct MarkerNamePopup: View {
                         Button {
                             selectedTagId = tag.id
                         } label: {
-                            HStack {
+                            HStack(spacing: 12) {
                                 Circle()
                                     .fill(Color(hex: tag.colorHex))
-                                    .frame(width: 12, height: 12)
+                                    .frame(width: 14, height: 14)
                                 Text(tag.name)
+                                    .foregroundColor(.primary)
                                 if selectedTagId == tag.id {
+                                    Spacer()
                                     Image(systemName: "checkmark")
+                                        .foregroundColor(.accentColor)
                                 }
                             }
                         }

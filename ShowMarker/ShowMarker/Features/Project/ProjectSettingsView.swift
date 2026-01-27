@@ -20,6 +20,7 @@ struct ProjectSettingsView: View {
             }
             .navigationTitle("Настройки проекта")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(false)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {

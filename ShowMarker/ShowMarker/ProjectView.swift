@@ -119,8 +119,10 @@ struct ProjectView: View {
                 emptyState
             } else {
                 timelineList
+                    .transition(.opacity.combined(with: .scale))
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: isEditing)
     }
 
     private var emptyState: some View {
@@ -270,14 +272,15 @@ struct ProjectView: View {
                         isEditing = false
                     } label: {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 50, height: 50)
                             .background(
                                 Circle()
                                     .fill(Color.accentColor)
                             )
                     }
+                    .padding(.trailing, -8)
                 }
             } else {
                 // Menu with select option
@@ -363,14 +366,7 @@ struct ProjectView: View {
                 }
                 .disabled(selectedTimelines.isEmpty)
 
-                // Folder button
-                Button {} label: {
-                    Image(systemName: "folder")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .frame(width: 50, height: 50)
-                }
-                .disabled(true)
+                Spacer()
 
                 // Delete button
                 Button {
@@ -386,17 +382,6 @@ struct ProjectView: View {
                         )
                 }
                 .disabled(selectedTimelines.isEmpty)
-
-                Spacer()
-
-                // More button
-                Button {} label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(width: 50, height: 50)
-                }
-                .disabled(true)
             }
     }
 
