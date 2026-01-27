@@ -221,13 +221,6 @@ struct TimelineScreen: View {
 
     @ViewBuilder
     private func markerSwipeActions(for marker: TimelineMarker) -> some View {
-        Button {
-            shareMarker(marker)
-        } label: {
-            Label("Поделиться", systemImage: "square.and.arrow.up")
-        }
-        .tint(.blue)
-
         Button(role: .destructive) {
             viewModel.deleteMarker(marker)
         } label: {
