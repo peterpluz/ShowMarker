@@ -16,6 +16,9 @@ struct ProjectSettingsView: View {
                     // FPS Section
                     fpsSection
 
+                    // Haptic Feedback Section
+                    hapticFeedbackSection
+
                     // Tags Section
                     tagsSection
                 }
@@ -75,6 +78,22 @@ struct ProjectSettingsView: View {
                     }
                 )
             }
+        }
+    }
+
+    // MARK: - Haptic Feedback Section
+
+    private var hapticFeedbackSection: some View {
+        Section {
+            Toggle("Вибрация маркера", isOn: Binding(
+                get: { repository.project.settings.isMarkerHapticFeedbackEnabled },
+                set: { newValue in
+                    repository.project.settings.isMarkerHapticFeedbackEnabled = newValue
+                    repository.saveProject()
+                }
+            ))
+        } header: {
+            Text("Обратная связь")
         }
     }
 

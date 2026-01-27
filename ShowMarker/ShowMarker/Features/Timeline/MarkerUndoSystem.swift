@@ -8,15 +8,22 @@ protocol UndoableAction {
     func execute(in repository: ProjectRepository, timelineID: UUID)
     func undo(in repository: ProjectRepository, timelineID: UUID)
     var actionDescription: String { get }
+    var timestamp: Date { get }
 }
 
 // MARK: - Add Marker Action
 
 struct AddMarkerAction: UndoableAction {
     let marker: TimelineMarker
+    let timestamp: Date
 
     var actionDescription: String {
         "Добавить маркер '\(marker.name)'"
+    }
+
+    init(marker: TimelineMarker, timestamp: Date = Date()) {
+        self.marker = marker
+        self.timestamp = timestamp
     }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
@@ -32,9 +39,15 @@ struct AddMarkerAction: UndoableAction {
 
 struct DeleteMarkerAction: UndoableAction {
     let marker: TimelineMarker
+    let timestamp: Date
 
     var actionDescription: String {
         "Удалить маркер '\(marker.name)'"
+    }
+
+    init(marker: TimelineMarker, timestamp: Date = Date()) {
+        self.marker = marker
+        self.timestamp = timestamp
     }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
@@ -52,9 +65,17 @@ struct RenameMarkerAction: UndoableAction {
     let markerID: UUID
     let oldName: String
     let newName: String
+    let timestamp: Date
 
     var actionDescription: String {
         "Переименовать маркер '\(oldName)' → '\(newName)'"
+    }
+
+    init(markerID: UUID, oldName: String, newName: String, timestamp: Date = Date()) {
+        self.markerID = markerID
+        self.oldName = oldName
+        self.newName = newName
+        self.timestamp = timestamp
     }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
@@ -82,9 +103,17 @@ struct ChangeMarkerTimeAction: UndoableAction {
     let markerID: UUID
     let oldTime: Double
     let newTime: Double
+    let timestamp: Date
 
     var actionDescription: String {
         "Переместить маркер"
+    }
+
+    init(markerID: UUID, oldTime: Double, newTime: Double, timestamp: Date = Date()) {
+        self.markerID = markerID
+        self.oldTime = oldTime
+        self.newTime = newTime
+        self.timestamp = timestamp
     }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
@@ -112,9 +141,17 @@ struct ChangeMarkerTagAction: UndoableAction {
     let markerID: UUID
     let oldTagId: UUID
     let newTagId: UUID
+    let timestamp: Date
 
     var actionDescription: String {
         "Изменить тег маркера"
+    }
+
+    init(markerID: UUID, oldTagId: UUID, newTagId: UUID, timestamp: Date = Date()) {
+        self.markerID = markerID
+        self.oldTagId = oldTagId
+        self.newTagId = newTagId
+        self.timestamp = timestamp
     }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
@@ -140,9 +177,15 @@ struct ChangeMarkerTagAction: UndoableAction {
 
 struct DeleteAllMarkersAction: UndoableAction {
     let markers: [TimelineMarker]
+    let timestamp: Date
 
     var actionDescription: String {
         "Удалить все маркеры (\(markers.count))"
+    }
+
+    init(markers: [TimelineMarker], timestamp: Date = Date()) {
+        self.markers = markers
+        self.timestamp = timestamp
     }
 
     func execute(in repository: ProjectRepository, timelineID: UUID) {
@@ -156,6 +199,13 @@ struct DeleteAllMarkersAction: UndoableAction {
             repository.addMarker(timelineID: timelineID, marker: marker)
         }
     }
+}
+
+// MARK: - History Item
+
+struct HistoryItem {
+    let description: String
+    let timeAgo: String
 }
 
 // MARK: - Undo Manager
@@ -222,15 +272,36 @@ class MarkerUndoManager: ObservableObject {
 
     // MARK: - History Access
 
-    func getUndoHistory(limit: Int = 10) -> [(description: String, action: UndoableAction)] {
-        return undoStack.suffix(limit).reversed().enumerated().map { (index, action) in
-            (description: action.actionDescription, action: action)
+    private func formatTimeAgo(_ date: Date) -> String {
+        let interval = Date().timeIntervalSince(date)
+
+        if interval < 60 {
+            let seconds = Int(interval)
+            return seconds == 1 ? "1 сек назад" : "\(seconds) сек назад"
+        } else if interval < 3600 {
+            let minutes = Int(interval / 60)
+            return minutes == 1 ? "1 мин назад" : "\(minutes) мин назад"
+        } else {
+            let hours = Int(interval / 3600)
+            return hours == 1 ? "1 ч назад" : "\(hours) ч назад"
         }
     }
 
-    func getRedoHistory(limit: Int = 10) -> [(description: String, action: UndoableAction)] {
-        return redoStack.suffix(limit).reversed().enumerated().map { (index, action) in
-            (description: action.actionDescription, action: action)
+    func getUndoHistory(limit: Int = 10) -> [HistoryItem] {
+        return undoStack.suffix(limit).reversed().map { action in
+            HistoryItem(
+                description: action.actionDescription,
+                timeAgo: formatTimeAgo(action.timestamp)
+            )
+        }
+    }
+
+    func getRedoHistory(limit: Int = 10) -> [HistoryItem] {
+        return redoStack.suffix(limit).reversed().map { action in
+            HistoryItem(
+                description: action.actionDescription,
+                timeAgo: formatTimeAgo(action.timestamp)
+            )
         }
     }
 

@@ -331,16 +331,6 @@ struct TimelineScreen: View {
 
     private var toolbarContent: some ToolbarContent {
         Group {
-            // Tag filter button
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    isTagFilterPresented = true
-                } label: {
-                    Image(systemName: hasActiveFilter ? "slider.horizontal.3" : "slider.horizontal.3")
-                        .font(.system(size: 20, weight: .regular))
-                }
-            }
-
             // Settings menu
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -429,7 +419,13 @@ struct TimelineScreen: View {
                             Button {
                                 viewModel.undoManager.undoToIndex(offset)
                             } label: {
-                                Text(item.description)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.description)
+                                        .font(.system(size: 15, weight: .regular))
+                                    Text(item.timeAgo)
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
                     } label: {
@@ -438,6 +434,7 @@ struct TimelineScreen: View {
                         } label: {
                             Image(systemName: "arrow.uturn.backward")
                                 .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(.secondary)
                         }
                         .disabled(!viewModel.undoManager.canUndo)
                     }
@@ -449,7 +446,13 @@ struct TimelineScreen: View {
                             Button {
                                 viewModel.undoManager.redoToIndex(offset)
                             } label: {
-                                Text(item.description)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.description)
+                                        .font(.system(size: 15, weight: .regular))
+                                    Text(item.timeAgo)
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
                     } label: {
@@ -458,10 +461,20 @@ struct TimelineScreen: View {
                         } label: {
                             Image(systemName: "arrow.uturn.forward")
                                 .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(.secondary)
                         }
                         .disabled(!viewModel.undoManager.canRedo)
                     }
                     .disabled(!viewModel.undoManager.canRedo)
+
+                    // Tag filter button
+                    Button {
+                        isTagFilterPresented = true
+                    } label: {
+                        Image(systemName: "line.horizontal.3.decrease")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
