@@ -451,6 +451,26 @@ struct TimelineScreen: View {
                     Divider()
                 }
 
+                // Beat grid options (only if BPM is set)
+                if viewModel.bpm != nil {
+                    Toggle(isOn: Binding(
+                        get: { viewModel.isBeatGridEnabled },
+                        set: { _ in viewModel.toggleBeatGrid() }
+                    )) {
+                        Label("Показать сетку битов", systemImage: "grid")
+                    }
+
+                    Toggle(isOn: Binding(
+                        get: { viewModel.isSnapToGridEnabled },
+                        set: { _ in viewModel.toggleSnapToGrid() }
+                    )) {
+                        Label("Привязка к сетке битов", systemImage: "magnet")
+                    }
+                    .disabled(!viewModel.isBeatGridEnabled)
+
+                    Divider()
+                }
+
                 Button {
                     renameText = viewModel.name
                     isRenamingTimeline = true
@@ -510,6 +530,57 @@ struct TimelineScreen: View {
                 )
 
                 Spacer()
+
+                // Metronome button (center, only if BPM is set)
+                if viewModel.bpm != nil {
+                    Menu {
+                        Button {
+                            viewModel.toggleMetronome()
+                        } label: {
+                            Label(viewModel.isMetronomeEnabled ? "Выключить метроном" : "Включить метроном",
+                                  systemImage: viewModel.isMetronomeEnabled ? "stop.circle" : "play.circle")
+                        }
+
+                        Divider()
+
+                        VStack {
+                            Text("Громкость: \(Int(viewModel.metronomeVolume * 100))%")
+                                .font(.system(size: 14, weight: .regular))
+                            Slider(value: Binding(
+                                get: { Double(viewModel.metronomeVolume) },
+                                set: { viewModel.setMetronomeVolume(Float($0)) }
+                            ), in: 0...1)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    } label: {
+                        ZStack {
+                            Image(systemName: "metronome")
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(viewModel.isMetronomeEnabled ? .accentColor : .secondary)
+
+                            // Beat indicator dots
+                            if viewModel.isMetronomeEnabled {
+                                HStack(spacing: 2) {
+                                    ForEach(0..<4) { i in
+                                        Circle()
+                                            .fill(i < viewModel.currentBeat ? Color.accentColor : Color.secondary.opacity(0.3))
+                                            .frame(width: 3, height: 3)
+                                    }
+                                }
+                                .offset(y: 12)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.2))
+                    )
+
+                    Spacer()
+                }
 
                 // Undo/Redo buttons (right side)
                 HStack(spacing: 12) {
@@ -604,6 +675,8 @@ struct TimelineScreen: View {
             markers: viewModel.visibleMarkers,
             tags: viewModel.tags,
             fps: viewModel.fps,
+            bpm: viewModel.bpm,
+            isBeatGridEnabled: viewModel.isBeatGridEnabled,
             hasAudio: hasAudio,
             onAddAudio: {
                 print("🎵 [TimelineScreen] onAddAudio called, setting isPickerPresented = true")

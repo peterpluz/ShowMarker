@@ -9,6 +9,7 @@ final class TimelineViewModel: ObservableObject {
     private let timelineID: UUID
 
     private let audioPlayer = AudioPlayerService()
+    private let metronome = MetronomeService()
 
     // MARK: - Published State (Only ViewModel-specific data)
 
@@ -117,6 +118,18 @@ final class TimelineViewModel: ObservableObject {
 
     var isSnapToGridEnabled: Bool {
         timeline?.isSnapToGridEnabled ?? false
+    }
+
+    var isMetronomeEnabled: Bool {
+        metronome.isPlaying
+    }
+
+    var metronomeVolume: Float {
+        metronome.volume
+    }
+
+    var currentBeat: Int {
+        metronome.currentBeat
     }
 
     // MARK: - Computed
@@ -507,11 +520,13 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Markers
 
     func addMarker(name: String, tagId: UUID, at time: Double) {
+        // Применяем привязку к сетке битов, если включена
+        var adjustedTime = snapToBeatGrid(time)
         // ✅ Квантуем время к ближайшему кадру
-        let quantizedTime = quantizeToFrame(time)
+        adjustedTime = quantizeToFrame(adjustedTime)
 
         let marker = TimelineMarker(
-            timeSeconds: quantizedTime,
+            timeSeconds: adjustedTime,
             name: name,
             tagId: tagId
         )
@@ -520,7 +535,7 @@ final class TimelineViewModel: ObservableObject {
         let action = AddMarkerAction(marker: marker)
         undoManager.performAction(action)
 
-        print("✅ Marker '\(name)' added at frame-aligned time: \(String(format: "%.6f", quantizedTime))s with tagId: \(tagId)")
+        print("✅ Marker '\(name)' added at time: \(String(format: "%.6f", adjustedTime))s with tagId: \(tagId)")
     }
 
     func pausePlayback() {
@@ -532,18 +547,20 @@ final class TimelineViewModel: ObservableObject {
     }
 
     func moveMarker(_ marker: TimelineMarker, to newTime: Double) {
+        // Применяем привязку к сетке битов, если включена
+        var adjustedTime = snapToBeatGrid(newTime)
         // ✅ Квантуем время при перемещении маркера
-        let quantizedTime = quantizeToFrame(newTime)
+        adjustedTime = quantizeToFrame(adjustedTime)
 
         // Use undo manager for this action
         let action = ChangeMarkerTimeAction(
             markerID: marker.id,
             oldTime: marker.timeSeconds,
-            newTime: quantizedTime
+            newTime: adjustedTime
         )
         undoManager.performAction(action)
 
-        print("✅ Marker moved to frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", newTime))s)")
+        print("✅ Marker moved to time: \(String(format: "%.6f", adjustedTime))s (from \(String(format: "%.6f", newTime))s)")
     }
 
     func renameMarker(_ marker: TimelineMarker, to newName: String, oldName: String? = nil) {
@@ -619,6 +636,31 @@ final class TimelineViewModel: ObservableObject {
     func toggleSnapToGrid() {
         guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         repository.project.timelines[idx].isSnapToGridEnabled.toggle()
+        objectWillChange.send()
+    }
+
+    /// Квантует время к ближайшему биту, если включена привязка к сетке
+    private func snapToBeatGrid(_ time: Double) -> Double {
+        guard isSnapToGridEnabled, let bpm = bpm, bpm > 0 else {
+            return time
+        }
+
+        let beatInterval = 60.0 / bpm  // seconds per beat
+        let beatNumber = round(time / beatInterval)
+        return beatNumber * beatInterval
+    }
+
+    // MARK: - Metronome
+
+    func toggleMetronome() {
+        if let bpm = bpm {
+            metronome.toggle(bpm: bpm)
+            objectWillChange.send()
+        }
+    }
+
+    func setMetronomeVolume(_ volume: Float) {
+        metronome.setVolume(volume)
         objectWillChange.send()
     }
 

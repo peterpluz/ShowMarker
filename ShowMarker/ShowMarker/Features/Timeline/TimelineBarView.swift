@@ -12,6 +12,10 @@ struct TimelineBarView: View {
 
     let fps: Int  // Project FPS for frame-based ruler divisions
 
+    // Beat grid parameters
+    let bpm: Double?
+    let isBeatGridEnabled: Bool
+
     let hasAudio: Bool
 
     let onAddAudio: () -> Void
@@ -715,6 +719,30 @@ struct TimelineBarView: View {
 
                     context.fill(upperPath, with: .color(fillColor))
                     context.fill(lowerPath, with: .color(fillColor))
+                }
+
+                // Draw beat grid if enabled
+                if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0 {
+                    let beatInterval = 60.0 / bpm  // seconds per beat
+                    let beatCount = Int(ceil(duration / beatInterval))
+
+                    for i in 0...beatCount {
+                        let beatTime = Double(i) * beatInterval
+                        let normalizedPosition = beatTime / duration
+                        let x = normalizedPosition * canvasWidth
+
+                        // Draw vertical line
+                        var path = Path()
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: size.height))
+
+                        // First beat of each bar (every 4 beats) is brighter
+                        let isBarLine = i % 4 == 0
+                        let lineColor = isBarLine ? Color.accentColor.opacity(0.4) : Color.accentColor.opacity(0.2)
+                        let lineWidth: CGFloat = isBarLine ? 1.5 : 1.0
+
+                        context.stroke(path, with: .color(lineColor), lineWidth: lineWidth)
+                    }
                 }
             }
             .frame(width: width, height: Self.barHeight)
