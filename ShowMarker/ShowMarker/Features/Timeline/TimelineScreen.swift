@@ -509,6 +509,8 @@ struct TimelineScreen: View {
     }
 
     // MARK: - Bottom Panel
+    // TODO: Реализовать Sheet с двумя режимами (половина/полный экран) для увеличенного просмотра таймлайна
+    // Требуется: .sheet с .presentationDetents([.medium, .large]) и динамическая высота TimelineBarView
 
     private var bottomPanel: some View {
         VStack(spacing: 16) {
