@@ -17,6 +17,11 @@ struct TimelineScreen: View {
     @State private var exportData: Data?
     @State private var isExportPresented = false
 
+    // CSV import state
+    @State private var isCSVImportPresented = false
+    @State private var csvImportError: String?
+    @State private var showCSVImportError = false
+
     // Marker creation popup state
     @State private var isMarkerNamePopupPresented = false
     @State private var markerCreationTime: Double = 0
@@ -133,6 +138,17 @@ struct TimelineScreen: View {
                 defaultFilename: "\(viewModel.name)_Markers",
                 onCompletion: { _ in }
             )
+            .fileImporter(
+                isPresented: $isCSVImportPresented,
+                allowedContentTypes: [.commaSeparatedText],
+                allowsMultipleSelection: false,
+                onCompletion: handleCSVImport
+            )
+            .alert("Ошибка импорта", isPresented: $showCSVImportError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(csvImportError ?? "Неизвестная ошибка")
+            }
     }
 
     // MARK: - Main Content
@@ -397,6 +413,12 @@ struct TimelineScreen: View {
                 .disabled(viewModel.markers.isEmpty)
 
                 Button {
+                    isCSVImportPresented = true
+                } label: {
+                    Label("Import markers (CSV)", systemImage: "square.and.arrow.up")
+                }
+
+                Button {
                     prepareExport()
                 } label: {
                     Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
@@ -600,6 +622,36 @@ struct TimelineScreen: View {
             }
         } catch {
             print("❌ Audio file reading error: \(error)")
+        }
+    }
+
+    private func handleCSVImport(_ result: Result<[URL], Error>) {
+        guard
+            case .success(let urls) = result,
+            let url = urls.first
+        else { return }
+
+        guard url.startAccessingSecurityScopedResource() else {
+            csvImportError = "Не удалось получить доступ к файлу"
+            showCSVImportError = true
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        do {
+            let data = try Data(contentsOf: url)
+            guard let csvContent = String(data: data, encoding: .utf8) else {
+                csvImportError = "Не удалось декодировать файл как текст"
+                showCSVImportError = true
+                return
+            }
+
+            viewModel.importMarkersFromCSV(csvContent)
+            print("✅ CSV import completed")
+        } catch {
+            csvImportError = "Ошибка при чтении файла: \(error.localizedDescription)"
+            showCSVImportError = true
+            print("❌ CSV import error: \(error)")
         }
     }
 

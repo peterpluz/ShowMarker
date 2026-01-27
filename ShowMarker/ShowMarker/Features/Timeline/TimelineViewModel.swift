@@ -566,6 +566,20 @@ final class TimelineViewModel: ObservableObject {
         undoManager.performAction(action)
     }
 
+    // MARK: - CSV Import/Export
+
+    func importMarkersFromCSV(_ csvContent: String) {
+        let importedMarkers = MarkersCSVImporter.importFromCSV(csvContent, fps: fps)
+
+        for marker in importedMarkers {
+            // Use add action for undo/redo
+            let action = AddMarkerAction(marker: marker)
+            undoManager.performAction(action)
+        }
+
+        print("✅ Imported \(importedMarkers.count) markers from CSV")
+    }
+
     // MARK: - Timeline
 
     func renameTimeline(to newName: String) {

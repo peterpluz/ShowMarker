@@ -33,6 +33,11 @@ struct ProjectView: View {
     @State private var isZIPExportPresented = false
     @State private var zipExportFilename = ""
 
+    // CSV batch import states
+    @State private var isCSVBatchImportPresented = false
+    @State private var csvImportError: String?
+    @State private var showCSVImportError = false
+
     private let availableFPS = [25, 30, 50, 60, 100]
 
     init(document: Binding<ShowMarkerDocument>) {
@@ -108,6 +113,17 @@ struct ProjectView: View {
                 case .failure(let error):
                     print("ZIP export failed: \(error.localizedDescription)")
                 }
+            }
+            .fileImporter(
+                isPresented: $isCSVBatchImportPresented,
+                allowedContentTypes: [.commaSeparatedText],
+                allowsMultipleSelection: true,
+                onCompletion: handleCSVBatchImport
+            )
+            .alert("Ошибка импорта", isPresented: $showCSVImportError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(csvImportError ?? "Неизвестная ошибка")
             }
     }
 
@@ -325,6 +341,12 @@ struct ProjectView: View {
                             isEditing = true
                         } label: {
                             Label("Выбрать", systemImage: "checkmark.circle")
+                        }
+
+                        Button {
+                            isCSVBatchImportPresented = true
+                        } label: {
+                            Label("Импорт маркеров из CSV", systemImage: "square.and.arrow.down")
                         }
 
                         Button {
@@ -649,5 +671,57 @@ struct ProjectView: View {
     private func deleteTimeline(_ timeline: Timeline) {
         guard let index = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) else { return }
         repository.removeTimelines(at: IndexSet(integer: index))
+    }
+
+    private func handleCSVBatchImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result else { return }
+
+        for url in urls {
+            guard url.startAccessingSecurityScopedResource() else {
+                csvImportError = "Не удалось получить доступ к файлу: \(url.lastPathComponent)"
+                showCSVImportError = true
+                continue
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+
+            do {
+                let data = try Data(contentsOf: url)
+                guard let csvContent = String(data: data, encoding: .utf8) else {
+                    csvImportError = "Не удалось декодировать файл как текст: \(url.lastPathComponent)"
+                    showCSVImportError = true
+                    continue
+                }
+
+                // Parse markers from CSV
+                let importedMarkers = MarkersCSVImporter.importFromCSV(csvContent, fps: repository.project.fps)
+
+                // Create timeline from filename (without .csv extension)
+                var timelineName = url.deletingPathExtension().lastPathComponent
+                if timelineName.trimmingCharacters(in: .whitespaces).isEmpty {
+                    timelineName = "Imported Timeline"
+                }
+
+                // Create new timeline
+                let newTimeline = Timeline(
+                    id: UUID(),
+                    name: timelineName,
+                    createdAt: Date(),
+                    audio: nil,
+                    fps: repository.project.fps,
+                    markers: importedMarkers
+                )
+
+                repository.addTimeline(newTimeline)
+                print("✅ Created timeline '\(timelineName)' with \(importedMarkers.count) markers from CSV")
+            } catch {
+                csvImportError = "Ошибка при чтении файла \(url.lastPathComponent): \(error.localizedDescription)"
+                showCSVImportError = true
+                print("❌ CSV batch import error: \(error)")
+            }
+        }
+
+        if !urls.isEmpty && csvImportError == nil {
+            print("✅ Batch CSV import completed: \(urls.count) files imported")
+        }
     }
 }
