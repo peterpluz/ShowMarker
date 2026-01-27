@@ -90,18 +90,6 @@ struct TimelineScreen: View {
                 .sheet(isPresented: $isTagFilterPresented) {
                     tagFilterSheet
                 }
-                .fileImporter(
-                    isPresented: $isPickerPresented,
-                    allowedContentTypes: [.audio],
-                    allowsMultipleSelection: false,
-                    onCompletion: { result in
-                        print("🎵 [FileImporter] onCompletion called")
-                        handleAudio(result)
-                    }
-                )
-                .onChange(of: isPickerPresented) { oldValue, newValue in
-                    print("🎵 [FileImporter] isPickerPresented changed: \(oldValue) -> \(newValue)")
-                }
 
             // Tag picker menu overlay
             if let marker = editingTagMarker {
@@ -113,7 +101,23 @@ struct TimelineScreen: View {
                 markerNamePopupOverlay
             }
         }
-            .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
+        .sheet(isPresented: $isPickerPresented) {
+            AudioDocumentPicker(
+                onPick: { url in
+                    print("🎵 [AudioPicker] File picked: \(url)")
+                    isPickerPresented = false
+                    handleAudioURL(url)
+                },
+                onCancel: {
+                    print("🎵 [AudioPicker] Cancelled")
+                    isPickerPresented = false
+                }
+            )
+        }
+        .onChange(of: isPickerPresented) { oldValue, newValue in
+            print("🎵 [AudioPicker] isPickerPresented changed: \(oldValue) -> \(newValue)")
+        }
+        .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
                 TextField("Название", text: $renameText)
                 Button("Готово") {
                     viewModel.renameTimeline(to: renameText)
@@ -697,26 +701,51 @@ struct TimelineScreen: View {
         isExportPresented = true
     }
 
+    /// Handle audio URL from UIDocumentPicker (already copied, no security scope needed)
+    private func handleAudioURL(_ url: URL) {
+        print("🎵 [handleAudioURL] Processing: \(url)")
+
+        do {
+            let data = try Data(contentsOf: url)
+            print("✅ Audio data loaded: \(data.count) bytes")
+
+            let vm = viewModel
+
+            Task { @MainActor in
+                do {
+                    let asset = AVURLAsset(url: url)
+                    let d = try await asset.load(.duration)
+                    print("✅ Audio duration: \(d.seconds)s")
+
+                    try vm.addAudio(
+                        sourceData: data,
+                        originalFileName: url.lastPathComponent,
+                        fileExtension: url.pathExtension,
+                        duration: d.seconds
+                    )
+                    print("✅ Audio added successfully")
+
+                    // Clean up temp file
+                    try? FileManager.default.removeItem(at: url)
+                } catch {
+                    print("❌ Audio import error: \(error)")
+                }
+            }
+        } catch {
+            print("❌ Audio file reading error: \(error)")
+        }
+    }
+
+    /// Handle audio from .fileImporter (legacy, requires security scope)
     private func handleAudio(_ result: Result<[URL], Error>) {
         print("🎵 [handleAudio] Called with result: \(result)")
 
-        switch result {
-        case .success(let urls):
-            print("🎵 [handleAudio] Success - URLs: \(urls)")
-        case .failure(let error):
-            print("🎵 [handleAudio] Failure - Error: \(error)")
+        guard case .success(let urls) = result, let url = urls.first else {
+            if case .failure(let error) = result {
+                print("🎵 [handleAudio] Failure - Error: \(error)")
+            }
             return
         }
-
-        guard
-            case .success(let urls) = result,
-            let url = urls.first
-        else {
-            print("🎵 [handleAudio] No URL found in result")
-            return
-        }
-
-        print("🎵 [handleAudio] Processing URL: \(url)")
 
         guard url.startAccessingSecurityScopedResource() else {
             print("❌ Failed to access security scoped resource for: \(url)")
