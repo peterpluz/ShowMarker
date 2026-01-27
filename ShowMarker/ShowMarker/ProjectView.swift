@@ -173,10 +173,23 @@ struct ProjectView: View {
             if isEditing {
                 // Selection mode with checkbox
                 HStack(spacing: 12) {
-                    Image(systemName: selectedTimelines.contains(timeline.id) ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundColor(selectedTimelines.contains(timeline.id) ? .accentColor : .secondary)
-                        .frame(width: 28, height: 28, alignment: .center)
+                    // Circular checkbox - properly sized to not clip
+                    ZStack {
+                        Circle()
+                            .stroke(selectedTimelines.contains(timeline.id) ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 2)
+                            .frame(width: 26, height: 26)
+
+                        if selectedTimelines.contains(timeline.id) {
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 26, height: 26)
+
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .frame(width: 32, height: 32)  // Extra padding to prevent clipping
 
                     Text(timeline.name)
                         .foregroundColor(.primary)

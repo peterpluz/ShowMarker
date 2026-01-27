@@ -101,7 +101,23 @@ struct TimelineScreen: View {
                 markerNamePopupOverlay
             }
         }
-            .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
+        .sheet(isPresented: $isPickerPresented) {
+            AudioDocumentPicker(
+                onPick: { url in
+                    print("🎵 [AudioPicker] File picked: \(url)")
+                    isPickerPresented = false
+                    handleAudioURL(url)
+                },
+                onCancel: {
+                    print("🎵 [AudioPicker] Cancelled")
+                    isPickerPresented = false
+                }
+            )
+        }
+        .onChange(of: isPickerPresented) { oldValue, newValue in
+            print("🎵 [AudioPicker] isPickerPresented changed: \(oldValue) -> \(newValue)")
+        }
+        .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
                 TextField("Название", text: $renameText)
                 Button("Готово") {
                     viewModel.renameTimeline(to: renameText)
@@ -134,12 +150,6 @@ struct TimelineScreen: View {
             } message: {
                 Text("Вы уверены, что хотите удалить все маркеры этого таймлайна?")
             }
-            .fileImporter(
-                isPresented: $isPickerPresented,
-                allowedContentTypes: [.audio],
-                allowsMultipleSelection: false,
-                onCompletion: handleAudio
-            )
             .fileExporter(
                 isPresented: $isExportPresented,
                 document: SimpleCSVDocument(data: exportData ?? Data()),
@@ -169,10 +179,15 @@ struct TimelineScreen: View {
                     ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
                         markerRow(marker, index: index + 1)
                             .id(marker.id)  // ✅ Required for ScrollViewReader
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.95)),
+                                removal: .opacity
+                            ))
                     }
                 }
             }
             .listStyle(.insetGrouped)
+            .animation(.easeInOut(duration: 0.3), value: viewModel.visibleMarkers.map(\.id))  // ✅ Animate marker reordering
             .navigationTitle(viewModel.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
@@ -180,7 +195,7 @@ struct TimelineScreen: View {
             .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
                 // ✅ Auto-scroll to next marker if enabled
                 guard viewModel.isAutoScrollEnabled, let nextID = nextID else { return }
-                
+
                 withAnimation(.easeInOut(duration: 0.3)) {
                     proxy.scrollTo(nextID, anchor: .center)
                 }
@@ -415,9 +430,26 @@ struct TimelineScreen: View {
 
     private var bottomPanel: some View {
         VStack(spacing: 16) {
-            // Undo/Redo buttons above timeline
+            // Undo/Redo and Tag Filter buttons above timeline
             HStack {
+                // Tag filter button (left side, separate)
+                Button {
+                    isTagFilterPresented = true
+                } label: {
+                    Image(systemName: hasActiveFilter ? "line.horizontal.3.decrease.circle.fill" : "line.horizontal.3.decrease")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(hasActiveFilter ? .accentColor : .secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.2))
+                )
+
                 Spacer()
+
+                // Undo/Redo buttons (right side)
                 HStack(spacing: 12) {
                     // Undo button with long press menu
                     Menu {
@@ -472,15 +504,6 @@ struct TimelineScreen: View {
                         .disabled(!viewModel.undoManager.canRedo)
                     }
                     .disabled(!viewModel.undoManager.canRedo)
-
-                    // Tag filter button
-                    Button {
-                        isTagFilterPresented = true
-                    } label: {
-                        Image(systemName: "line.horizontal.3.decrease")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(.secondary)
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -520,7 +543,11 @@ struct TimelineScreen: View {
             tags: viewModel.tags,
             fps: viewModel.fps,
             hasAudio: hasAudio,
-            onAddAudio: { isPickerPresented = true },
+            onAddAudio: {
+                print("🎵 [TimelineScreen] onAddAudio called, setting isPickerPresented = true")
+                isPickerPresented = true
+                print("🎵 [TimelineScreen] isPickerPresented is now: \(isPickerPresented)")
+            },
             onSeek: { viewModel.seek(to: $0) },
             onPreviewMoveMarker: { _, _ in },
             onCommitMoveMarker: { id, time in
@@ -549,27 +576,28 @@ struct TimelineScreen: View {
                 Image(systemName: "gobackward.5")
                     .font(.system(size: 32, weight: .medium))
             }
+            .frame(width: 44, height: 44)
 
             // Play/Pause button with animation
-            ZStack {
-                // Ripple effect circle
+            Button { playButtonAction() } label: {
+                Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 40, weight: .medium))
+            }
+            .frame(width: 64, height: 64)
+            .scaleEffect(playButtonScale)
+            .background(
+                // Ripple effect circle - fixed size container
                 Circle()
                     .stroke(Color.accentColor.opacity(rippleOpacity), lineWidth: 1.5)
-                    .frame(width: rippleRadius * 2, height: rippleRadius * 2)
+                    .scaleEffect(rippleRadius / 32)  // Scale from center instead of changing frame
                     .opacity(rippleOpacity)
-
-                // Play/Pause button
-                Button { playButtonAction() } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 40, weight: .medium))
-                }
-                .scaleEffect(playButtonScale)
-            }
+            )
 
             Button { viewModel.seekForward() } label: {
                 Image(systemName: "goforward.5")
                     .font(.system(size: 32, weight: .medium))
             }
+            .frame(width: 44, height: 44)
         }
         .foregroundColor(.primary)
     }
@@ -673,14 +701,54 @@ struct TimelineScreen: View {
         isExportPresented = true
     }
 
+    /// Handle audio URL from UIDocumentPicker (already copied, no security scope needed)
+    private func handleAudioURL(_ url: URL) {
+        print("🎵 [handleAudioURL] Processing: \(url)")
+
+        do {
+            let data = try Data(contentsOf: url)
+            print("✅ Audio data loaded: \(data.count) bytes")
+
+            let vm = viewModel
+
+            Task { @MainActor in
+                do {
+                    let asset = AVURLAsset(url: url)
+                    let d = try await asset.load(.duration)
+                    print("✅ Audio duration: \(d.seconds)s")
+
+                    try vm.addAudio(
+                        sourceData: data,
+                        originalFileName: url.lastPathComponent,
+                        fileExtension: url.pathExtension,
+                        duration: d.seconds
+                    )
+                    print("✅ Audio added successfully")
+
+                    // Clean up temp file
+                    try? FileManager.default.removeItem(at: url)
+                } catch {
+                    print("❌ Audio import error: \(error)")
+                }
+            }
+        } catch {
+            print("❌ Audio file reading error: \(error)")
+        }
+    }
+
+    /// Handle audio from .fileImporter (legacy, requires security scope)
     private func handleAudio(_ result: Result<[URL], Error>) {
-        guard
-            case .success(let urls) = result,
-            let url = urls.first
-        else { return }
+        print("🎵 [handleAudio] Called with result: \(result)")
+
+        guard case .success(let urls) = result, let url = urls.first else {
+            if case .failure(let error) = result {
+                print("🎵 [handleAudio] Failure - Error: \(error)")
+            }
+            return
+        }
 
         guard url.startAccessingSecurityScopedResource() else {
-            print("❌ Failed to access security scoped resource")
+            print("❌ Failed to access security scoped resource for: \(url)")
             return
         }
         defer { url.stopAccessingSecurityScopedResource() }
