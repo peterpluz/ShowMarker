@@ -11,12 +11,13 @@ struct WaveformGenerator {
         guard let track = tracks.first else { return 1 }
 
         let formatDescriptions = try await track.load(.formatDescriptions)
-        guard let formatDesc = formatDescriptions.first as? CMAudioFormatDescription else {
+        guard let formatDesc = formatDescriptions.first else {
             return 1
         }
 
         let basicDesc = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)
-        return Int(basicDesc?.mChannelsPerFrame ?? 1)
+        guard let basicDesc = basicDesc else { return 1 }
+        return Int(basicDesc.pointee.mChannelsPerFrame)
     }
 
     /// Генерация двух waveforms для 4-канального аудио (каналы 1-2 и 3-4)
@@ -25,7 +26,6 @@ struct WaveformGenerator {
         from url: URL,
         baseBucketSize: Int = 256
     ) async throws -> ([Float], [Float]) {
-        let channelCount = try await detectChannelCount(from: url)
         let mainWaveform = try await generateFullResolutionPeaks(from: url, baseBucketSize: baseBucketSize)
 
         // Для 4-канального аудио и выше, отображаем одну вейвформу два раза
