@@ -10,6 +10,7 @@ struct MarkerCard: View {
     let draggedMarkerID: UUID?
     let draggedMarkerPreviewTime: Double?
     let currentTime: Double  // Current playhead time
+    let markerIndex: Int  // 1-based index number for display
     let onTagEdit: () -> Void  // Callback for tag editing
 
     @State private var flashOpacity: Double = 0
@@ -25,11 +26,18 @@ struct MarkerCard: View {
                 .frame(width: 4, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(marker.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text("\(markerIndex)")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .frame(minWidth: 24, alignment: .trailing)
+
+                    Text(marker.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                }
+                .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
 
                 Text(timecode())
                     .font(.system(size: 12))

@@ -384,7 +384,7 @@ struct TimelineBarView: View {
             cachedWaveformView(width: contentWidth)
                 .offset(x: centerX - offset)
 
-            ForEach(markers) { marker in
+            ForEach(Array(markers.enumerated()), id: \.element.id) { index, marker in
                 let displayTime: Double = {
                     if draggedMarkerID == marker.id, let previewTime = draggedMarkerPreviewTime {
                         return previewTime
@@ -403,15 +403,26 @@ struct TimelineBarView: View {
                     return .orange // Fallback color
                 }()
 
-                Rectangle()
-                    .fill(markerColor)
-                    .frame(width: Self.markerLineWidth, height: Self.barHeight)
-                    .position(x: markerX, y: Self.barHeight / 2)
-                    .gesture(markerGesture(
-                        marker: marker,
-                        centerX: centerX,
-                        contentWidth: contentWidth
-                    ))
+                ZStack(alignment: .top) {
+                    Rectangle()
+                        .fill(markerColor)
+                        .frame(width: Self.markerLineWidth, height: Self.barHeight)
+
+                    // Marker number label at the top
+                    Text("\(index + 1)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .frame(width: 18, height: 16)
+                        .background(markerColor.opacity(0.8))
+                        .cornerRadius(3)
+                        .padding(.top, 2)
+                }
+                .position(x: markerX, y: Self.barHeight / 2)
+                .gesture(markerGesture(
+                    marker: marker,
+                    centerX: centerX,
+                    contentWidth: contentWidth
+                ))
             }
 
             Rectangle()

@@ -140,8 +140,8 @@ struct TimelineScreen: View {
         ScrollViewReader { proxy in
             List {
                 Section {
-                    ForEach(viewModel.visibleMarkers) { marker in
-                        markerRow(marker)
+                    ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
+                        markerRow(marker, index: index + 1)
                             .id(marker.id)  // ✅ Required for ScrollViewReader
                     }
                 }
@@ -164,7 +164,7 @@ struct TimelineScreen: View {
 
     // MARK: - Marker Row
 
-    private func markerRow(_ marker: TimelineMarker) -> some View {
+    private func markerRow(_ marker: TimelineMarker, index: Int = 1) -> some View {
         MarkerCard(
             marker: marker,
             tag: viewModel.tags.first(where: { $0.id == marker.tagId }),
@@ -173,6 +173,7 @@ struct TimelineScreen: View {
             draggedMarkerID: viewModel.draggedMarkerID,
             draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime,
             currentTime: viewModel.currentTime,
+            markerIndex: index,
             onTagEdit: {
                 editingTagMarker = marker
             }
