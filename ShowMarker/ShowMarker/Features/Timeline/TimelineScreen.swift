@@ -138,8 +138,14 @@ struct TimelineScreen: View {
                 isPresented: $isPickerPresented,
                 allowedContentTypes: [.audio],
                 allowsMultipleSelection: false,
-                onCompletion: handleAudio
+                onCompletion: { result in
+                    print("🎵 [FileImporter] onCompletion called")
+                    handleAudio(result)
+                }
             )
+            .onChange(of: isPickerPresented) { oldValue, newValue in
+                print("🎵 [FileImporter] isPickerPresented changed: \(oldValue) -> \(newValue)")
+            }
             .fileExporter(
                 isPresented: $isExportPresented,
                 document: SimpleCSVDocument(data: exportData ?? Data()),
@@ -533,7 +539,11 @@ struct TimelineScreen: View {
             tags: viewModel.tags,
             fps: viewModel.fps,
             hasAudio: hasAudio,
-            onAddAudio: { isPickerPresented = true },
+            onAddAudio: {
+                print("🎵 [TimelineScreen] onAddAudio called, setting isPickerPresented = true")
+                isPickerPresented = true
+                print("🎵 [TimelineScreen] isPickerPresented is now: \(isPickerPresented)")
+            },
             onSeek: { viewModel.seek(to: $0) },
             onPreviewMoveMarker: { _, _ in },
             onCommitMoveMarker: { id, time in
@@ -688,13 +698,28 @@ struct TimelineScreen: View {
     }
 
     private func handleAudio(_ result: Result<[URL], Error>) {
+        print("🎵 [handleAudio] Called with result: \(result)")
+
+        switch result {
+        case .success(let urls):
+            print("🎵 [handleAudio] Success - URLs: \(urls)")
+        case .failure(let error):
+            print("🎵 [handleAudio] Failure - Error: \(error)")
+            return
+        }
+
         guard
             case .success(let urls) = result,
             let url = urls.first
-        else { return }
+        else {
+            print("🎵 [handleAudio] No URL found in result")
+            return
+        }
+
+        print("🎵 [handleAudio] Processing URL: \(url)")
 
         guard url.startAccessingSecurityScopedResource() else {
-            print("❌ Failed to access security scoped resource")
+            print("❌ Failed to access security scoped resource for: \(url)")
             return
         }
         defer { url.stopAccessingSecurityScopedResource() }

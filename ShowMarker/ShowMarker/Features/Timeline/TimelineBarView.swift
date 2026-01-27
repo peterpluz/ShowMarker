@@ -498,7 +498,10 @@ struct TimelineBarView: View {
     // MARK: - Add Audio Button
 
     private var addAudioButton: some View {
-        Button(action: onAddAudio) {
+        Button {
+            print("🎵 [AddAudio] Button tapped - calling onAddAudio")
+            onAddAudio()
+        } label: {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.secondary.opacity(0.12))
                 .overlay {
@@ -509,7 +512,6 @@ struct TimelineBarView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)  // Fill GeometryReader space
         .contentShape(Rectangle())  // Ensure entire area is tappable
-        .buttonStyle(.plain)
     }
 
     // MARK: - Gestures
