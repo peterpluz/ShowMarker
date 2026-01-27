@@ -107,8 +107,8 @@ struct MarkerCard: View {
 
     private var overlayOpacity: Double {
         if isDragging {
-            // Pulsing animation: sine wave between 0.15 and 0.45
-            return 0.3 + 0.15 * sin(pulsePhase)
+            // Pulsing animation: sine wave between 0.09 and 0.21 (less intense than original)
+            return 0.15 + 0.06 * sin(pulsePhase)
         } else {
             // Normal flash effect
             return flashOpacity * 0.3

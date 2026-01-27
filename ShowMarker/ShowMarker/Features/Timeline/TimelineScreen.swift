@@ -169,6 +169,10 @@ struct TimelineScreen: View {
                     ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
                         markerRow(marker, index: index + 1)
                             .id(marker.id)  // ✅ Required for ScrollViewReader
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .trailing).combined(with: .opacity)
+                            ))
                     }
                 }
             }
@@ -419,6 +423,17 @@ struct TimelineScreen: View {
             HStack {
                 Spacer()
                 HStack(spacing: 12) {
+                    // Tag filter button (левая сторона)
+                    Button {
+                        isTagFilterPresented = true
+                    } label: {
+                        Image(systemName: "line.horizontal.3.decrease")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
                     // Undo button with long press menu
                     Menu {
                         ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
@@ -472,15 +487,6 @@ struct TimelineScreen: View {
                         .disabled(!viewModel.undoManager.canRedo)
                     }
                     .disabled(!viewModel.undoManager.canRedo)
-
-                    // Tag filter button
-                    Button {
-                        isTagFilterPresented = true
-                    } label: {
-                        Image(systemName: "line.horizontal.3.decrease")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(.secondary)
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -551,20 +557,18 @@ struct TimelineScreen: View {
             }
 
             // Play/Pause button with animation
-            ZStack {
-                // Ripple effect circle
+            Button { playButtonAction() } label: {
+                Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 40, weight: .medium))
+            }
+            .scaleEffect(playButtonScale)
+            .overlay(
+                // Ripple effect circle (not affecting layout)
                 Circle()
                     .stroke(Color.accentColor.opacity(rippleOpacity), lineWidth: 1.5)
                     .frame(width: rippleRadius * 2, height: rippleRadius * 2)
                     .opacity(rippleOpacity)
-
-                // Play/Pause button
-                Button { playButtonAction() } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 40, weight: .medium))
-                }
-                .scaleEffect(playButtonScale)
-            }
+            )
 
             Button { viewModel.seekForward() } label: {
                 Image(systemName: "goforward.5")
