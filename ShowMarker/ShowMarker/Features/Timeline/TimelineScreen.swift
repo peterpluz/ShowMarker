@@ -90,6 +90,18 @@ struct TimelineScreen: View {
                 .sheet(isPresented: $isTagFilterPresented) {
                     tagFilterSheet
                 }
+                .fileImporter(
+                    isPresented: $isPickerPresented,
+                    allowedContentTypes: [.audio],
+                    allowsMultipleSelection: false,
+                    onCompletion: { result in
+                        print("🎵 [FileImporter] onCompletion called")
+                        handleAudio(result)
+                    }
+                )
+                .onChange(of: isPickerPresented) { oldValue, newValue in
+                    print("🎵 [FileImporter] isPickerPresented changed: \(oldValue) -> \(newValue)")
+                }
 
             // Tag picker menu overlay
             if let marker = editingTagMarker {
@@ -133,18 +145,6 @@ struct TimelineScreen: View {
                 Button("Отмена", role: .cancel) {}
             } message: {
                 Text("Вы уверены, что хотите удалить все маркеры этого таймлайна?")
-            }
-            .fileImporter(
-                isPresented: $isPickerPresented,
-                allowedContentTypes: [.audio],
-                allowsMultipleSelection: false,
-                onCompletion: { result in
-                    print("🎵 [FileImporter] onCompletion called")
-                    handleAudio(result)
-                }
-            )
-            .onChange(of: isPickerPresented) { oldValue, newValue in
-                print("🎵 [FileImporter] isPickerPresented changed: \(oldValue) -> \(newValue)")
             }
             .fileExporter(
                 isPresented: $isExportPresented,
