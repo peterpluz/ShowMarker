@@ -530,11 +530,11 @@ final class TimelineViewModel: ObservableObject {
         print("✅ Marker moved to frame-aligned time: \(String(format: "%.6f", quantizedTime))s (from \(String(format: "%.6f", newTime))s)")
     }
 
-    func renameMarker(_ marker: TimelineMarker, to newName: String) {
+    func renameMarker(_ marker: TimelineMarker, to newName: String, oldName: String? = nil) {
         // Use undo manager for this action
         let action = RenameMarkerAction(
             markerID: marker.id,
-            oldName: marker.name,
+            oldName: oldName ?? marker.name,
             newName: newName
         )
         undoManager.performAction(action)

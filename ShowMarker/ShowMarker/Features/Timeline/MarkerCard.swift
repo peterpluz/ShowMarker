@@ -26,11 +26,11 @@ struct MarkerCard: View {
                 .frame(width: 4, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text("\(markerIndex)")
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .foregroundColor(.secondary)
-                        .frame(minWidth: 24, alignment: .trailing)
+                        .frame(width: 20, alignment: .center)
 
                     Text(marker.name)
                         .font(.system(size: 15, weight: .semibold))
@@ -87,20 +87,20 @@ struct MarkerCard: View {
         .onReceive(markerFlashPublisher) { event in
             // Only process events for THIS marker
             guard event.markerID == marker.id else { return }
-            
+
             print("   📥 [MarkerCard] '\(marker.name)' received event #\(event.eventID)")
             print("   ⚡️ [MarkerCard] '\(marker.name)' will trigger flash animation")
             triggerFlashEffect()
         }
-        .onChange(of: isDragging) { oldValue, dragging in
-            if dragging {
+        .onChange(of: draggedMarkerID) { oldValue, newValue in
+            if newValue == marker.id {
                 startPulseAnimation()
-            } else {
+            } else if oldValue == marker.id {
                 stopPulseAnimation()
             }
         }
         .onAppear {
-            if isDragging {
+            if draggedMarkerID == marker.id {
                 startPulseAnimation()
             }
         }

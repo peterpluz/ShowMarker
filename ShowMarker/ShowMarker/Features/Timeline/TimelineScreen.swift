@@ -11,6 +11,7 @@ struct TimelineScreen: View {
     @State private var renameText = ""
 
     @State private var renamingMarker: TimelineMarker?
+    @State private var renamingMarkerOldName: String = ""
     @State private var timePickerMarker: TimelineMarker?
 
     @State private var exportData: Data?
@@ -103,7 +104,7 @@ struct TimelineScreen: View {
                 )
                 Button("Готово") {
                     if let marker = renamingMarker {
-                        viewModel.renameMarker(marker, to: marker.name)
+                        viewModel.renameMarker(marker, to: marker.name, oldName: renamingMarkerOldName)
                     }
                     renamingMarker = nil
                 }
@@ -196,6 +197,7 @@ struct TimelineScreen: View {
     private func markerContextMenu(for marker: TimelineMarker) -> some View {
         Button {
             renamingMarker = marker
+            renamingMarkerOldName = marker.name
         } label: {
             Label("Переименовать", systemImage: "pencil")
         }
@@ -440,6 +442,7 @@ struct TimelineScreen: View {
             waveform2: nil,  // TODO: Add multi-channel support
             markers: viewModel.visibleMarkers,
             tags: viewModel.tags,
+            fps: viewModel.fps,
             hasAudio: hasAudio,
             onAddAudio: { isPickerPresented = true },
             onSeek: { viewModel.seek(to: $0) },

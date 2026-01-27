@@ -10,6 +10,8 @@ struct TimelineBarView: View {
     let markers: [TimelineMarker]
     let tags: [Tag]  // Tags for coloring markers
 
+    let fps: Int  // Project FPS for frame-based ruler divisions
+
     let hasAudio: Bool
 
     let onAddAudio: () -> Void
@@ -279,11 +281,33 @@ struct TimelineBarView: View {
         // Target: 80-150 pixels between major ticks
         let targetMajorSpacing: CGFloat = 100
         let targetSecondsPerMajor = Double(targetMajorSpacing) * secondsPerPixel
-        
-        // Predefined "nice" intervals with subdivisions
-        // Format: (interval in seconds, subdivisions)
-        let intervals: [(Double, Int)] = [
-            // Frames/milliseconds (for very high zoom)
+
+        // Build intervals list with FPS-based divisions at very high zoom
+        var intervals: [(Double, Int)] = []
+
+        // At very high zoom (when fps intervals would be useful)
+        let frameInterval = 1.0 / Double(fps)
+
+        // Add frame-based intervals dynamically if at high zoom
+        if secondsPerPixel < frameInterval * 2 {
+            // For each frame multiple (1 frame, 2 frames, 5 frames, 10 frames, etc.)
+            let frameMultiples = [1, 2, 5, 10, 20, 50, 100]
+            for multiple in frameMultiples {
+                let interval = frameInterval * Double(multiple)
+                // Choose subdivision count based on multiple
+                let subdivisions = multiple <= 5 ? 5 : (multiple <= 10 ? 10 : 5)
+                intervals.append((interval, subdivisions))
+
+                // Stop adding if interval gets too large
+                if interval > 0.5 {
+                    break
+                }
+            }
+        }
+
+        // Add standard intervals
+        let standardIntervals: [(Double, Int)] = [
+            // Milliseconds/centiseconds (for very high zoom)
             (0.01, 10),    // 10ms, 10 subdivisions = 1ms minor
             (0.02, 10),    // 20ms
             (0.05, 5),     // 50ms, 5 subdivisions = 10ms minor
@@ -306,11 +330,13 @@ struct TimelineBarView: View {
             (1800, 6),     // 30min
             (3600, 6),     // 1h
         ]
-        
+
+        intervals.append(contentsOf: standardIntervals)
+
         // Find the interval closest to target
         var bestInterval = intervals[0]
         var bestDiff = Double.infinity
-        
+
         for interval in intervals {
             let diff = abs(interval.0 - targetSecondsPerMajor)
             if diff < bestDiff {
@@ -318,7 +344,7 @@ struct TimelineBarView: View {
                 bestInterval = interval
             }
         }
-        
+
         // Verify spacing won't cause overlap
         let pixelsPerMajor = bestInterval.0 / secondsPerPixel
         if pixelsPerMajor < 50 {
@@ -330,7 +356,7 @@ struct TimelineBarView: View {
                 }
             }
         }
-        
+
         return bestInterval
     }
     
@@ -343,12 +369,35 @@ struct TimelineBarView: View {
     
     /// Format time label based on the interval scale
     private func formatTimeLabel(_ seconds: Double, interval: Double) -> String {
+        let frameInterval = 1.0 / Double(fps)
+
+        // Check if this is a frame-based interval
+        if interval < frameInterval * 1.5 && interval > 0 {
+            // Frame-based display
+            let totalFrames = Int(round(seconds * Double(fps)))
+            let frames = totalFrames % fps
+            let totalSeconds = totalFrames / fps
+            let secs = totalSeconds % 60
+            let minutes = totalSeconds / 60
+            let hours = minutes / 60
+            let mins = minutes % 60
+
+            if hours > 0 {
+                return String(format: "%d:%02d:%02d:%02d", hours, mins, secs, frames)
+            } else if minutes > 0 {
+                return String(format: "%d:%02d:%02d", minutes, secs, frames)
+            } else {
+                return String(format: "%d:%02d", secs, frames)
+            }
+        }
+
+        // Standard time-based display
         let totalSeconds = Int(seconds)
         let minutes = totalSeconds / 60
         let secs = totalSeconds % 60
         let hours = minutes / 60
         let mins = minutes % 60
-        
+
         if interval >= 3600 {
             // Hours scale
             return "\(hours)h"
@@ -410,14 +459,16 @@ struct TimelineBarView: View {
 
                     // Marker number label at the top
                     Text("\(index + 1)")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.primary)
-                        .frame(width: 18, height: 16)
-                        .background(markerColor.opacity(0.8))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 18)
+                        .background(markerColor)
                         .cornerRadius(3)
-                        .padding(.top, 2)
                 }
                 .position(x: markerX, y: Self.barHeight / 2)
+                .simultaneousGesture(TapGesture().onEnded {
+                    onSeek(marker.timeSeconds)
+                })
                 .gesture(markerGesture(
                     marker: marker,
                     centerX: centerX,
