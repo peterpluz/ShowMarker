@@ -670,10 +670,10 @@ struct TimelineScreen: View {
     }
 
     private func shareMarker(_ marker: TimelineMarker) {
-        guard let timeline = viewModel.timeline else { return }
         let tag = viewModel.tags.first(where: { $0.id == marker.tagId })
+        let timecodeStr = timecodeString(for: marker.timeSeconds)
 
-        let csv = "Timecode,Name,Tag,Duration\n\(viewModel.timecodeString(for: marker.timeSeconds)),\(marker.name),\(tag?.name ?? "Unknown"),00:00:00"
+        let csv = "Timecode,Name,Tag,Duration\n\(timecodeStr),\(marker.name),\(tag?.name ?? "Unknown"),00:00:00"
 
         exportData = csv.data(using: .utf8)
         isExportPresented = true
