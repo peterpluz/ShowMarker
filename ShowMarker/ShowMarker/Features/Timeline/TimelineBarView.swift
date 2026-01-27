@@ -496,7 +496,7 @@ struct TimelineBarView: View {
     }
     
     // MARK: - Add Audio Button
-    
+
     private var addAudioButton: some View {
         Button(action: onAddAudio) {
             RoundedRectangle(cornerRadius: 12)
@@ -507,6 +507,8 @@ struct TimelineBarView: View {
                         .foregroundColor(.accentColor)
                 }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)  // Fill GeometryReader space
+        .contentShape(Rectangle())  // Ensure entire area is tappable
         .buttonStyle(.plain)
     }
 
