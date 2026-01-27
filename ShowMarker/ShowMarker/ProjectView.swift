@@ -300,14 +300,14 @@ struct ProjectView: View {
                         selectAllTimelines()
                     } label: {
                         Text("Выбрать все")
-                            .font(.system(size: 17))
+                            .font(.system(size: 17, weight: .regular))
                     }
                 }
 
                 // Selection count (center)
                 ToolbarItem(placement: .principal) {
                     Text("\(selectedTimelines.count) объекта")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 17, weight: .regular))
                 }
 
                 // Done button (right)
@@ -316,7 +316,7 @@ struct ProjectView: View {
                         isEditing = false
                     } label: {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 16, weight: .regular))
                             .foregroundColor(.white)
                     }
                     .frame(width: 44, height: 44)
@@ -330,7 +330,7 @@ struct ProjectView: View {
                         isProjectSettingsPresented = true
                     } label: {
                         Image(systemName: "gear")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 20, weight: .regular))
                     }
                 }
 
@@ -356,7 +356,7 @@ struct ProjectView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 20, weight: .regular))
                     }
                 }
             }
@@ -388,7 +388,7 @@ struct ProjectView: View {
                     exportSelectedTimelines()
                 } label: {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundColor(.white)
                         .frame(width: 50, height: 50)
                         .background(
@@ -403,7 +403,7 @@ struct ProjectView: View {
                     duplicateSelectedTimelines()
                 } label: {
                     Image(systemName: "plus.square.on.square")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundColor(.white)
                         .frame(width: 50, height: 50)
                         .background(
@@ -420,7 +420,7 @@ struct ProjectView: View {
                     deleteSelectedTimelines()
                 } label: {
                     Image(systemName: "trash")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundColor(.white)
                         .frame(width: 50, height: 50)
                         .background(
@@ -475,7 +475,7 @@ struct ProjectView: View {
             isAddTimelinePresented = true
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 20, weight: .regular))
                 .foregroundColor(.white)
                 .frame(width: 44, height: 44)
                 .background(Circle().fill(Color.accentColor))

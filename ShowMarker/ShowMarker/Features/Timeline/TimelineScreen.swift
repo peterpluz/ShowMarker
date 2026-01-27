@@ -42,6 +42,10 @@ struct TimelineScreen: View {
     // Add marker button interaction
     @State private var isAddMarkerButtonPressed = false
 
+    // History menu states
+    @State private var showUndoHistory = false
+    @State private var showRedoHistory = false
+
     private static func makeViewModel(
         repository: ProjectRepository,
         timelineID: UUID
@@ -327,35 +331,13 @@ struct TimelineScreen: View {
 
     private var toolbarContent: some ToolbarContent {
         Group {
-            // Undo button (leading)
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    viewModel.undoManager.undo()
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 20, weight: .semibold))
-                }
-                .disabled(!viewModel.undoManager.canUndo)
-            }
-
-            // Redo button (leading)
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    viewModel.undoManager.redo()
-                } label: {
-                    Image(systemName: "arrow.uturn.forward")
-                        .font(.system(size: 20, weight: .semibold))
-                }
-                .disabled(!viewModel.undoManager.canRedo)
-            }
-
             // Tag filter button
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     isTagFilterPresented = true
                 } label: {
-                    Image(systemName: hasActiveFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 20, weight: .semibold))
+                    Image(systemName: hasActiveFilter ? "slider.horizontal.3" : "slider.horizontal.3")
+                        .font(.system(size: 20, weight: .regular))
                 }
             }
 
@@ -427,7 +409,7 @@ struct TimelineScreen: View {
 
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 17, weight: .regular))
                 }
             }
         }
@@ -437,6 +419,59 @@ struct TimelineScreen: View {
 
     private var bottomPanel: some View {
         VStack(spacing: 16) {
+            // Undo/Redo buttons above timeline
+            HStack {
+                Spacer()
+                HStack(spacing: 12) {
+                    // Undo button with long press menu
+                    Menu {
+                        ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.element.1.action.actionDescription) { index, item in
+                            Button {
+                                viewModel.undoManager.undoToIndex(index)
+                            } label: {
+                                Text(item.1.description)
+                            }
+                        }
+                    } label: {
+                        Button {
+                            viewModel.undoManager.undo()
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                                .font(.system(size: 16, weight: .regular))
+                        }
+                        .disabled(!viewModel.undoManager.canUndo)
+                    }
+                    .disabled(!viewModel.undoManager.canUndo)
+
+                    // Redo button with long press menu
+                    Menu {
+                        ForEach(Array(viewModel.undoManager.getRedoHistory(limit: 10).enumerated()), id: \.element.1.action.actionDescription) { index, item in
+                            Button {
+                                viewModel.undoManager.redoToIndex(index)
+                            } label: {
+                                Text(item.1.description)
+                            }
+                        }
+                    } label: {
+                        Button {
+                            viewModel.undoManager.redo()
+                        } label: {
+                            Image(systemName: "arrow.uturn.forward")
+                                .font(.system(size: 16, weight: .regular))
+                        }
+                        .disabled(!viewModel.undoManager.canRedo)
+                    }
+                    .disabled(!viewModel.undoManager.canRedo)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.2))
+                )
+            }
+            .padding(.bottom, 8)
+
             timelineBar
 
             // ИСПРАВЛЕНО: тайм и контролы видимы только с аудио
@@ -537,7 +572,7 @@ struct TimelineScreen: View {
             }
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 16, weight: .regular))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
