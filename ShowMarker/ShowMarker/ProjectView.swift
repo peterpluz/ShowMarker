@@ -203,18 +203,18 @@ struct ProjectView: View {
 
     @ViewBuilder
     private func timelineSwipeActions(_ timeline: Timeline) -> some View {
+        Button(role: .destructive) {
+            deleteTimeline(timeline)
+        } label: {
+            Label("Удалить", systemImage: "trash")
+        }
+
         Button {
             shareTimeline(timeline)
         } label: {
             Label("Поделиться", systemImage: "square.and.arrow.up")
         }
         .tint(.blue)
-
-        Button(role: .destructive) {
-            deleteTimeline(timeline)
-        } label: {
-            Label("Удалить", systemImage: "trash")
-        }
     }
 
     @ViewBuilder
@@ -542,7 +542,13 @@ struct ProjectView: View {
                 )
             }
         )
-        repository.addTimeline(newTimeline)
+
+        // Insert after the original timeline instead of at the end
+        if let currentIndex = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) {
+            repository.project.timelines.insert(newTimeline, at: currentIndex + 1)
+        } else {
+            repository.addTimeline(newTimeline)
+        }
     }
 
     private func shareTimeline(_ timeline: Timeline) {
