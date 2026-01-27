@@ -179,7 +179,15 @@ struct ProjectView: View {
                         .foregroundColor(.primary)
                         .padding(.vertical, 6)
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                    Button {
+                        duplicateTimeline(timeline)
+                    } label: {
+                        Label("Дублировать", systemImage: "doc.on.doc")
+                    }
+                    .tint(.green)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     timelineSwipeActions(timeline)
                 }
                 .contextMenu {
@@ -191,18 +199,18 @@ struct ProjectView: View {
 
     @ViewBuilder
     private func timelineSwipeActions(_ timeline: Timeline) -> some View {
+        Button {
+            shareTimeline(timeline)
+        } label: {
+            Label("Поделиться", systemImage: "square.and.arrow.up")
+        }
+        .tint(.blue)
+
         Button(role: .destructive) {
             deleteTimeline(timeline)
         } label: {
             Label("Удалить", systemImage: "trash")
         }
-
-        Button {
-            startRename(timeline)
-        } label: {
-            Label("Переименовать", systemImage: "pencil")
-        }
-        .tint(.blue)
     }
 
     @ViewBuilder
@@ -212,6 +220,22 @@ struct ProjectView: View {
         } label: {
             Label("Переименовать", systemImage: "pencil")
         }
+
+        Divider()
+
+        Button {
+            duplicateTimeline(timeline)
+        } label: {
+            Label("Дублировать", systemImage: "doc.on.doc")
+        }
+
+        Button {
+            shareTimeline(timeline)
+        } label: {
+            Label("Поделиться", systemImage: "square.and.arrow.up")
+        }
+
+        Divider()
 
         Button(role: .destructive) {
             deleteTimeline(timeline)
@@ -498,6 +522,29 @@ struct ProjectView: View {
 
         selectedTimelines.removeAll()
         isEditing = false
+    }
+
+    private func duplicateTimeline(_ timeline: Timeline) {
+        let duplicateName = "\(timeline.name) Copy"
+        let newTimeline = Timeline(
+            name: duplicateName,
+            audio: timeline.audio,
+            fps: timeline.fps,
+            markers: timeline.markers.map { marker in
+                TimelineMarker(
+                    timeSeconds: marker.timeSeconds,
+                    name: marker.name,
+                    tagId: marker.tagId
+                )
+            }
+        )
+        repository.addTimeline(newTimeline)
+    }
+
+    private func shareTimeline(_ timeline: Timeline) {
+        csvExportData = generateCSV(for: timeline)
+        exportFilename = "\(timeline.name).csv"
+        isCSVExportPresented = true
     }
 
     private func exportSelectedTimelines() {

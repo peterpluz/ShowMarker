@@ -185,14 +185,6 @@ struct TimelineScreen: View {
         .contextMenu {
             markerContextMenu(for: marker)
         }
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-            Button {
-                duplicateMarker(marker)
-            } label: {
-                Label("Дублировать", systemImage: "doc.on.doc")
-            }
-            .tint(.green)
-        }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             markerSwipeActions(for: marker)
         }
@@ -216,20 +208,6 @@ struct TimelineScreen: View {
             editingTagMarker = marker
         } label: {
             Label("Изменить тег", systemImage: "tag")
-        }
-
-        Divider()
-
-        Button {
-            duplicateMarker(marker)
-        } label: {
-            Label("Дублировать", systemImage: "doc.on.doc")
-        }
-
-        Button {
-            shareMarker(marker)
-        } label: {
-            Label("Поделиться", systemImage: "square.and.arrow.up")
         }
 
         Divider()
@@ -512,7 +490,7 @@ struct TimelineScreen: View {
 
     private var timecode: some View {
         Text(viewModel.timecode())
-            .font(.system(size: 32, weight: .bold, design: .monospaced))
+            .font(.system(size: 32, weight: .bold))
             .foregroundColor(viewModel.isPlaying ? .green : .primary)
             .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)  // ✅ FIX: Force redraw on trigger toggle
             .frame(minWidth: 140, alignment: .center)
@@ -654,36 +632,4 @@ struct TimelineScreen: View {
         }
     }
 
-    // MARK: - Marker Actions
-
-    private func duplicateMarker(_ marker: TimelineMarker) {
-        let newMarker = TimelineMarker(
-            timeSeconds: marker.timeSeconds,
-            name: "\(marker.name) Copy",
-            tagId: marker.tagId
-        )
-        viewModel.addMarker(
-            name: newMarker.name,
-            tagId: newMarker.tagId,
-            at: newMarker.timeSeconds
-        )
-    }
-
-    private func shareMarker(_ marker: TimelineMarker) {
-        let tag = viewModel.tags.first(where: { $0.id == marker.tagId })
-        let timecodeStr = timecodeString(for: marker.timeSeconds)
-
-        let csv = "Timecode,Name,Tag,Duration\n\(timecodeStr),\(marker.name),\(tag?.name ?? "Unknown"),00:00:00"
-
-        exportData = csv.data(using: .utf8)
-        isExportPresented = true
-    }
-
-    private func timecodeString(for seconds: Double) -> String {
-        let totalSeconds = Int(seconds)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let secs = totalSeconds % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, secs)
-    }
 }
