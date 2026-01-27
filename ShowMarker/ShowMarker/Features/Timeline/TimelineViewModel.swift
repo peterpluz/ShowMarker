@@ -107,6 +107,18 @@ final class TimelineViewModel: ObservableObject {
         repository.project.isMarkerHapticFeedbackEnabled
     }
 
+    var bpm: Double? {
+        timeline?.bpm
+    }
+
+    var isBeatGridEnabled: Bool {
+        timeline?.isBeatGridEnabled ?? false
+    }
+
+    var isSnapToGridEnabled: Bool {
+        timeline?.isSnapToGridEnabled ?? false
+    }
+
     // MARK: - Computed
 
     var visibleMarkers: [TimelineMarker] {
@@ -589,7 +601,27 @@ final class TimelineViewModel: ObservableObject {
     func renameTimeline(to newName: String) {
         repository.renameTimeline(id: timelineID, newName: newName)
     }
-    
+
+    // MARK: - BPM and Beat Grid
+
+    func setBPM(_ bpm: Double?) {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].bpm = bpm
+        objectWillChange.send()
+    }
+
+    func toggleBeatGrid() {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].isBeatGridEnabled.toggle()
+        objectWillChange.send()
+    }
+
+    func toggleSnapToGrid() {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].isSnapToGridEnabled.toggle()
+        objectWillChange.send()
+    }
+
     // MARK: - Timecode
     
     func timecode() -> String {

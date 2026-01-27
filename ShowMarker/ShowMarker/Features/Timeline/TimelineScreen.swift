@@ -51,6 +51,10 @@ struct TimelineScreen: View {
     @State private var rippleRadius: CGFloat = 0
     @State private var rippleOpacity: Double = 1.0
 
+    // BPM editing state
+    @State private var isEditingBPM = false
+    @State private var bpmText = ""
+
     private static func makeViewModel(
         repository: ProjectRepository,
         timelineID: UUID
@@ -167,6 +171,21 @@ struct TimelineScreen: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(csvImportError ?? "Неизвестная ошибка")
+            }
+            .alert("Установить BPM", isPresented: $isEditingBPM) {
+                TextField("BPM", text: $bpmText)
+                    .keyboardType(.numberPad)
+                Button("Готово") {
+                    if let bpm = Double(bpmText), bpm > 0, bpm <= 300 {
+                        viewModel.setBPM(bpm)
+                    }
+                }
+                Button("Удалить BPM", role: .destructive) {
+                    viewModel.setBPM(nil)
+                }
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Укажите темп композиции (20-300 BPM)")
             }
     }
 
@@ -360,10 +379,33 @@ struct TimelineScreen: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.primary)
 
-            if let audio = viewModel.audio {
-                Text(audio.originalFileName)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                if let audio = viewModel.audio {
+                    Text(audio.originalFileName)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.secondary)
+
+                    if viewModel.bpm != nil {
+                        Text("•")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if let bpm = viewModel.bpm {
+                    Text("\(Int(bpm)) BPM")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.secondary)
+                } else if viewModel.audio != nil {
+                    Text("Tap to set BPM")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+            }
+            .onTapGesture {
+                // Open BPM editing
+                bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
+                isEditingBPM = true
             }
         }
     }
