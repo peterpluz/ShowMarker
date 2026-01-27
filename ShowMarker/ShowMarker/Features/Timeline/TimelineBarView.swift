@@ -533,7 +533,16 @@ struct TimelineBarView: View {
                     isPinching = true
                     lastMagnification = 1.0
                 }
-                
+
+                // Only apply zoom if value changed meaningfully
+                // If value returns to ~1.0, it means a finger was lifted
+                if abs(value - 1.0) < 0.05 && lastMagnification != 1.0 {
+                    // Finger was likely lifted, stop pinching
+                    isPinching = false
+                    lastMagnification = 1.0
+                    return
+                }
+
                 let delta = value / lastMagnification
                 let newScale = zoomScale * delta
                 let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
