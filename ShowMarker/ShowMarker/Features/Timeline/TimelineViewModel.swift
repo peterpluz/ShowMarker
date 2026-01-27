@@ -242,10 +242,18 @@ final class TimelineViewModel: ObservableObject {
                     self.previousFrame = startFrame
                     self.flashedMarkers.removeAll()
                     print("▶️ [Detection] Playback started at frame \(startFrame), reset flashed markers")
+
+                    // Start metronome if BPM is set
+                    if let bpm = self.bpm {
+                        self.metronome.start(bpm: bpm)
+                    }
                 } else {
                     // Playback stopped - reset to initial state
                     self.previousFrame = -1
                     print("🛑 [Detection] Playback stopped, frame tracking reset")
+
+                    // Stop metronome
+                    self.metronome.stop()
                 }
             }
             .store(in: &cancellables)
@@ -651,13 +659,6 @@ final class TimelineViewModel: ObservableObject {
     }
 
     // MARK: - Metronome
-
-    func toggleMetronome() {
-        if let bpm = bpm {
-            metronome.toggle(bpm: bpm)
-            objectWillChange.send()
-        }
-    }
 
     func setMetronomeVolume(_ volume: Float) {
         metronome.setVolume(volume)

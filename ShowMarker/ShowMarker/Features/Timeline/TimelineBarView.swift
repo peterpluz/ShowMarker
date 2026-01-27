@@ -15,6 +15,7 @@ struct TimelineBarView: View {
     // Beat grid parameters
     let bpm: Double?
     let isBeatGridEnabled: Bool
+    let isSnapToGridEnabled: Bool
 
     let hasAudio: Bool
 
@@ -634,7 +635,10 @@ struct TimelineBarView: View {
                 let offset = timelineOffset(contentWidth)
                 let originX = centerX - offset
                 let normalizedPosition = (drag.location.x - originX) / contentWidth
-                let newTime = clamp(normalizedPosition * duration)
+                let rawTime = clamp(normalizedPosition * duration)
+
+                // Apply snap to beat grid if enabled
+                let newTime = snapToBeat(rawTime)
 
                 draggedMarkerPreviewTime = newTime
             }
@@ -736,10 +740,10 @@ struct TimelineBarView: View {
                         path.move(to: CGPoint(x: x, y: 0))
                         path.addLine(to: CGPoint(x: x, y: size.height))
 
-                        // First beat of each bar (every 4 beats) is brighter
+                        // First beat of each bar (every 4 beats) is slightly brighter
                         let isBarLine = i % 4 == 0
-                        let lineColor = isBarLine ? Color.accentColor.opacity(0.4) : Color.accentColor.opacity(0.2)
-                        let lineWidth: CGFloat = isBarLine ? 1.5 : 1.0
+                        let lineColor = isBarLine ? Color.secondary.opacity(0.35) : Color.secondary.opacity(0.2)
+                        let lineWidth: CGFloat = isBarLine ? 1.8 : 1.5
 
                         context.stroke(path, with: .color(lineColor), lineWidth: lineWidth)
                     }
@@ -780,5 +784,16 @@ struct TimelineBarView: View {
 
     private func clamp(_ t: Double) -> Double {
         min(max(t, 0), duration)
+    }
+
+    /// Квантует время к ближайшему биту, если включена привязка к сетке
+    private func snapToBeat(_ time: Double) -> Double {
+        guard isSnapToGridEnabled, let bpm = bpm, bpm > 0 else {
+            return time
+        }
+
+        let beatInterval = 60.0 / bpm  // seconds per beat
+        let beatNumber = round(time / beatInterval)
+        return beatNumber * beatInterval
     }
 }
