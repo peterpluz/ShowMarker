@@ -127,11 +127,15 @@ struct ProjectView: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
+            Spacer()
+
             Text("Нет таймлайнов")
                 .foregroundColor(.secondary)
             Text("Создайте новый таймлайн")
                 .font(.footnote)
                 .foregroundColor(.secondary)
+
+            Spacer()
         }
         .frame(maxWidth: .infinity)
         .frame(maxHeight: .infinity)

@@ -252,44 +252,17 @@ struct TimelineScreen: View {
     }
 
     private func tagPickerMenuOverlay(for marker: TimelineMarker) -> some View {
-        ZStack {
-            // Dimmed background
-            Color.black.opacity(0.3)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    editingTagMarker = nil
-                }
-
-            // Direct context menu without button wrapper
-            Menu {
-                ForEach(viewModel.tags) { tag in
-                    Button {
-                        viewModel.changeMarkerTag(marker, to: tag.id)
-                        editingTagMarker = nil
-                    } label: {
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(Color(hex: tag.colorHex))
-                                .frame(width: 14, height: 14)
-                            Text(tag.name)
-                                .foregroundColor(Color(hex: tag.colorHex))
-                            if marker.tagId == tag.id {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(Color(hex: tag.colorHex))
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle.fill")
-                    .font(.system(size: 32, weight: .semibold))
-                    .foregroundColor(.white)
+        MarkerTagPopup(
+            tags: viewModel.tags,
+            selectedTagId: marker.tagId,
+            onTagSelected: { tagId in
+                viewModel.changeMarkerTag(marker, to: tagId)
+                editingTagMarker = nil
+            },
+            onCancel: {
+                editingTagMarker = nil
             }
-            .frame(width: 60, height: 60)
-            .background(Circle().fill(Color.accentColor))
-            .clipShape(Circle())
-        }
+        )
     }
 
     private var tagFilterSheet: some View {
