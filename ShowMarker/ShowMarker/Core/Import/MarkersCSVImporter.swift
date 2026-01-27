@@ -52,9 +52,9 @@ struct MarkersCSVImporter {
         // Create marker with unique ID
         return TimelineMarker(
             id: UUID(),
-            name: name,
             timeSeconds: timeSeconds,
-            tagId: nil
+            name: name,
+            tagId: UUID()
         )
     }
 
@@ -63,7 +63,7 @@ struct MarkersCSVImporter {
         var fields: [String] = []
         var currentField = ""
         var isQuoted = false
-        var chars = Array(line)
+        let chars = Array(line)
         var i = 0
 
         while i < chars.count {
