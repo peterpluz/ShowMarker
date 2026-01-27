@@ -316,14 +316,18 @@ struct ProjectView: View {
     // MARK: - Bottom bar
 
     private var bottomNotesStyleBar: some View {
-        if isEditing {
-            editingBottomBar
-        } else {
-            HStack(spacing: 12) {
-                searchBar
-                addButton
+        Group {
+            if isEditing {
+                editingBottomBar
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            } else {
+                HStack(spacing: 12) {
+                    searchBar
+                    addButton
+                }
+                .padding(16)
             }
-            .padding(16)
         }
     }
 
@@ -394,8 +398,6 @@ struct ProjectView: View {
                 }
                 .disabled(true)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
     }
 
     private var searchBar: some View {
