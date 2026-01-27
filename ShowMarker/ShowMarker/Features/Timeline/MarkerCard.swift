@@ -9,6 +9,7 @@ struct MarkerCard: View {
     let markerFlashPublisher: PassthroughSubject<TimelineViewModel.MarkerFlashEvent, Never>
     let draggedMarkerID: UUID?
     let draggedMarkerPreviewTime: Double?
+    let currentTime: Double  // Current playhead time
     let onTagEdit: () -> Void  // Callback for tag editing
 
     @State private var flashOpacity: Double = 0
@@ -20,17 +21,20 @@ struct MarkerCard: View {
             // Vertical colored stripe instead of bookmark icon
             Rectangle()
                 .fill(tag.map { Color(hex: $0.colorHex) } ?? Color.accentColor)
+                .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
                 .frame(width: 4, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(marker.name)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.primary)
+                    .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
                     .lineLimit(1)
 
                 Text(timecode())
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+                    .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
             }
 
             Spacer()
@@ -40,6 +44,7 @@ struct MarkerCard: View {
                 Text(tag.name)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(Color(hex: tag.colorHex))
+                    .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
                     .lineLimit(1)
             }
 

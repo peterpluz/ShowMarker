@@ -191,7 +191,7 @@ struct ProjectView: View {
                     }
                     .tint(.green)
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     timelineSwipeActions(timeline)
                 }
                 .contextMenu {

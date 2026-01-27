@@ -172,6 +172,7 @@ struct TimelineScreen: View {
             markerFlashPublisher: viewModel.markerFlashPublisher,
             draggedMarkerID: viewModel.draggedMarkerID,
             draggedMarkerPreviewTime: viewModel.draggedMarkerPreviewTime,
+            currentTime: viewModel.currentTime,
             onTagEdit: {
                 editingTagMarker = marker
             }
