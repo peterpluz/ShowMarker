@@ -72,13 +72,14 @@ struct TimelineScreen: View {
                 .sheet(item: $timePickerMarker) { marker in
                     timecodePickerSheet(for: marker)
                 }
-                // Tag picker menu overlay
-                if let marker = editingTagMarker {
-                    tagPickerMenuOverlay(for: marker)
-                }
                 .sheet(isPresented: $isTagFilterPresented) {
                     tagFilterSheet
                 }
+
+            // Tag picker menu overlay
+            if let marker = editingTagMarker {
+                tagPickerMenuOverlay(for: marker)
+            }
 
             // Marker name popup overlay
             if isMarkerNamePopupPresented {
