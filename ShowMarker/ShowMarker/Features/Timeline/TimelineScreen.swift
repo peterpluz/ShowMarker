@@ -524,15 +524,16 @@ struct TimelineScreen: View {
         .disabled(!hasAudio)
         .opacity(hasAudio ? 1 : 0.5)
         .scaleEffect(isAddMarkerButtonPressed ? 0.95 : 1.0)
+        .brightness(isAddMarkerButtonPressed ? -0.05 : 0)
         .gesture(
             DragGesture()
                 .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.1)) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
                         isAddMarkerButtonPressed = true
                     }
                 }
                 .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.1)) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
                         isAddMarkerButtonPressed = false
                     }
                 }

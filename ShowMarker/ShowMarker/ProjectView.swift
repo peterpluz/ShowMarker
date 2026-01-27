@@ -58,7 +58,7 @@ struct ProjectView: View {
 
     var body: some View {
         mainContent
-            .navigationTitle(repository.project.name)
+            .navigationTitle(isEditing ? "" : repository.project.name)
             .environment(\.editMode, .constant(isEditing ? .active : .inactive))
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) { bottomNotesStyleBar }
@@ -270,10 +270,13 @@ struct ProjectView: View {
                         isEditing = false
                     } label: {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Circle().fill(Color.accentColor))
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Circle()
+                                    .fill(Color.accentColor)
+                            )
                     }
                 }
             } else {
@@ -313,67 +316,86 @@ struct ProjectView: View {
     // MARK: - Bottom bar
 
     private var bottomNotesStyleBar: some View {
-        HStack(spacing: 12) {
-            if isEditing {
-                editingBottomBar
-            } else {
+        if isEditing {
+            editingBottomBar
+        } else {
+            HStack(spacing: 12) {
                 searchBar
                 addButton
             }
+            .padding(16)
         }
-        .padding(16)
     }
 
     private var editingBottomBar: some View {
         HStack(spacing: 12) {
-            // Share button
-            Button {
-                exportSelectedTimelines()
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(
-                        Capsule()
-                            .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
-                    )
-            }
-            .disabled(selectedTimelines.isEmpty)
+                // Share button
+                Button {
+                    exportSelectedTimelines()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            Circle()
+                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
+                        )
+                }
+                .disabled(selectedTimelines.isEmpty)
 
-            // Duplicate button
-            Button {
-                duplicateSelectedTimelines()
-            } label: {
-                Image(systemName: "plus.square.on.square")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(
-                        Capsule()
-                            .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
-                    )
-            }
-            .disabled(selectedTimelines.isEmpty)
+                // Duplicate button
+                Button {
+                    duplicateSelectedTimelines()
+                } label: {
+                    Image(systemName: "plus.square.on.square")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            Circle()
+                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
+                        )
+                }
+                .disabled(selectedTimelines.isEmpty)
 
-            // Delete button
-            Button {
-                deleteSelectedTimelines()
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(
-                        Capsule()
-                            .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : .red)
-                    )
+                // Folder button
+                Button {} label: {
+                    Image(systemName: "folder")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 50, height: 50)
+                }
+                .disabled(true)
+
+                // Delete button
+                Button {
+                    deleteSelectedTimelines()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            Circle()
+                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : .red)
+                        )
+                }
+                .disabled(selectedTimelines.isEmpty)
+
+                Spacer()
+
+                // More button
+                Button {} label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(width: 50, height: 50)
+                }
+                .disabled(true)
             }
-            .disabled(selectedTimelines.isEmpty)
-        }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
     }
 
     private var searchBar: some View {
@@ -391,27 +413,23 @@ struct ProjectView: View {
         .frame(height: 44)
         .background(
             Capsule()
-                .fill(Color(.systemGray6).opacity(0.5))
-                .background(
-                    Capsule()
-                        .fill(.ultraThickMaterial)
-                )
+                .fill(.ultraThinMaterial)
         )
         .overlay(
             Capsule()
                 .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
         )
         .scaleEffect(isSearchPressed ? 0.95 : 1.0)
-        .opacity(isSearchPressed ? 0.8 : 1.0)
+        .brightness(isSearchPressed ? -0.05 : 0)
         .gesture(
             DragGesture()
                 .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.1)) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
                         isSearchPressed = true
                     }
                 }
                 .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.1)) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
                         isSearchPressed = false
                     }
                 }
@@ -426,28 +444,20 @@ struct ProjectView: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(.white)
                 .frame(width: 44, height: 44)
-                .background(
-                    Circle()
-                        .fill(Color.accentColor)
-                        .background(
-                            Circle()
-                                .fill(.thinMaterial)
-                        )
-                )
+                .background(Circle().fill(Color.accentColor))
         }
         .buttonStyle(.plain)
-        .brightness(0.1)
         .scaleEffect(isAddButtonPressed ? 0.92 : 1.0)
-        .opacity(isAddButtonPressed ? 0.8 : 1.0)
+        .brightness(isAddButtonPressed ? -0.1 : 0)
         .gesture(
             DragGesture()
                 .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.1)) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
                         isAddButtonPressed = true
                     }
                 }
                 .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.1)) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
                         isAddButtonPressed = false
                     }
                 }
