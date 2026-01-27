@@ -135,8 +135,30 @@ struct ProjectSettingsView: View {
             Button {
                 isAddingTag = true
             } label: {
-                Text("Добавить тег")
-                    .foregroundColor(.secondary)
+                HStack(spacing: 10) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.accentColor))
+
+                    Text("Добавить тег")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.primary)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(Color(.systemGray5).opacity(0.6))
+                        .background(Capsule().fill(.regularMaterial))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
             }
         } header: {
             Text("Теги")

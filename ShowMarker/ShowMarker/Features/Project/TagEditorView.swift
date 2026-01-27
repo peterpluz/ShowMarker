@@ -10,7 +10,7 @@ struct TagEditorView: View {
     @State private var selectedColor: String
     @FocusState private var isTextFieldFocused: Bool
 
-    // Predefined color palette
+    // Apple's standard accent colors (9 colors)
     private let colorPalette: [TagColor] = [
         TagColor(name: "Красный", hex: "#FF3B30"),
         TagColor(name: "Оранжевый", hex: "#FF9500"),
@@ -20,10 +20,7 @@ struct TagEditorView: View {
         TagColor(name: "Синий", hex: "#007AFF"),
         TagColor(name: "Индиго", hex: "#5856D6"),
         TagColor(name: "Фиолетовый", hex: "#AF52DE"),
-        TagColor(name: "Розовый", hex: "#FF2D55"),
-        TagColor(name: "Серый", hex: "#8E8E93"),
-        TagColor(name: "Коричневый", hex: "#A2845E"),
-        TagColor(name: "Черный", hex: "#000000")
+        TagColor(name: "Розовый", hex: "#FF2D55")
     ]
 
     init(
@@ -48,47 +45,54 @@ struct TagEditorView: View {
 
     var body: some View {
         ZStack {
-            // Dimmed background
-            Color.black.opacity(0.25)
-                .background(.ultraThinMaterial)
+            // Dimmed background with blur
+            Color.black.opacity(0.3)
                 .ignoresSafeArea()
                 .onTapGesture {
                     onCancel()
                 }
 
-            // Popup content
-            VStack(spacing: 16) {
+            // Popup content with Liquid Glass style
+            VStack(spacing: 20) {
                 // Title
                 Text(isEditing ? "Редактировать тег" : "Новый тег")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.primary)
-                    .padding(.top, 20)
+                    .padding(.top, 24)
 
-                // Text field
-                HStack(spacing: 8) {
+                // Text field with darker Liquid Glass style
+                HStack(spacing: 0) {
                     TextField("Название тега", text: $tagName)
-                        .font(.system(size: 17))
+                        .font(.system(size: 16, weight: .regular))
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color(.tertiarySystemFill))
-                        )
                         .focused($isTextFieldFocused)
 
-                    // Clear button
+                    // Clear button inside field
                     if !tagName.isEmpty {
                         Button {
                             tagName = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(Color(.tertiaryLabel))
-                                .font(.system(size: 20))
+                                .font(.system(size: 18, weight: .semibold))
                         }
-                        .padding(.trailing, 4)
+                        .padding(.trailing, 8)
                     }
                 }
+                .background(
+                    Capsule()
+                        .fill(Color(.systemGray5).opacity(0.6))
+                        .background(
+                            Capsule()
+                                .fill(.regularMaterial)
+                        )
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
                 .padding(.horizontal, 16)
 
                 // Color picker
@@ -124,20 +128,28 @@ struct TagEditorView: View {
                     .frame(height: 50)
                 }
 
-                // Buttons
-                HStack(spacing: 8) {
+                // Buttons with Liquid Glass style
+                HStack(spacing: 12) {
                     // Cancel button
                     Button {
                         onCancel()
                     } label: {
                         Text("Отмена")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.primary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 50)
+                            .frame(height: 48)
                             .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color(.tertiarySystemFill))
+                                Capsule()
+                                    .fill(Color(.systemGray5).opacity(0.6))
+                                    .background(
+                                        Capsule()
+                                            .fill(.regularMaterial)
+                                    )
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                             )
                     }
                     .buttonStyle(.plain)
@@ -147,12 +159,12 @@ struct TagEditorView: View {
                         saveTag()
                     } label: {
                         Text(isEditing ? "Сохранить" : "Создать")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 50)
+                            .frame(height: 48)
                             .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                Capsule()
                                     .fill(tagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.accentColor)
                             )
                     }
@@ -160,16 +172,23 @@ struct TagEditorView: View {
                     .disabled(tagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 20)
+                .padding(.bottom, 24)
             }
             .frame(width: 320)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color(.systemGray6).opacity(0.9))
+                    .background(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(.ultraThickMaterial)
+                    )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: .black.opacity(0.15), radius: 30, x: 0, y: 10)
-            .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 5)
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 10)
         }
         .onAppear {
             // Auto-focus text field when popup appears

@@ -272,18 +272,26 @@ struct ProjectView: View {
                         isEditing = false
                     } label: {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 50, height: 50)
-                            .background(
-                                Circle()
-                                    .fill(Color.accentColor)
-                            )
+                            .background(Circle().fill(Color.accentColor))
+                            .clipShape(Circle())
                     }
-                    .padding(.trailing, -8)
                 }
+            }
             } else {
-                // Menu with select option
+                // Settings button (left)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        isProjectSettingsPresented = true
+                    } label: {
+                        Image(systemName: "gear")
+                            .font(.system(size: 20, weight: .semibold))
+                    }
+                }
+
+                // Menu with select option (right)
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button {
@@ -299,16 +307,6 @@ struct ProjectView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 20, weight: .semibold))
-                    }
-                }
-
-                // Settings button (right)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isProjectSettingsPresented = true
-                    } label: {
-                        Image(systemName: "gear")
                             .font(.system(size: 20, weight: .semibold))
                     }
                 }
