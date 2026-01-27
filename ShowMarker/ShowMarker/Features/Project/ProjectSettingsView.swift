@@ -143,10 +143,10 @@ struct ProjectSettingsView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.accentColor))
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(.green))
 
                     Text("Добавить тег")
                         .font(.system(size: 16, weight: .regular))
