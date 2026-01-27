@@ -27,6 +27,9 @@ struct MarkerTagPopup: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(tags) { tag in
                         Button {
+                            // Haptic feedback on selection
+                            let impact = UIImpactFeedbackGenerator(style: .light)
+                            impact.impactOccurred()
                             onTagSelected(tag.id)
                         } label: {
                             HStack(spacing: 12) {

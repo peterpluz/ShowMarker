@@ -119,7 +119,7 @@ struct TimelineBarView: View {
                             .offset(x: xOffset)
                     )
                     .gesture(
-                        DragGesture()
+                        DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 if capsuleDragStart == nil {
                                     capsuleDragStart = xOffset
@@ -525,16 +525,16 @@ struct TimelineBarView: View {
     }
 
     private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
-        DragGesture()
+        DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard draggedMarkerID == nil, !isPinching else { return }
 
                 // Check for double-tap-hold zoom gesture:
-                // If there was a recent tap (< 300ms before drag started), enter zoom mode
+                // If there was a recent tap (< 400ms before drag started), enter zoom mode
                 if !isDoubleTapZoomMode && doubleTapHoldStartLocation == nil {
                     if let tapTime = lastTapTime {
                         let timeSinceTap = Date().timeIntervalSince(tapTime)
-                        if timeSinceTap < 0.3 {
+                        if timeSinceTap < 0.4 {
                             // This is a double-tap-hold gesture - enable zoom mode
                             isDoubleTapZoomMode = true
                             doubleTapStartZoom = zoomScale
@@ -550,7 +550,7 @@ struct TimelineBarView: View {
                     // Dragging right increases zoom, left decreases zoom
                     // Sensitivity: every 50 pixels of drag = 1x zoom multiplier
                     let zoomMultiplier = 1.0 + (Double(translation) / 50.0)
-                    let newScale = doubleTapStartZoom * max(zoomMultiplier, 0.5) // Prevent negative zoom
+                    let newScale = doubleTapStartZoom * max(zoomMultiplier, 0.1) // Allow zooming out more
                     let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
                     zoomScale = clamped
                     return
@@ -620,7 +620,7 @@ struct TimelineBarView: View {
                 draggedMarkerID = marker.id
                 draggedMarkerPreviewTime = marker.timeSeconds
             }
-            .sequenced(before: DragGesture())
+            .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 guard
                     case .second(true, let drag?) = value,

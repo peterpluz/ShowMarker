@@ -106,6 +106,9 @@ struct TagEditorView: View {
                         HStack(spacing: 12) {
                             ForEach(colorPalette, id: \.hex) { colorOption in
                                 Button {
+                                    // Haptic feedback on color selection
+                                    let impact = UIImpactFeedbackGenerator(style: .light)
+                                    impact.impactOccurred()
                                     selectedColor = colorOption.hex
                                 } label: {
                                     ZStack {

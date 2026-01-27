@@ -188,9 +188,13 @@ struct TimelineScreen: View {
             }
             .listStyle(.insetGrouped)
             .animation(.easeInOut(duration: 0.3), value: viewModel.visibleMarkers.map(\.id))  // ✅ Animate marker reordering
-            .navigationTitle(viewModel.name)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbarContent }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    customNavigationTitle
+                }
+                toolbarContent
+            }
             .safeAreaInset(edge: .bottom) { bottomPanel }
             .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
                 // ✅ Auto-scroll to next marker if enabled
@@ -346,6 +350,22 @@ struct TimelineScreen: View {
             get: { renamingMarker != nil },
             set: { if !$0 { renamingMarker = nil } }
         )
+    }
+
+    // MARK: - Custom Navigation Title
+
+    private var customNavigationTitle: some View {
+        VStack(spacing: 2) {
+            Text(viewModel.name)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.primary)
+
+            if let audio = viewModel.audio {
+                Text(audio.originalFileName)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 
     // MARK: - Toolbar
@@ -662,7 +682,7 @@ struct TimelineScreen: View {
             }
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
