@@ -53,9 +53,13 @@ class MetronomeService: ObservableObject {
         var samples: [Float] = []
         for i in 0..<sampleCount {
             let time = Double(i) / sampleRate
-            let value = amplitude * sin(2.0 * .pi * Double(frequency) * time)
+            let phase = 2.0 * Double.pi * Double(frequency) * time
+            let sineValue = sin(phase)
+            let value = amplitude * Float(sineValue)
+
             // Применяем envelope для сглаживания
-            let envelope = Float(1.0 - (Double(i) / Double(sampleCount)))
+            let envelopeValue = 1.0 - (Double(i) / Double(sampleCount))
+            let envelope = Float(envelopeValue)
             samples.append(value * envelope)
         }
 
