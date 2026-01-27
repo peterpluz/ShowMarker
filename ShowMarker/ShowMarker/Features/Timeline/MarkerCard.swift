@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 
 struct MarkerCard: View {
 
@@ -11,6 +12,7 @@ struct MarkerCard: View {
     let draggedMarkerPreviewTime: Double?
     let currentTime: Double  // Current playhead time
     let markerIndex: Int  // 1-based index number for display
+    let isHapticFeedbackEnabled: Bool  // Whether to trigger haptic feedback
     let onTagEdit: () -> Void  // Callback for tag editing
 
     @State private var flashOpacity: Double = 0
@@ -143,7 +145,13 @@ struct MarkerCard: View {
 
     private func triggerFlashEffect() {
         print("      💥 [MarkerCard] '\(marker.name)' FLASH TRIGGERED")
-        
+
+        // Trigger haptic feedback if enabled
+        if isHapticFeedbackEnabled {
+            let impact = UIImpactFeedbackGenerator(style: .medium)
+            impact.impactOccurred()
+        }
+
         // ✅ CRITICAL FIX: Use withAnimation(.none) to ensure instant attack
         // This prevents SwiftUI from applying implicit animations
         withAnimation(.none) {
