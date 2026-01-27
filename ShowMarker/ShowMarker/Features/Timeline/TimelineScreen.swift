@@ -185,7 +185,15 @@ struct TimelineScreen: View {
         .contextMenu {
             markerContextMenu(for: marker)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button {
+                duplicateMarker(marker)
+            } label: {
+                Label("Дублировать", systemImage: "doc.on.doc")
+            }
+            .tint(.green)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             markerSwipeActions(for: marker)
         }
     }
@@ -212,6 +220,20 @@ struct TimelineScreen: View {
 
         Divider()
 
+        Button {
+            duplicateMarker(marker)
+        } label: {
+            Label("Дублировать", systemImage: "doc.on.doc")
+        }
+
+        Button {
+            shareMarker(marker)
+        } label: {
+            Label("Поделиться", systemImage: "square.and.arrow.up")
+        }
+
+        Divider()
+
         Button(role: .destructive) {
             viewModel.deleteMarker(marker)
         } label: {
@@ -221,18 +243,18 @@ struct TimelineScreen: View {
 
     @ViewBuilder
     private func markerSwipeActions(for marker: TimelineMarker) -> some View {
+        Button {
+            shareMarker(marker)
+        } label: {
+            Label("Поделиться", systemImage: "square.and.arrow.up")
+        }
+        .tint(.blue)
+
         Button(role: .destructive) {
             viewModel.deleteMarker(marker)
         } label: {
             Label("Удалить", systemImage: "trash")
         }
-
-        Button {
-            renamingMarker = marker
-        } label: {
-            Label("Переименовать", systemImage: "pencil")
-        }
-        .tint(.blue)
     }
 
     // MARK: - Sheets
@@ -260,7 +282,7 @@ struct TimelineScreen: View {
                     editingTagMarker = nil
                 }
 
-            // Menu popup
+            // Direct context menu without button wrapper
             Menu {
                 ForEach(viewModel.tags) { tag in
                     Button {
@@ -272,42 +294,23 @@ struct TimelineScreen: View {
                                 .fill(Color(hex: tag.colorHex))
                                 .frame(width: 14, height: 14)
                             Text(tag.name)
-                                .foregroundColor(.primary)
+                                .foregroundColor(Color(hex: tag.colorHex))
                             if marker.tagId == tag.id {
                                 Spacer()
                                 Image(systemName: "checkmark")
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(Color(hex: tag.colorHex))
                             }
                         }
                     }
                 }
             } label: {
-                Text("Выбрать тег")
-                    .font(.system(size: 16, weight: .semibold))
+                Image(systemName: "ellipsis.circle.fill")
+                    .font(.system(size: 32, weight: .semibold))
                     .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(
-                        Capsule()
-                            .fill(Color.accentColor)
-                    )
-                    .padding(16)
             }
-            .frame(width: 300)
-            .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color(.systemGray6).opacity(0.9))
-                    .background(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(.ultraThickMaterial)
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 10)
+            .frame(width: 60, height: 60)
+            .background(Circle().fill(Color.accentColor))
+            .clipShape(Circle())
         }
     }
 
@@ -509,9 +512,10 @@ struct TimelineScreen: View {
 
     private var timecode: some View {
         Text(viewModel.timecode())
-            .font(.system(size: 32, weight: .bold))
+            .font(.system(size: 32, weight: .bold, design: .monospaced))
             .foregroundColor(viewModel.isPlaying ? .green : .primary)
             .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)  // ✅ FIX: Force redraw on trigger toggle
+            .frame(minWidth: 140, alignment: .center)
     }
 
     private var playbackControls: some View {
@@ -648,5 +652,38 @@ struct TimelineScreen: View {
         } catch {
             print("❌ Audio file reading error: \(error)")
         }
+    }
+
+    // MARK: - Marker Actions
+
+    private func duplicateMarker(_ marker: TimelineMarker) {
+        let newMarker = TimelineMarker(
+            timeSeconds: marker.timeSeconds,
+            name: "\(marker.name) Copy",
+            tagId: marker.tagId
+        )
+        viewModel.addMarker(
+            name: newMarker.name,
+            tagId: newMarker.tagId,
+            at: newMarker.timeSeconds
+        )
+    }
+
+    private func shareMarker(_ marker: TimelineMarker) {
+        guard let timeline = viewModel.timeline else { return }
+        let tag = viewModel.tags.first(where: { $0.id == marker.tagId })
+
+        let csv = "Timecode,Name,Tag,Duration\n\(viewModel.timecodeString(for: marker.timeSeconds)),\(marker.name),\(tag?.name ?? "Unknown"),00:00:00"
+
+        exportData = csv.data(using: .utf8)
+        isExportPresented = true
+    }
+
+    private func timecodeString(for seconds: Double) -> String {
+        let totalSeconds = Int(seconds)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let secs = totalSeconds % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, secs)
     }
 }

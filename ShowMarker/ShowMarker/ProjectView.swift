@@ -274,10 +274,10 @@ struct ProjectView: View {
                         Image(systemName: "checkmark")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 50, height: 50)
-                            .background(Circle().fill(Color.accentColor))
-                            .clipShape(Circle())
                     }
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(Color.accentColor))
+                    .clipShape(Circle())
                 }
             } else {
                 // Settings button (left)

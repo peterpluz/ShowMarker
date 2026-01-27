@@ -95,11 +95,11 @@ struct MarkerNamePopup: View {
                                     .fill(Color(hex: tag.colorHex))
                                     .frame(width: 14, height: 14)
                                 Text(tag.name)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(Color(hex: tag.colorHex))
                                 if selectedTagId == tag.id {
                                     Spacer()
                                     Image(systemName: "checkmark")
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(Color(hex: tag.colorHex))
                                 }
                             }
                         }
