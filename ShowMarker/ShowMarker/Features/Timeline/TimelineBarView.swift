@@ -26,10 +26,6 @@ struct TimelineBarView: View {
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
 
-    // Pinch gesture tracking for reliable two-finger detection
-    @State private var maxMagnificationInGesture: CGFloat = 1.0
-    @State private var magnificationDropDetected: Bool = false
-
     // Double-tap zoom state
     @State private var isDoubleTapZoomMode: Bool = false
     @State private var doubleTapStartZoom: CGFloat = 1.0
@@ -576,35 +572,26 @@ struct TimelineBarView: View {
                 if !isPinching {
                     isPinching = true
                     lastMagnification = 1.0
-                    maxMagnificationInGesture = 1.0
-                    magnificationDropDetected = false
                 }
 
-                // Track maximum magnification reached in this gesture
-                maxMagnificationInGesture = max(maxMagnificationInGesture, value)
-
-                // Detect if magnitude dropped significantly (indicates finger lifted)
-                // If we were at a high magnification and suddenly drop more than 20%, stop zooming
-                if maxMagnificationInGesture > 1.15 && value < (maxMagnificationInGesture * 0.8) {
-                    magnificationDropDetected = true
+                // Only apply zoom if value changed meaningfully
+                // If value returns to ~1.0, it means a finger was lifted
+                if abs(value - 1.0) < 0.05 && lastMagnification != 1.0 {
+                    // Finger was likely lifted, stop pinching
                     isPinching = false
+                    lastMagnification = 1.0
                     return
                 }
 
-                // Only apply zoom if we haven't detected a finger lift
-                if !magnificationDropDetected && value > 1.0 {
-                    let delta = value / lastMagnification
-                    let newScale = zoomScale * delta
-                    let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
-                    zoomScale = clamped
-                    lastMagnification = value
-                }
+                let delta = value / lastMagnification
+                let newScale = zoomScale * delta
+                let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
+                zoomScale = clamped
+                lastMagnification = value
             }
             .onEnded { _ in
                 isPinching = false
                 lastMagnification = 1.0
-                maxMagnificationInGesture = 1.0
-                magnificationDropDetected = false
             }
     }
 
