@@ -5,7 +5,7 @@ import Combine
 @MainActor
 final class TimelineViewModel: ObservableObject {
 
-    private let repository: ProjectRepository
+    let repository: ProjectRepository
     private let timelineID: UUID
 
     private let audioPlayer = AudioPlayerService()
@@ -18,6 +18,8 @@ final class TimelineViewModel: ObservableObject {
     @Published private(set) var duration: Double = 0
 
     @Published var zoomScale: CGFloat = 1.0
+
+    @Published private(set) var isLoading: Bool = false
 
     @Published private(set) var cachedWaveform: [Float] = []
     private var waveformMipmaps: [[Float]] = []
@@ -203,6 +205,7 @@ final class TimelineViewModel: ObservableObject {
         // Используем временную директорию для воспроизведения (аудио извлекается туда при открытии документа)
         if let timelineAudio = timeline?.audio {
             self.duration = timelineAudio.duration
+            self.isLoading = true
 
             // ✅ CRITICAL FIX: Load audio into player on initialization
             let audioURL = repository.audioPlaybackURL(relativePath: timelineAudio.relativePath)
@@ -380,6 +383,7 @@ final class TimelineViewModel: ObservableObject {
             // Load all mipmap levels for adaptive rendering
             self.waveformMipmaps = cached.mipmaps
             self.cachedWaveform = cached.mipmaps.first ?? []
+            self.isLoading = false
             print("✅ Waveform loaded from cache: \(cached.mipmaps.count) mipmap levels")
             for (idx, level) in cached.mipmaps.enumerated() {
                 print("   Level \(idx): \(level.count) samples")
@@ -409,6 +413,7 @@ final class TimelineViewModel: ObservableObject {
                 // Store all mipmap levels for adaptive rendering
                 self.waveformMipmaps = cached.mipmaps
                 self.cachedWaveform = cached.mipmaps.first ?? []
+                self.isLoading = false
                 print("✅ Waveform cached with \(cached.mipmaps.count) mipmap levels:")
                 for (idx, level) in cached.mipmaps.enumerated() {
                     print("   Level \(idx): \(level.count) samples")
@@ -416,6 +421,9 @@ final class TimelineViewModel: ObservableObject {
             }
         } catch {
             print("⚠️ Waveform generation failed:", error)
+            await MainActor.run {
+                self.isLoading = false
+            }
         }
     }
     

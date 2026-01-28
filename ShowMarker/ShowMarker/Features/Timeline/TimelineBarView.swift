@@ -42,7 +42,7 @@ struct TimelineBarView: View {
     @State private var doubleTapZoomStartX: CGFloat = 0
     @State private var doubleTapHoldStartLocation: CGPoint?
 
-    @State private var capsuleDragStart: CGFloat?
+    @State private var capsuleDragStart: Double?
 
     // MARK: - Marker Drag State (Bindings to ViewModel)
 
@@ -102,14 +102,17 @@ struct TimelineBarView: View {
             let totalWidth = geo.size.width
             let visibleRatio = 1.0 / zoomScale
             let visibleWidth = max(20, totalWidth * visibleRatio)
-            
+
             // Normalized playhead position (0...1)
             let timeRatio = duration > 0 ? effectiveCurrentTime() / duration : 0
-            
-            // Capsule position - centered on playhead, clamped to edges
-            let capsuleCenterIdeal = totalWidth * timeRatio
             let halfCapsule = visibleWidth / 2
-            let capsuleCenter = max(halfCapsule, min(totalWidth - halfCapsule, capsuleCenterIdeal))
+
+            // Playhead position in pixels
+            let playheadX = totalWidth * timeRatio
+
+            // Capsule tries to center on playhead, but clamps to edges
+            // This allows playhead to reach the edges of the timeline
+            let capsuleCenter = max(halfCapsule, min(totalWidth - halfCapsule, playheadX))
             let xOffset = capsuleCenter - halfCapsule
 
             ZStack(alignment: .leading) {
@@ -133,19 +136,19 @@ struct TimelineBarView: View {
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 if capsuleDragStart == nil {
-                                    capsuleDragStart = xOffset
+                                    capsuleDragStart = effectiveCurrentTime()
                                     capsuleDragTime = effectiveCurrentTime()
                                     isCapsuleDragging = true
                                     capsuleDragEndTime = nil
                                 }
 
-                                guard let startOffset = capsuleDragStart else { return }
+                                guard let startTime = capsuleDragStart else { return }
 
-                                let newX = startOffset + value.translation.width
-                                let clampedX = max(0, min(totalWidth - visibleWidth, newX))
-
-                                let newTimeRatio = (clampedX + halfCapsule) / totalWidth
-                                let newTime = duration * newTimeRatio
+                                // Calculate time change based on drag translation
+                                // Drag is directly mapped to time change across the full timeline
+                                let timePerPixel = duration / totalWidth
+                                let deltaTime = Double(value.translation.width) * timePerPixel
+                                let newTime = max(0, min(duration, startTime + deltaTime))
 
                                 capsuleDragTime = newTime
                                 onSeek(newTime)
@@ -157,19 +160,16 @@ struct TimelineBarView: View {
                             }
                     )
 
-                // Mini playhead
+                // Mini playhead - shows actual playhead position within capsule
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
                     .offset(x: {
-                        let idealCapsuleCenter = totalWidth * timeRatio
-                        let actualCapsuleCenter = capsuleCenter
-                        let capsuleShift = actualCapsuleCenter - idealCapsuleCenter
-                        let miniPlayheadX = actualCapsuleCenter - capsuleShift
+                        // Mini playhead is at playheadX, clamped to stay within capsule bounds
                         let minX = xOffset + 1
-                        let maxX = xOffset + visibleWidth - 1
-                        let clampedX = max(minX, min(maxX, miniPlayheadX))
-                        return clampedX - 1
+                        let maxX = xOffset + visibleWidth - 3
+                        let clampedX = max(minX, min(maxX, playheadX))
+                        return clampedX
                     }())
                     .allowsHitTesting(false)
             }
@@ -452,6 +452,15 @@ struct TimelineBarView: View {
         return ZStack {
             cachedWaveformView(width: contentWidth)
                 .offset(x: centerX - offset)
+
+            // Beat grid offset drag handle (positioned in viewport coordinates)
+            if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0 {
+                beatGridOffsetHandle(
+                    centerX: centerX,
+                    contentWidth: contentWidth,
+                    offset: offset
+                )
+            }
 
             ForEach(Array(markers.enumerated()), id: \.element.id) { index, marker in
                 let displayTime: Double = {
@@ -774,51 +783,70 @@ struct TimelineBarView: View {
                 }
             }
             .frame(width: width, height: Self.barHeight)
-            .overlay {
-                // Beat grid offset drag overlay (only when beat grid is enabled)
-                if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0, beatGridOffset >= 0 {
-                    beatGridOffsetDragOverlay(width: width, bpm: bpm)
-                }
-            }
         }
     }
 
-    // MARK: - Beat Grid Offset Drag Overlay
+    // MARK: - Beat Grid Offset Drag Handle
 
     @ViewBuilder
-    private func beatGridOffsetDragOverlay(width: CGFloat, bpm: Double) -> some View {
-        GeometryReader { geometry in
-            let normalizedPosition = beatGridOffset / duration
-            let x = normalizedPosition * width
-            let hitAreaWidth: CGFloat = 20  // Wide enough to easily tap
+    private func beatGridOffsetHandle(
+        centerX: CGFloat,
+        contentWidth: CGFloat,
+        offset: CGFloat
+    ) -> some View {
+        let normalizedPosition = beatGridOffset / duration
+        let lineX = centerX - offset + (normalizedPosition * contentWidth)
+        let hitAreaWidth: CGFloat = 44  // Large touch target for easy dragging
+        let secondsPerPixel = duration / Double(contentWidth)
 
-            // Invisible drag handle over the first beat grid line
+        // Visual indicator for the draggable beat grid offset line
+        ZStack {
+            // Invisible large hit area
             Rectangle()
                 .fill(Color.clear)
                 .frame(width: hitAreaWidth, height: Self.barHeight)
-                .position(x: x, y: Self.barHeight / 2)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard draggedMarkerID == nil else { return }
 
-                            if !isDraggingBeatGridOffset {
-                                isDraggingBeatGridOffset = true
-                                beatGridOffsetDragStart = beatGridOffset
-                            }
+            // Visual handle indicator (small triangle/diamond at top)
+            VStack(spacing: 0) {
+                // Top handle
+                Image(systemName: "diamond.fill")
+                    .font(.system(size: isDraggingBeatGridOffset ? 14 : 10))
+                    .foregroundColor(isDraggingBeatGridOffset ? .accentColor : .accentColor.opacity(0.7))
+                    .animation(.easeInOut(duration: 0.15), value: isDraggingBeatGridOffset)
 
-                            // Calculate new offset based on drag position
-                            let normalizedX = value.location.x / width
-                            let newOffset = clamp(normalizedX * duration)
+                Spacer()
 
-                            // Apply offset immediately
-                            onBeatGridOffsetChange(newOffset)
-                        }
-                        .onEnded { _ in
-                            isDraggingBeatGridOffset = false
-                        }
-                )
+                // Bottom handle
+                Image(systemName: "diamond.fill")
+                    .font(.system(size: isDraggingBeatGridOffset ? 14 : 10))
+                    .foregroundColor(isDraggingBeatGridOffset ? .accentColor : .accentColor.opacity(0.7))
+                    .animation(.easeInOut(duration: 0.15), value: isDraggingBeatGridOffset)
+            }
+            .frame(height: Self.barHeight)
         }
+        .position(x: lineX, y: Self.barHeight / 2)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    guard draggedMarkerID == nil else { return }
+
+                    if !isDraggingBeatGridOffset {
+                        isDraggingBeatGridOffset = true
+                        beatGridOffsetDragStart = beatGridOffset
+                    }
+
+                    // Calculate new offset based on drag translation from start position
+                    let deltaX = value.translation.width
+                    let deltaTime = Double(deltaX) * secondsPerPixel
+                    let newOffset = clamp(beatGridOffsetDragStart + deltaTime)
+
+                    // Apply offset immediately
+                    onBeatGridOffsetChange(newOffset)
+                }
+                .onEnded { _ in
+                    isDraggingBeatGridOffset = false
+                }
+        )
     }
 
     // MARK: - Helpers

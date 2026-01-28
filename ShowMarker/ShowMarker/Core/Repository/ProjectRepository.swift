@@ -45,12 +45,14 @@ final class ProjectRepository: ObservableObject {
     
     // MARK: - Timelines
     
-    func addTimeline(name: String) {
+    @discardableResult
+    func addTimeline(name: String) -> Timeline {
         let timeline = Timeline(
             name: name,
             fps: project.fps
         )
         project.timelines.append(timeline)
+        return timeline
     }
 
     func addTimeline(_ timeline: Timeline) {

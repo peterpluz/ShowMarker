@@ -5,8 +5,8 @@ import UniformTypeIdentifiers
 struct ProjectView: View {
 
     @Binding var document: ShowMarkerDocument
-    
-    // ✅ ИСПРАВЛЕНО: ObservedObject для nonisolated repository
+
+    // ObservedObject для nonisolated repository
     @ObservedObject private var repository: ProjectRepository
 
     @State private var searchText = ""
@@ -20,8 +20,13 @@ struct ProjectView: View {
     @State private var renameText = ""
 
     @State private var isEditing = false
-    @State private var isProjectSettingsPresented = false
     @State private var selectedTimelines: Set<UUID> = []
+
+    // Selected timeline for navigation
+    @State private var selectedTimelineID: UUID?
+
+    // Sidebar visibility
+    @State private var isSidebarVisible = false
 
     // Export states
     @State private var csvExportData: Data?
@@ -42,7 +47,6 @@ struct ProjectView: View {
 
     init(document: Binding<ShowMarkerDocument>) {
         _document = document
-        // ✅ КРИТИЧНО: безопасное извлечение repository
         _repository = ObservedObject(wrappedValue: document.wrappedValue.repository)
     }
 
@@ -62,189 +66,277 @@ struct ProjectView: View {
     }
 
     var body: some View {
-        mainContent
-            .navigationTitle(isEditing ? "" : repository.project.name)
-            .environment(\.editMode, .constant(isEditing ? .active : .inactive))
-            .toolbar { toolbarContent }
-            .safeAreaInset(edge: .bottom) { bottomNotesStyleBar }
-            .onChange(of: isEditing) { oldValue, newValue in
-                if !newValue {
-                    selectedTimelines.removeAll()
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            // Sidebar - Timeline List
+            sidebarContent
+                .navigationTitle(repository.project.name)
+                .toolbar { sidebarToolbarContent }
+        } detail: {
+            // Detail - Selected Timeline
+            if let timelineID = selectedTimelineID {
+                TimelineScreen(
+                    repository: repository,
+                    timelineID: timelineID
+                )
+            } else {
+                // Placeholder when no timeline selected
+                VStack(spacing: 16) {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary)
+
+                    Text("Выберите таймлайн")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+
+                    if repository.project.timelines.isEmpty {
+                        Text("Или создайте новый")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary.opacity(0.7))
+                    }
                 }
             }
-            .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
-                addTimelineAlert
+        }
+        .navigationSplitViewStyle(.balanced)
+        .onChange(of: isEditing) { oldValue, newValue in
+            if !newValue {
+                selectedTimelines.removeAll()
             }
-            .alert("Переименовать таймлайн", isPresented: isRenamingPresented) {
-                renameTimelineAlert
+        }
+        .alert("Новый таймлайн", isPresented: $isAddTimelinePresented) {
+            addTimelineAlert
+        }
+        .alert("Переименовать таймлайн", isPresented: isRenamingPresented) {
+            renameTimelineAlert
+        }
+        .onChange(of: renamingTimelineID) { oldValue, newValue in
+            if newValue != nil {
+                print("📝 [Rename] Alert opened for timeline")
+            } else if oldValue != nil {
+                print("📝 [Rename] Alert closed")
             }
-            .onChange(of: renamingTimelineID) { oldValue, newValue in
-                if newValue != nil {
-                    print("📝 [Rename] Alert opened for timeline")
-                } else if oldValue != nil {
-                    print("📝 [Rename] Alert closed")
-                }
+        }
+        .fileExporter(
+            isPresented: $isCSVExportPresented,
+            document: SimpleCSVDocument(data: csvExportData ?? Data()),
+            contentType: .commaSeparatedText,
+            defaultFilename: exportFilename
+        ) { result in
+            switch result {
+            case .success:
+                print("CSV export successful")
+            case .failure(let error):
+                print("CSV export failed: \(error.localizedDescription)")
             }
-            .sheet(isPresented: $isProjectSettingsPresented) {
-                ProjectSettingsView(repository: repository)
+        }
+        .fileExporter(
+            isPresented: $isZIPExportPresented,
+            document: SimpleZIPDocument(zipData: zipExportData ?? Data()),
+            contentType: .zip,
+            defaultFilename: zipExportFilename
+        ) { result in
+            switch result {
+            case .success:
+                print("ZIP export successful")
+            case .failure(let error):
+                print("ZIP export failed: \(error.localizedDescription)")
             }
-            .fileExporter(
-                isPresented: $isCSVExportPresented,
-                document: SimpleCSVDocument(data: csvExportData ?? Data()),
-                contentType: .commaSeparatedText,
-                defaultFilename: exportFilename
-            ) { result in
-                switch result {
-                case .success:
-                    print("CSV export successful")
-                case .failure(let error):
-                    print("CSV export failed: \(error.localizedDescription)")
-                }
+        }
+        .fileImporter(
+            isPresented: $isCSVBatchImportPresented,
+            allowedContentTypes: [.commaSeparatedText],
+            allowsMultipleSelection: true,
+            onCompletion: handleCSVBatchImport
+        )
+        .alert("Ошибка импорта", isPresented: $showCSVImportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(csvImportError ?? "Неизвестная ошибка")
+        }
+        .onAppear {
+            // Auto-select first timeline if none selected
+            if selectedTimelineID == nil, let first = repository.project.timelines.first {
+                selectedTimelineID = first.id
             }
-            .fileExporter(
-                isPresented: $isZIPExportPresented,
-                document: SimpleZIPDocument(zipData: zipExportData ?? Data()),
-                contentType: .zip,
-                defaultFilename: zipExportFilename
-            ) { result in
-                switch result {
-                case .success:
-                    print("ZIP export successful")
-                case .failure(let error):
-                    print("ZIP export failed: \(error.localizedDescription)")
-                }
-            }
-            .fileImporter(
-                isPresented: $isCSVBatchImportPresented,
-                allowedContentTypes: [.commaSeparatedText],
-                allowsMultipleSelection: true,
-                onCompletion: handleCSVBatchImport
-            )
-            .alert("Ошибка импорта", isPresented: $showCSVImportError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(csvImportError ?? "Неизвестная ошибка")
-            }
+        }
     }
 
-    // MARK: - Main Content
+    // MARK: - Sidebar Content
 
-    private var mainContent: some View {
-        List {
+    private var sidebarContent: some View {
+        VStack(spacing: 0) {
+            // Search bar
+            searchBar
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
             if filteredTimelines.isEmpty {
                 emptyState
             } else {
-                timelineList
-                    .transition(.opacity.combined(with: .scale))
+                List(selection: $selectedTimelineID) {
+                    ForEach(filteredTimelines) { timeline in
+                        sidebarTimelineRow(timeline)
+                            .tag(timeline.id)
+                    }
+                    .onMove { fromOffsets, toOffset in
+                        repository.moveTimelines(from: fromOffsets, to: toOffset)
+                    }
+                }
+                .listStyle(.sidebar)
+                .environment(\.editMode, .constant(isEditing ? .active : .inactive))
+            }
+
+            // Bottom bar with add button
+            sidebarBottomBar
+        }
+    }
+
+    private func sidebarTimelineRow(_ timeline: Timeline) -> some View {
+        HStack(spacing: 12) {
+            if isEditing {
+                // Selection checkbox
+                ZStack {
+                    Circle()
+                        .stroke(selectedTimelines.contains(timeline.id) ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 2)
+                        .frame(width: 22, height: 22)
+
+                    if selectedTimelines.contains(timeline.id) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 22, height: 22)
+
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .onTapGesture {
+                    toggleSelection(timeline.id)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(timeline.name)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    Text("\(timeline.markers.count) маркеров")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+
+                    if timeline.audio != nil {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button {
+                duplicateTimeline(timeline)
+            } label: {
+                Label("Дублировать", systemImage: "doc.on.doc")
+            }
+            .tint(.green)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                deleteTimeline(timeline)
+            } label: {
+                Label("Удалить", systemImage: "trash")
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isEditing)
+        .contextMenu {
+            timelineContextMenu(timeline)
+        }
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             Spacer()
 
+            Image(systemName: "rectangle.stack.badge.plus")
+                .font(.system(size: 40))
+                .foregroundColor(.secondary.opacity(0.5))
+
             Text("Нет таймлайнов")
+                .font(.headline)
                 .foregroundColor(.secondary)
-            Text("Создайте новый таймлайн")
-                .font(.footnote)
-                .foregroundColor(.secondary)
+
+            Text("Нажмите + чтобы создать")
+                .font(.subheadline)
+                .foregroundColor(.secondary.opacity(0.7))
 
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        .frame(maxHeight: .infinity)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
     }
 
-    private var timelineList: some View {
-        ForEach(filteredTimelines) { timeline in
-            timelineRow(timeline)
-        }
-        .onMove { fromOffsets, toOffset in
-            repository.moveTimelines(from: fromOffsets, to: toOffset)
-        }
-    }
-
-    private func timelineRow(_ timeline: Timeline) -> some View {
-        Group {
+    private var sidebarBottomBar: some View {
+        HStack(spacing: 12) {
             if isEditing {
-                // Selection mode with checkbox
-                HStack(spacing: 12) {
-                    // Circular checkbox - properly sized to not clip
-                    ZStack {
-                        Circle()
-                            .stroke(selectedTimelines.contains(timeline.id) ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 2)
-                            .frame(width: 26, height: 26)
-
-                        if selectedTimelines.contains(timeline.id) {
-                            Circle()
-                                .fill(Color.accentColor)
-                                .frame(width: 26, height: 26)
-
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    .frame(width: 32, height: 32)  // Extra padding to prevent clipping
-
-                    Text(timeline.name)
-                        .foregroundColor(.primary)
-                        .padding(.vertical, 6)
-
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    toggleSelection(timeline.id)
-                }
-            } else {
-                // Normal mode with NavigationLink
-                NavigationLink {
-                    TimelineScreen(
-                        repository: repository,
-                        timelineID: timeline.id
-                    )
+                // Share button
+                Button {
+                    exportSelectedTimelines()
                 } label: {
-                    Text(timeline.name)
-                        .foregroundColor(.primary)
-                        .padding(.vertical, 6)
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 16))
                 }
-                .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                    Button {
-                        duplicateTimeline(timeline)
-                    } label: {
-                        Label("Дублировать", systemImage: "doc.on.doc")
-                    }
-                    .tint(.green)
+                .disabled(selectedTimelines.isEmpty)
+                .opacity(selectedTimelines.isEmpty ? 0.4 : 1)
+
+                // Duplicate button
+                Button {
+                    duplicateSelectedTimelines()
+                } label: {
+                    Image(systemName: "plus.square.on.square")
+                        .font(.system(size: 16))
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    timelineSwipeActions(timeline)
+                .disabled(selectedTimelines.isEmpty)
+                .opacity(selectedTimelines.isEmpty ? 0.4 : 1)
+
+                Spacer()
+
+                // Delete button
+                Button(role: .destructive) {
+                    deleteSelectedTimelines()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 16))
                 }
-                .contextMenu {
-                    timelineContextMenu(timeline)
+                .disabled(selectedTimelines.isEmpty)
+                .opacity(selectedTimelines.isEmpty ? 0.4 : 1)
+
+                // Done button
+                Button("Готово") {
+                    isEditing = false
+                }
+                .fontWeight(.semibold)
+            } else {
+                Spacer()
+
+                // Add timeline button
+                Button {
+                    isAddTimelinePresented = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.accentColor))
                 }
             }
         }
-    }
-
-    @ViewBuilder
-    private func timelineSwipeActions(_ timeline: Timeline) -> some View {
-        Button(role: .destructive) {
-            deleteTimeline(timeline)
-        } label: {
-            Label("Удалить", systemImage: "trash")
-        }
-
-        Button {
-            shareTimeline(timeline)
-        } label: {
-            Label("Поделиться", systemImage: "square.and.arrow.up")
-        }
-        .tint(.blue)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground).opacity(0.95))
     }
 
     @ViewBuilder
@@ -286,8 +378,10 @@ struct ProjectView: View {
             Button("Создать") {
                 let name = newTimelineName.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
-                repository.addTimeline(name: name)
+                let newTimeline = repository.addTimeline(name: name)
                 newTimelineName = ""
+                // Auto-select the new timeline
+                selectedTimelineID = newTimeline.id
             }
             Button("Отмена", role: .cancel) {}
         }
@@ -305,210 +399,53 @@ struct ProjectView: View {
 
     // MARK: - Toolbar
 
-    private var toolbarContent: some ToolbarContent {
+    private var sidebarToolbarContent: some ToolbarContent {
         Group {
-            if isEditing {
-                // Select all button (left)
-                ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
                     Button {
-                        selectAllTimelines()
+                        isEditing = true
                     } label: {
-                        Text("Выбрать все")
-                            .font(.system(size: 17, weight: .regular))
+                        Label("Выбрать", systemImage: "checkmark.circle")
                     }
-                }
 
-                // Selection count (center)
-                ToolbarItem(placement: .principal) {
-                    Text("\(selectedTimelines.count) объекта")
-                        .font(.system(size: 17, weight: .regular))
-                }
-
-                // Done button (right)
-                ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
-                        isEditing = false
+                        isCSVBatchImportPresented = true
                     } label: {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(.white)
+                        Label("Импорт маркеров из CSV", systemImage: "square.and.arrow.down")
                     }
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.accentColor))
-                    .clipShape(Circle())
-                }
-            } else {
-                // Settings button (left)
-                ToolbarItem(placement: .navigationBarTrailing) {
+
                     Button {
-                        isProjectSettingsPresented = true
+                        exportAllTimelines()
                     } label: {
-                        Image(systemName: "gear")
-                            .font(.system(size: 20, weight: .regular))
+                        Label("Экспорт CSV всех таймлайнов", systemImage: "square.and.arrow.up")
                     }
-                }
-
-                // Menu with select option (right)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            isEditing = true
-                        } label: {
-                            Label("Выбрать", systemImage: "checkmark.circle")
-                        }
-
-                        Button {
-                            isCSVBatchImportPresented = true
-                        } label: {
-                            Label("Импорт маркеров из CSV", systemImage: "square.and.arrow.down")
-                        }
-
-                        Button {
-                            exportAllTimelines()
-                        } label: {
-                            Label("Экспорт CSV всех таймлайнов", systemImage: "square.and.arrow.up")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 20, weight: .regular))
-                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 17))
                 }
             }
         }
     }
 
-    // MARK: - Bottom bar
-
-    private var bottomNotesStyleBar: some View {
-        Group {
-            if isEditing {
-                editingBottomBar
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-            } else {
-                HStack(spacing: 12) {
-                    searchBar
-                    addButton
-                }
-                .padding(16)
-            }
-        }
-    }
-
-    private var editingBottomBar: some View {
-        HStack(spacing: 12) {
-                // Share button
-                Button {
-                    exportSelectedTimelines()
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(.white)
-                        .frame(width: 50, height: 50)
-                        .background(
-                            Circle()
-                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
-                        )
-                }
-                .disabled(selectedTimelines.isEmpty)
-
-                // Duplicate button
-                Button {
-                    duplicateSelectedTimelines()
-                } label: {
-                    Image(systemName: "plus.square.on.square")
-                        .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(.white)
-                        .frame(width: 50, height: 50)
-                        .background(
-                            Circle()
-                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
-                        )
-                }
-                .disabled(selectedTimelines.isEmpty)
-
-                Spacer()
-
-                // Delete button
-                Button {
-                    deleteSelectedTimelines()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(.white)
-                        .frame(width: 50, height: 50)
-                        .background(
-                            Circle()
-                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : .red)
-                        )
-                }
-                .disabled(selectedTimelines.isEmpty)
-            }
-    }
+    // MARK: - Search Bar
 
     private var searchBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 14))
 
             TextField("Поиск", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: 15))
         }
         .padding(.horizontal, 12)
-        .frame(height: 44)
+        .frame(height: 36)
         .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-        )
-        .scaleEffect(isSearchPressed ? 0.95 : 1.0)
-        .brightness(isSearchPressed ? -0.05 : 0)
-        .gesture(
-            DragGesture()
-                .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isSearchPressed = true
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isSearchPressed = false
-                    }
-                }
-        )
-    }
-
-    private var addButton: some View {
-        Button {
-            isAddTimelinePresented = true
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundColor(.white)
-                .frame(width: 44, height: 44)
-                .background(Circle().fill(Color.accentColor))
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(isAddButtonPressed ? 0.92 : 1.0)
-        .brightness(isAddButtonPressed ? -0.1 : 0)
-        .gesture(
-            DragGesture()
-                .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isAddButtonPressed = true
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isAddButtonPressed = false
-                    }
-                }
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(.systemGray6))
         )
     }
 
@@ -535,6 +472,11 @@ struct ProjectView: View {
         repository.removeTimelines(at: indices)
         selectedTimelines.removeAll()
         isEditing = false
+
+        // Clear selection if deleted
+        if let selected = selectedTimelineID, !repository.project.timelines.contains(where: { $0.id == selected }) {
+            selectedTimelineID = repository.project.timelines.first?.id
+        }
     }
 
     private func duplicateSelectedTimelines() {
@@ -684,6 +626,13 @@ struct ProjectView: View {
 
     private func deleteTimeline(_ timeline: Timeline) {
         guard let index = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) else { return }
+
+        // Clear selection if deleting currently selected
+        if selectedTimelineID == timeline.id {
+            let nextIndex = index > 0 ? index - 1 : (repository.project.timelines.count > 1 ? 1 : nil)
+            selectedTimelineID = nextIndex.map { repository.project.timelines[$0].id }
+        }
+
         repository.removeTimelines(at: IndexSet(integer: index))
     }
 

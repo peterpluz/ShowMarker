@@ -23,11 +23,19 @@ final class AudioPlayerService: ObservableObject {
         configureAudioSession()
 
         let item = AVPlayerItem(url: url)
-        player = AVPlayer(playerItem: item)
+        let newPlayer = AVPlayer(playerItem: item)
+
+        // Disable automatic waiting for buffering to minimize playback delay
+        newPlayer.automaticallyWaitsToMinimizeStalling = false
+
+        player = newPlayer
 
         Task {
             let d = try? await item.asset.load(.duration)
             duration = d?.seconds ?? 0
+
+            // Pre-buffer the audio to ensure instant playback
+            await item.asset.loadValues(forKeys: ["playable", "duration"])
         }
 
         addTimeObserver()

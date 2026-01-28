@@ -91,6 +91,11 @@ struct TimelineScreen: View {
                     // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
                     timelineRedrawTrigger.toggle()
                 }
+                .overlay {
+                    if viewModel.isLoading {
+                        loadingOverlay
+                    }
+                }
                 .sheet(item: $timePickerMarker) { marker in
                     timecodePickerSheet(for: marker)
                 }
@@ -100,6 +105,7 @@ struct TimelineScreen: View {
                 .sheet(isPresented: $isTimelineSettingsPresented) {
                     TimelineSettingsSheet(
                         viewModel: viewModel,
+                        repository: viewModel.repository,
                         onEditBPM: {
                             isTimelineSettingsPresented = false
                             bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
@@ -389,6 +395,30 @@ struct TimelineScreen: View {
         }
     }
 
+    private var loadingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                ProgressView()
+                    .scaleEffect(1.5)
+                    .tint(.white)
+
+                Text("Загрузка...")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+            }
+            .padding(32)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+            )
+        }
+        .transition(.opacity)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.isLoading)
+    }
+
     private var renameMarkerBinding: Binding<Bool> {
         Binding(
             get: { renamingMarker != nil },
@@ -464,13 +494,13 @@ struct TimelineScreen: View {
                     Button {
                         isCSVImportPresented = true
                     } label: {
-                        Label("Import markers (CSV)", systemImage: "square.and.arrow.up")
+                        Label("Импорт маркеров (CSV)", systemImage: "square.and.arrow.down")
                     }
 
                     Button {
                         prepareExport()
                     } label: {
-                        Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
+                        Label("Экспорт маркеров (CSV)", systemImage: "square.and.arrow.up")
                     }
                     .disabled(viewModel.markers.isEmpty)
 
