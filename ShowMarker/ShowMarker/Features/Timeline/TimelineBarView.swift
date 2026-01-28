@@ -19,6 +19,10 @@ struct TimelineBarView: View {
     let beatGridOffset: Double
     let onBeatGridOffsetChange: (Double) -> Void
 
+    // Time signature and preroll
+    let timeSignature: TimeSignature
+    let prerollSeconds: Double
+
     let hasAudio: Bool
 
     let onAddAudio: () -> Void
@@ -541,6 +545,8 @@ struct TimelineBarView: View {
             }
     }
 
+    @State private var dragStartX: CGFloat = 0
+
     private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -573,16 +579,19 @@ struct TimelineBarView: View {
                     return
                 }
 
-                // Regular playhead seeking
+                // Regular playhead seeking - use startLocation for immediate response
                 if dragStartTime == nil {
                     dragStartTime = currentTime
+                    dragStartX = value.startLocation.x
                     dragCurrentTime = currentTime
                     isTimelineDragging = true
                     dragEndTime = nil
                 }
                 guard let start = dragStartTime else { return }
 
-                let delta = Double(value.translation.width) * secondsPerPixel * -1
+                // Calculate delta from startLocation to current location for immediate response
+                let deltaX = value.location.x - dragStartX
+                let delta = Double(deltaX) * secondsPerPixel * -1
                 dragCurrentTime = clamp(start + delta)
                 onSeek(dragCurrentTime)
             }
@@ -596,6 +605,7 @@ struct TimelineBarView: View {
                 } else {
                     // Regular playhead seeking cleanup
                     dragStartTime = nil
+                    dragStartX = 0
                     isTimelineDragging = false
                     dragEndTime = Date()
                 }
@@ -737,9 +747,42 @@ struct TimelineBarView: View {
                     context.fill(lowerPath, with: .color(fillColor))
                 }
 
+                // Draw preroll zone if set
+                if prerollSeconds > 0 && duration > 0 {
+                    let prerollWidth = (prerollSeconds / duration) * canvasWidth
+
+                    // Draw semi-transparent red hatched zone for preroll
+                    var prerollPath = Path()
+                    prerollPath.addRect(CGRect(x: 0, y: 0, width: prerollWidth, height: size.height))
+                    context.fill(prerollPath, with: .color(Color.red.opacity(0.08)))
+
+                    // Draw diagonal hatching lines
+                    let hatchSpacing: CGFloat = 12
+                    let hatchCount = Int(ceil((prerollWidth + size.height) / hatchSpacing))
+
+                    for i in 0..<hatchCount {
+                        let startX = CGFloat(i) * hatchSpacing
+                        var hatchPath = Path()
+                        hatchPath.move(to: CGPoint(x: startX, y: 0))
+                        hatchPath.addLine(to: CGPoint(x: max(0, startX - size.height), y: size.height))
+
+                        // Clip to preroll zone
+                        context.clip(to: Path(CGRect(x: 0, y: 0, width: prerollWidth, height: size.height)))
+                        context.stroke(hatchPath, with: .color(Color.red.opacity(0.15)), lineWidth: 1)
+                        context.resetClip()
+                    }
+
+                    // Draw preroll end line
+                    var prerollEndLine = Path()
+                    prerollEndLine.move(to: CGPoint(x: prerollWidth, y: 0))
+                    prerollEndLine.addLine(to: CGPoint(x: prerollWidth, y: size.height))
+                    context.stroke(prerollEndLine, with: .color(Color.red.opacity(0.4)), lineWidth: 2)
+                }
+
                 // Draw beat grid if enabled
                 if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0 {
                     let beatInterval = 60.0 / bpm  // seconds per beat
+                    let beatsPerBar = timeSignature.beatsPerBar
                     let beatCount = Int(ceil((duration - beatGridOffset) / beatInterval))
 
                     for i in 0...beatCount {
@@ -758,7 +801,7 @@ struct TimelineBarView: View {
 
                         // First beat (i==0) is the draggable offset line - make it accent colored
                         let isOffsetLine = i == 0
-                        let isBarLine = i % 4 == 0
+                        let isBarLine = i % beatsPerBar == 0
 
                         let lineColor: Color
                         let lineWidth: CGFloat

@@ -1,5 +1,20 @@
 import Foundation
 
+/// Тактовый размер (time signature)
+enum TimeSignature: Int, Codable, CaseIterable, Sendable {
+    case fourFour = 4   // 4/4
+    case threeFour = 3  // 3/4
+
+    var beatsPerBar: Int { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .fourFour: return "4/4"
+        case .threeFour: return "3/4"
+        }
+    }
+}
+
 // ✅ ИСПРАВЛЕНО: добавлен Sendable
 struct Timeline: Codable, Identifiable, Sendable {
     let id: UUID
@@ -28,6 +43,12 @@ struct Timeline: Codable, Identifiable, Sendable {
     /// Сдвиг сетки битов в секундах (offset для первого бита)
     var beatGridOffset: Double
 
+    /// Преролл в секундах (время до начала аудио)
+    var prerollSeconds: Double
+
+    /// Тактовый размер
+    var timeSignature: TimeSignature
+
     init(
         id: UUID = UUID(),
         name: String,
@@ -39,7 +60,9 @@ struct Timeline: Codable, Identifiable, Sendable {
         isBeatGridEnabled: Bool = false,
         isSnapToGridEnabled: Bool = false,
         isMetronomeEnabled: Bool = false,
-        beatGridOffset: Double = 0
+        beatGridOffset: Double = 0,
+        prerollSeconds: Double = 0,
+        timeSignature: TimeSignature = .fourFour
     ) {
         self.id = id
         self.name = name
@@ -52,6 +75,8 @@ struct Timeline: Codable, Identifiable, Sendable {
         self.isSnapToGridEnabled = isSnapToGridEnabled
         self.isMetronomeEnabled = isMetronomeEnabled
         self.beatGridOffset = beatGridOffset
+        self.prerollSeconds = prerollSeconds
+        self.timeSignature = timeSignature
     }
 }
 
@@ -62,6 +87,7 @@ extension Timeline {
         case id, name, createdAt, audio, fps, markers
         case bpm, isBeatGridEnabled, isSnapToGridEnabled
         case isMetronomeEnabled, beatGridOffset
+        case prerollSeconds, timeSignature
     }
 
     init(from decoder: Decoder) throws {
@@ -80,6 +106,8 @@ extension Timeline {
         isSnapToGridEnabled = (try? container.decode(Bool.self, forKey: .isSnapToGridEnabled)) ?? false
         isMetronomeEnabled = (try? container.decode(Bool.self, forKey: .isMetronomeEnabled)) ?? false
         beatGridOffset = (try? container.decode(Double.self, forKey: .beatGridOffset)) ?? 0
+        prerollSeconds = (try? container.decode(Double.self, forKey: .prerollSeconds)) ?? 0
+        timeSignature = (try? container.decode(TimeSignature.self, forKey: .timeSignature)) ?? .fourFour
     }
 
     func encode(to encoder: Encoder) throws {
@@ -96,5 +124,7 @@ extension Timeline {
         try container.encode(isSnapToGridEnabled, forKey: .isSnapToGridEnabled)
         try container.encode(isMetronomeEnabled, forKey: .isMetronomeEnabled)
         try container.encode(beatGridOffset, forKey: .beatGridOffset)
+        try container.encode(prerollSeconds, forKey: .prerollSeconds)
+        try container.encode(timeSignature, forKey: .timeSignature)
     }
 }

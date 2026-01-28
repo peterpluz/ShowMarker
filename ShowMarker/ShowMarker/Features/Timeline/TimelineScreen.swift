@@ -643,6 +643,8 @@ struct TimelineScreen: View {
             onBeatGridOffsetChange: { offset in
                 viewModel.setBeatGridOffset(offset)
             },
+            timeSignature: viewModel.timeSignature,
+            prerollSeconds: viewModel.prerollSeconds,
             hasAudio: hasAudio,
             onAddAudio: {
                 print("🎵 [TimelineScreen] onAddAudio called, setting isPickerPresented = true")

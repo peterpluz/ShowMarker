@@ -191,9 +191,13 @@ struct ProjectView: View {
                     }
                     .frame(width: 32, height: 32)  // Extra padding to prevent clipping
 
-                    Text(timeline.name)
-                        .foregroundColor(.primary)
-                        .padding(.vertical, 6)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(timeline.name)
+                            .foregroundColor(.primary)
+
+                        timelineSubtitle(timeline)
+                    }
+                    .padding(.vertical, 6)
 
                     Spacer()
                 }
@@ -209,9 +213,13 @@ struct ProjectView: View {
                         timelineID: timeline.id
                     )
                 } label: {
-                    Text(timeline.name)
-                        .foregroundColor(.primary)
-                        .padding(.vertical, 6)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(timeline.name)
+                            .foregroundColor(.primary)
+
+                        timelineSubtitle(timeline)
+                    }
+                    .padding(.vertical, 6)
                 }
                 .swipeActions(edge: .leading, allowsFullSwipe: false) {
                     Button {
@@ -510,6 +518,45 @@ struct ProjectView: View {
                     }
                 }
         )
+    }
+
+    // MARK: - Timeline Subtitle
+
+    @ViewBuilder
+    private func timelineSubtitle(_ timeline: Timeline) -> some View {
+        let markerCount = timeline.markers.count
+        let hasBPM = timeline.bpm != nil
+
+        if markerCount > 0 || hasBPM {
+            HStack(spacing: 8) {
+                if let bpm = timeline.bpm {
+                    Text("\(Int(bpm)) BPM")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                if markerCount > 0 {
+                    Text("\(markerCount) маркер\(markerWordEnding(markerCount))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private func markerWordEnding(_ count: Int) -> String {
+        let mod10 = count % 10
+        let mod100 = count % 100
+
+        if mod100 >= 11 && mod100 <= 19 {
+            return "ов"
+        }
+
+        switch mod10 {
+        case 1: return ""
+        case 2, 3, 4: return "а"
+        default: return "ов"
+        }
     }
 
     // MARK: - Helpers

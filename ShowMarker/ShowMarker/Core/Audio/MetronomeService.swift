@@ -8,11 +8,14 @@ class MetronomeService: ObservableObject {
 
     @Published var isPlaying: Bool = false
     @Published var volume: Float = 0.5
-    @Published var currentBeat: Int = 0  // 0-3 for 4/4 time
+    @Published var currentBeat: Int = 0  // 0-based beat in bar
 
     private var timer: Timer?
     private var audioPlayers: [AVAudioPlayer] = []
     private var bpm: Double = 120
+    private var beatsPerBar: Int = 4
+    private var beatGridOffset: Double = 0
+    private var startTime: Double = 0
 
     // Звуки метронома (синтезированные)
     private var clickSound: AVAudioPlayer?
@@ -107,25 +110,60 @@ class MetronomeService: ObservableObject {
         return data
     }
 
-    /// Запускает метроном
-    func start(bpm: Double) {
+    /// Запускает метроном синхронизированно с сеткой
+    /// - Parameters:
+    ///   - bpm: темп в ударах в минуту
+    ///   - currentTime: текущее время воспроизведения в секундах
+    ///   - beatGridOffset: смещение сетки битов в секундах
+    ///   - beatsPerBar: количество ударов в такте (4 для 4/4, 3 для 3/4)
+    func start(bpm: Double, currentTime: Double = 0, beatGridOffset: Double = 0, beatsPerBar: Int = 4) {
         stop()  // Останавливаем предыдущий, если был
 
         self.bpm = bpm
+        self.beatsPerBar = beatsPerBar
+        self.beatGridOffset = beatGridOffset
+        self.startTime = currentTime
         self.isPlaying = true
-        self.currentBeat = 0
 
-        let interval = 60.0 / bpm  // Интервал между кликами в секундах
+        let beatInterval = 60.0 / bpm  // Интервал между кликами в секундах
 
-        // Первый клик сразу
-        playClick()
+        // Вычисляем текущую позицию в сетке относительно offset
+        let timeFromOffset = currentTime - beatGridOffset
 
-        // Запускаем таймер
+        // Вычисляем, на каком бите мы сейчас (может быть дробным)
+        let currentBeatPosition = timeFromOffset / beatInterval
+
+        // Определяем текущий бит в такте (0-based)
+        let absoluteBeat = Int(floor(currentBeatPosition))
+        self.currentBeat = ((absoluteBeat % beatsPerBar) + beatsPerBar) % beatsPerBar
+
+        // Вычисляем время до следующего бита
+        let nextBeatPosition = ceil(currentBeatPosition)
+        let timeToNextBeat = (nextBeatPosition - currentBeatPosition) * beatInterval
+
+        // Если мы почти на бите (в пределах 20ms), играем сейчас
+        let tolerance = 0.02
+        if timeToNextBeat < tolerance || timeToNextBeat > beatInterval - tolerance {
+            playClick()
+            // Запускаем таймер с полным интервалом
+            scheduleTimer(interval: beatInterval)
+        } else {
+            // Ждём до следующего бита, затем запускаем регулярный таймер
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeToNextBeat) { [weak self] in
+                guard let self = self, self.isPlaying else { return }
+                self.playClick()
+                self.scheduleTimer(interval: beatInterval)
+            }
+        }
+
+        print("🥁 Metronome started at \(bpm) BPM, beat \(currentBeat + 1)/\(beatsPerBar), timeToNext: \(String(format: "%.3f", timeToNextBeat))s")
+    }
+
+    private func scheduleTimer(interval: Double) {
+        timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.playClick()
         }
-
-        print("🥁 Metronome started at \(bpm) BPM")
     }
 
     /// Останавливает метроном
@@ -148,10 +186,11 @@ class MetronomeService: ObservableObject {
 
     /// Воспроизводит клик
     private func playClick() {
-        currentBeat = (currentBeat + 1) % 4
+        // Переходим к следующему биту
+        currentBeat = (currentBeat + 1) % beatsPerBar
 
-        // Первый бит каждого такта - акцент
-        let player = (currentBeat == 1) ? accentSound : clickSound
+        // Первый бит каждого такта (beat 0) - акцент
+        let player = (currentBeat == 0) ? accentSound : clickSound
         player?.volume = volume
         player?.currentTime = 0
         player?.play()

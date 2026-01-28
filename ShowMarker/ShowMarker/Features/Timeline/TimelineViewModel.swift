@@ -143,6 +143,14 @@ final class TimelineViewModel: ObservableObject {
         timeline?.beatGridOffset ?? 0
     }
 
+    var prerollSeconds: Double {
+        timeline?.prerollSeconds ?? 0
+    }
+
+    var timeSignature: TimeSignature {
+        timeline?.timeSignature ?? .fourFour
+    }
+
     // MARK: - Computed
 
     var visibleMarkers: [TimelineMarker] {
@@ -286,9 +294,14 @@ final class TimelineViewModel: ObservableObject {
                     self.flashedMarkers.removeAll()
                     print("▶️ [Detection] Playback started at frame \(startFrame), reset flashed markers")
 
-                    // Start metronome if enabled and BPM is set
+                    // Start metronome synced to beat grid if enabled and BPM is set
                     if self.isMetronomeUserEnabled, let bpm = self.bpm {
-                        self.metronome.start(bpm: bpm)
+                        self.metronome.start(
+                            bpm: bpm,
+                            currentTime: self.currentTime,
+                            beatGridOffset: self.beatGridOffset,
+                            beatsPerBar: self.timeSignature.beatsPerBar
+                        )
                     }
                 } else {
                     // Playback stopped - reset to initial state
@@ -674,9 +687,14 @@ final class TimelineViewModel: ObservableObject {
         repository.project.timelines[idx].isMetronomeEnabled.toggle()
         objectWillChange.send()
 
-        // If toggling on and currently playing, start the metronome
+        // If toggling on and currently playing, start the metronome synced to beat grid
         if repository.project.timelines[idx].isMetronomeEnabled && isPlaying, let bpm = bpm {
-            metronome.start(bpm: bpm)
+            metronome.start(
+                bpm: bpm,
+                currentTime: currentTime,
+                beatGridOffset: beatGridOffset,
+                beatsPerBar: timeSignature.beatsPerBar
+            )
         } else {
             metronome.stop()
         }
@@ -685,6 +703,18 @@ final class TimelineViewModel: ObservableObject {
     func setBeatGridOffset(_ offset: Double) {
         guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         repository.project.timelines[idx].beatGridOffset = offset
+        objectWillChange.send()
+    }
+
+    func setPrerollSeconds(_ seconds: Double) {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].prerollSeconds = max(0, seconds)
+        objectWillChange.send()
+    }
+
+    func setTimeSignature(_ signature: TimeSignature) {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].timeSignature = signature
         objectWillChange.send()
     }
 
