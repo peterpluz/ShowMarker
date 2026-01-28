@@ -23,14 +23,36 @@ final class AudioPlayerService: ObservableObject {
         configureAudioSession()
 
         let item = AVPlayerItem(url: url)
-        player = AVPlayer(playerItem: item)
+        let newPlayer = AVPlayer(playerItem: item)
+
+        // Disable automatic buffering wait to start playback immediately
+        newPlayer.automaticallyWaitsToMinimizeStalling = false
+
+        player = newPlayer
 
         Task {
             let d = try? await item.asset.load(.duration)
             duration = d?.seconds ?? 0
+
+            // Preroll player for immediate playback when play() is called
+            await prerollPlayer()
         }
 
         addTimeObserver()
+    }
+
+    /// Prerolls the player to minimize delay when play() is called
+    private func prerollPlayer() async {
+        guard let player else { return }
+
+        do {
+            let ready = try await player.preroll(atRate: 1.0)
+            if ready {
+                print("✅ Player prerolled and ready for immediate playback")
+            }
+        } catch {
+            print("⚠️ Player preroll failed: \(error)")
+        }
     }
 
     // MARK: - Playback

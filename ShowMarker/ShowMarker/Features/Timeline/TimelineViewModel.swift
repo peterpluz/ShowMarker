@@ -23,6 +23,9 @@ final class TimelineViewModel: ObservableObject {
     private var waveformMipmaps: [[Float]] = []
     private var waveformCacheKey: String?
 
+    /// Indicates whether the timeline is still loading (waveform, audio, etc.)
+    @Published private(set) var isLoading: Bool = true
+
     // MARK: - Auto-scroll state
 
     @Published var isAutoScrollEnabled: Bool = true  // Enabled by default
@@ -199,17 +202,49 @@ final class TimelineViewModel: ObservableObject {
         setupBindings()
         setupRepositoryObserver()
 
-        // Load initial audio and duration from timeline
-        // Используем временную директорию для воспроизведения (аудио извлекается туда при открытии документа)
-        if let timelineAudio = timeline?.audio {
-            self.duration = timelineAudio.duration
+        // Load audio and waveform asynchronously to prevent UI freeze
+        Task { @MainActor in
+            await loadTimelineDataAsync()
+        }
+    }
 
-            // ✅ CRITICAL FIX: Load audio into player on initialization
-            let audioURL = repository.audioPlaybackURL(relativePath: timelineAudio.relativePath)
-            audioPlayer.load(url: audioURL)
-            print("✅ Audio loaded into player on init: \(audioURL)")
+    /// Loads timeline data (audio, waveform) asynchronously
+    /// Sets isLoading = false when complete
+    private func loadTimelineDataAsync() async {
+        defer {
+            isLoading = false
+            print("✅ Timeline loading complete")
+        }
 
-            loadWaveformCache(for: timelineAudio, documentURL: repository.audioTempDirectory)
+        guard let timelineAudio = timeline?.audio else {
+            print("ℹ️ No audio in timeline, loading complete")
+            return
+        }
+
+        self.duration = timelineAudio.duration
+
+        // Load audio into player
+        let audioURL = repository.audioPlaybackURL(relativePath: timelineAudio.relativePath)
+        audioPlayer.load(url: audioURL)
+        print("✅ Audio loaded into player: \(audioURL)")
+
+        // Load or generate waveform cache
+        let cacheKey = "\(timelineID.uuidString)_\(timelineAudio.id.uuidString)"
+        self.waveformCacheKey = cacheKey
+
+        if let cached = WaveformCache.load(cacheKey: cacheKey) {
+            // Waveform found in cache
+            self.waveformMipmaps = cached.mipmaps
+            self.cachedWaveform = cached.mipmaps.first ?? []
+            print("✅ Waveform loaded from cache: \(cached.mipmaps.count) mipmap levels")
+        } else {
+            // Generate waveform in background
+            print("🌊 No waveform cache found, generating...")
+            await generateWaveformCache(
+                audio: timelineAudio,
+                documentURL: repository.audioTempDirectory,
+                cacheKey: cacheKey
+            )
         }
     }
 
@@ -371,27 +406,6 @@ final class TimelineViewModel: ObservableObject {
     }
     
     // MARK: - Waveform Cache
-    
-    private func loadWaveformCache(for audio: TimelineAudio, documentURL: URL) {
-        let cacheKey = "\(timelineID.uuidString)_\(audio.id.uuidString)"
-        self.waveformCacheKey = cacheKey
-
-        if let cached = WaveformCache.load(cacheKey: cacheKey) {
-            // Load all mipmap levels for adaptive rendering
-            self.waveformMipmaps = cached.mipmaps
-            self.cachedWaveform = cached.mipmaps.first ?? []
-            print("✅ Waveform loaded from cache: \(cached.mipmaps.count) mipmap levels")
-            for (idx, level) in cached.mipmaps.enumerated() {
-                print("   Level \(idx): \(level.count) samples")
-            }
-            return
-        }
-
-        print("🌊 No waveform cache found, will generate...")
-        Task {
-            await generateWaveformCache(audio: audio, documentURL: documentURL, cacheKey: cacheKey)
-        }
-    }
 
     private func generateWaveformCache(audio: TimelineAudio, documentURL: URL, cacheKey: String) async {
         print("🌊 generateWaveformCache started")

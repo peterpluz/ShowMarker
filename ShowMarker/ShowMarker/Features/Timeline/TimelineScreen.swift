@@ -86,48 +86,53 @@ struct TimelineScreen: View {
 
     var body: some View {
         ZStack {
-            mainContent
-                .onChange(of: viewModel.currentTime) { oldValue, newValue in
-                    // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
-                    timelineRedrawTrigger.toggle()
-                }
-                .sheet(item: $timePickerMarker) { marker in
-                    timecodePickerSheet(for: marker)
-                }
-                .sheet(isPresented: $isTagFilterPresented) {
-                    tagFilterSheet
-                }
-                .sheet(isPresented: $isTimelineSettingsPresented) {
-                    TimelineSettingsSheet(
-                        viewModel: viewModel,
-                        onEditBPM: {
-                            isTimelineSettingsPresented = false
-                            bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
-                            isEditingBPM = true
-                        },
-                        onReplaceAudio: {
-                            isTimelineSettingsPresented = false
-                            isPickerPresented = true
-                        },
-                        onDeleteAudio: {
-                            isTimelineSettingsPresented = false
-                            viewModel.removeAudio()
-                        },
-                        onDeleteAllMarkers: {
-                            isTimelineSettingsPresented = false
-                            showDeleteAllMarkersConfirmation = true
-                        }
-                    )
+            if viewModel.isLoading {
+                // Loading screen while timeline data is being prepared
+                loadingView
+            } else {
+                mainContent
+                    .onChange(of: viewModel.currentTime) { oldValue, newValue in
+                        // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
+                        timelineRedrawTrigger.toggle()
+                    }
+                    .sheet(item: $timePickerMarker) { marker in
+                        timecodePickerSheet(for: marker)
+                    }
+                    .sheet(isPresented: $isTagFilterPresented) {
+                        tagFilterSheet
+                    }
+                    .sheet(isPresented: $isTimelineSettingsPresented) {
+                        TimelineSettingsSheet(
+                            viewModel: viewModel,
+                            onEditBPM: {
+                                isTimelineSettingsPresented = false
+                                bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
+                                isEditingBPM = true
+                            },
+                            onReplaceAudio: {
+                                isTimelineSettingsPresented = false
+                                isPickerPresented = true
+                            },
+                            onDeleteAudio: {
+                                isTimelineSettingsPresented = false
+                                viewModel.removeAudio()
+                            },
+                            onDeleteAllMarkers: {
+                                isTimelineSettingsPresented = false
+                                showDeleteAllMarkersConfirmation = true
+                            }
+                        )
+                    }
+
+                // Tag picker menu overlay
+                if let marker = editingTagMarker {
+                    tagPickerMenuOverlay(for: marker)
                 }
 
-            // Tag picker menu overlay
-            if let marker = editingTagMarker {
-                tagPickerMenuOverlay(for: marker)
-            }
-
-            // Marker name popup overlay
-            if isMarkerNamePopupPresented {
-                markerNamePopupOverlay
+                // Marker name popup overlay
+                if isMarkerNamePopupPresented {
+                    markerNamePopupOverlay
+                }
             }
         }
         .sheet(isPresented: $isPickerPresented) {
@@ -212,6 +217,22 @@ struct TimelineScreen: View {
             } message: {
                 Text("Укажите темп композиции (20-300 BPM)")
             }
+    }
+
+    // MARK: - Loading View
+
+    private var loadingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.5)
+            Text("Загрузка...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(UIColor.systemBackground))
+        .navigationTitle(viewModel.name)
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Main Content

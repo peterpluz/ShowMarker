@@ -102,15 +102,19 @@ struct TimelineBarView: View {
             let totalWidth = geo.size.width
             let visibleRatio = 1.0 / zoomScale
             let visibleWidth = max(20, totalWidth * visibleRatio)
-            
+            let halfCapsule = visibleWidth / 2
+
             // Normalized playhead position (0...1)
             let timeRatio = duration > 0 ? effectiveCurrentTime() / duration : 0
-            
-            // Capsule position - centered on playhead, clamped to edges
-            let capsuleCenterIdeal = totalWidth * timeRatio
-            let halfCapsule = visibleWidth / 2
-            let capsuleCenter = max(halfCapsule, min(totalWidth - halfCapsule, capsuleCenterIdeal))
+            let playheadX = totalWidth * timeRatio
+
+            // Capsule position - follows playhead but clamps at edges
+            // This allows playhead to reach edges while capsule stays visible
+            let capsuleCenter = max(halfCapsule, min(totalWidth - halfCapsule, playheadX))
             let xOffset = capsuleCenter - halfCapsule
+
+            // Mini playhead position within capsule (can reach edges of timeline)
+            let miniPlayheadX = playheadX
 
             ZStack(alignment: .leading) {
                 // Background track
@@ -133,18 +137,21 @@ struct TimelineBarView: View {
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 if capsuleDragStart == nil {
-                                    capsuleDragStart = xOffset
+                                    // Store the initial touch position relative to playhead
+                                    capsuleDragStart = playheadX
                                     capsuleDragTime = effectiveCurrentTime()
                                     isCapsuleDragging = true
                                     capsuleDragEndTime = nil
                                 }
 
-                                guard let startOffset = capsuleDragStart else { return }
+                                guard let startPlayheadX = capsuleDragStart else { return }
 
-                                let newX = startOffset + value.translation.width
-                                let clampedX = max(0, min(totalWidth - visibleWidth, newX))
+                                // Move playhead directly based on drag translation
+                                // This allows playhead to reach 0 and totalWidth
+                                let newPlayheadX = startPlayheadX + value.translation.width
+                                let clampedPlayheadX = max(0, min(totalWidth, newPlayheadX))
 
-                                let newTimeRatio = (clampedX + halfCapsule) / totalWidth
+                                let newTimeRatio = clampedPlayheadX / totalWidth
                                 let newTime = duration * newTimeRatio
 
                                 capsuleDragTime = newTime
@@ -157,19 +164,18 @@ struct TimelineBarView: View {
                             }
                     )
 
-                // Mini playhead
+                // Mini playhead - shows actual playhead position
+                // Can move from edge to edge of timeline, not limited to capsule center
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
                     .offset(x: {
-                        let idealCapsuleCenter = totalWidth * timeRatio
-                        let actualCapsuleCenter = capsuleCenter
-                        let capsuleShift = actualCapsuleCenter - idealCapsuleCenter
-                        let miniPlayheadX = actualCapsuleCenter - capsuleShift
+                        // Clamp mini playhead to stay within capsule bounds visually
+                        // but the actual position represents the real playhead
                         let minX = xOffset + 1
-                        let maxX = xOffset + visibleWidth - 1
+                        let maxX = xOffset + visibleWidth - 3
                         let clampedX = max(minX, min(maxX, miniPlayheadX))
-                        return clampedX - 1
+                        return clampedX
                     }())
                     .allowsHitTesting(false)
             }
@@ -790,15 +796,16 @@ struct TimelineBarView: View {
         GeometryReader { geometry in
             let normalizedPosition = beatGridOffset / duration
             let x = normalizedPosition * width
-            let hitAreaWidth: CGFloat = 20  // Wide enough to easily tap
+            let hitAreaWidth: CGFloat = 44  // Large enough to easily tap on mobile
 
             // Invisible drag handle over the first beat grid line
             Rectangle()
-                .fill(Color.clear)
+                .fill(isDraggingBeatGridOffset ? Color.accentColor.opacity(0.15) : Color.clear)
                 .frame(width: hitAreaWidth, height: Self.barHeight)
                 .position(x: x, y: Self.barHeight / 2)
+                .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 0)
+                    DragGesture(minimumDistance: 0, coordinateSpace: .named("beatGridOverlay"))
                         .onChanged { value in
                             guard draggedMarkerID == nil else { return }
 
@@ -807,9 +814,9 @@ struct TimelineBarView: View {
                                 beatGridOffsetDragStart = beatGridOffset
                             }
 
-                            // Calculate new offset based on drag position
+                            // Calculate new offset based on drag position in geometry coordinate space
                             let normalizedX = value.location.x / width
-                            let newOffset = clamp(normalizedX * duration)
+                            let newOffset = max(0, min(duration, normalizedX * duration))
 
                             // Apply offset immediately
                             onBeatGridOffsetChange(newOffset)
@@ -819,6 +826,7 @@ struct TimelineBarView: View {
                         }
                 )
         }
+        .coordinateSpace(name: "beatGridOverlay")
     }
 
     // MARK: - Helpers
