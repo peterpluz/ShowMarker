@@ -643,6 +643,9 @@ struct TimelineScreen: View {
             onBeatGridOffsetChange: { offset in
                 viewModel.setBeatGridOffset(offset)
             },
+            onBeatGridOffsetCommit: { oldOffset, newOffset in
+                viewModel.commitBeatGridOffsetChange(oldOffset: oldOffset, newOffset: newOffset)
+            },
             timeSignature: viewModel.timeSignature,
             prerollSeconds: viewModel.prerollSeconds,
             hasAudio: hasAudio,

@@ -549,7 +549,8 @@ final class TimelineViewModel: ObservableObject {
     
     func seek(to time: Double) {
         let clamped = max(0, min(time, duration))
-        audioPlayer.seek(by: clamped - currentTime)
+        // Use direct absolute positioning for more responsive micro-movements
+        audioPlayer.seekTo(time: clamped)
     }
     
     func seekBackward() {
@@ -704,6 +705,15 @@ final class TimelineViewModel: ObservableObject {
         guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         repository.project.timelines[idx].beatGridOffset = offset
         objectWillChange.send()
+    }
+
+    func commitBeatGridOffsetChange(oldOffset: Double, newOffset: Double) {
+        // Register the change in undo system
+        let action = ChangeBeatGridOffsetAction(oldOffset: oldOffset, newOffset: newOffset)
+        // Note: The action won't re-execute since the value is already set
+        // We just need to add it to the undo stack
+        undoManager.performAction(action)
+        print("✅ Beat grid offset change committed: \(oldOffset) → \(newOffset)")
     }
 
     func setPrerollSeconds(_ seconds: Double) {

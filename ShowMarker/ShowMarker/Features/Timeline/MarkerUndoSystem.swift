@@ -201,6 +201,34 @@ struct DeleteAllMarkersAction: UndoableAction {
     }
 }
 
+// MARK: - Change Beat Grid Offset Action
+
+struct ChangeBeatGridOffsetAction: UndoableAction {
+    let oldOffset: Double
+    let newOffset: Double
+    let timestamp: Date
+
+    var actionDescription: String {
+        "Сместить сетку BPM"
+    }
+
+    init(oldOffset: Double, newOffset: Double, timestamp: Date = Date()) {
+        self.oldOffset = oldOffset
+        self.newOffset = newOffset
+        self.timestamp = timestamp
+    }
+
+    func execute(in repository: ProjectRepository, timelineID: UUID) {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].beatGridOffset = newOffset
+    }
+
+    func undo(in repository: ProjectRepository, timelineID: UUID) {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].beatGridOffset = oldOffset
+    }
+}
+
 // MARK: - History Item
 
 struct HistoryItem {

@@ -90,6 +90,16 @@ final class AudioPlayerService: ObservableObject {
         player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
+    /// Seek to absolute time position - more responsive for drag operations
+    func seekTo(time: Double) {
+        guard let player else { return }
+        let target = max(0, min(time, duration))
+        let cmTime = CMTime(seconds: target, preferredTimescale: 600)
+        player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        // Update currentTime immediately for responsive UI
+        currentTime = target
+    }
+
     // MARK: - Audio Session
 
     private func configureAudioSession() {

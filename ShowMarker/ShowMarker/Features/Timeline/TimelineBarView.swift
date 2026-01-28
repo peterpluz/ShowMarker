@@ -2,8 +2,8 @@ import SwiftUI
 
 struct TimelineBarView: View {
 
-    let duration: Double
-    let currentTime: Double
+    let duration: Double  // Audio duration (without preroll)
+    let currentTime: Double  // Audio time (without preroll offset)
 
     let waveform: [Float]
     let waveform2: [Float]?  // Second waveform for 4-channel audio (channels 3-4)
@@ -18,6 +18,7 @@ struct TimelineBarView: View {
     let isSnapToGridEnabled: Bool
     let beatGridOffset: Double
     let onBeatGridOffsetChange: (Double) -> Void
+    let onBeatGridOffsetCommit: (Double, Double) -> Void  // (oldOffset, newOffset) for undo
 
     // Time signature and preroll
     let timeSignature: TimeSignature
@@ -26,7 +27,29 @@ struct TimelineBarView: View {
     let hasAudio: Bool
 
     let onAddAudio: () -> Void
-    let onSeek: (Double) -> Void
+    let onSeek: (Double) -> Void  // Takes audio time (not display time)
+
+    // MARK: - Computed Properties for Preroll
+
+    /// Effective timeline duration including preroll
+    private var effectiveDuration: Double {
+        duration + prerollSeconds
+    }
+
+    /// Convert audio time to display time (for rendering)
+    private func audioToDisplayTime(_ audioTime: Double) -> Double {
+        audioTime + prerollSeconds
+    }
+
+    /// Convert display time to audio time (for seeking)
+    private func displayToAudioTime(_ displayTime: Double) -> Double {
+        max(0, displayTime - prerollSeconds)
+    }
+
+    /// Current time in display coordinates
+    private var displayCurrentTime: Double {
+        audioToDisplayTime(currentTime)
+    }
 
     let onPreviewMoveMarker: (UUID, Double) -> Void
     let onCommitMoveMarker: (UUID, Double) -> Void
@@ -108,8 +131,8 @@ struct TimelineBarView: View {
             let visibleWidth = max(20, totalWidth * visibleRatio)
             let halfCapsule = visibleWidth / 2
 
-            // Normalized playhead position (0...1)
-            let timeRatio = duration > 0 ? effectiveCurrentTime() / duration : 0
+            // Normalized playhead position (0...1) using effective duration (with preroll)
+            let timeRatio = effectiveDuration > 0 ? effectiveDisplayTime() / effectiveDuration : 0
             let playheadX = totalWidth * timeRatio
 
             // Capsule position - follows playhead but clamps at edges
@@ -120,11 +143,23 @@ struct TimelineBarView: View {
             // Mini playhead position within capsule (can reach edges of timeline)
             let miniPlayheadX = playheadX
 
+            // Preroll zone width for indicator
+            let prerollRatio = effectiveDuration > 0 ? prerollSeconds / effectiveDuration : 0
+            let prerollWidth = totalWidth * prerollRatio
+
             ZStack(alignment: .leading) {
                 // Background track
                 Capsule()
                     .fill(Color.secondary.opacity(0.15))
                     .frame(height: Self.indicatorHeight)
+
+                // Preroll zone indicator (red tint at the start)
+                if prerollSeconds > 0 {
+                    Rectangle()
+                        .fill(Color.red.opacity(0.2))
+                        .frame(width: prerollWidth, height: Self.indicatorHeight)
+                        .clipShape(Capsule())
+                }
 
                 // Visible area capsule
                 Capsule()
@@ -143,7 +178,7 @@ struct TimelineBarView: View {
                                 if capsuleDragStart == nil {
                                     // Store the initial touch position relative to playhead
                                     capsuleDragStart = playheadX
-                                    capsuleDragTime = effectiveCurrentTime()
+                                    capsuleDragTime = effectiveDisplayTime()
                                     isCapsuleDragging = true
                                     capsuleDragEndTime = nil
                                 }
@@ -156,10 +191,11 @@ struct TimelineBarView: View {
                                 let clampedPlayheadX = max(0, min(totalWidth, newPlayheadX))
 
                                 let newTimeRatio = clampedPlayheadX / totalWidth
-                                let newTime = duration * newTimeRatio
+                                let newDisplayTime = effectiveDuration * newTimeRatio
 
-                                capsuleDragTime = newTime
-                                onSeek(newTime)
+                                capsuleDragTime = newDisplayTime
+                                // Convert display time to audio time for seeking
+                                onSeek(displayToAudioTime(newDisplayTime))
                             }
                             .onEnded { _ in
                                 capsuleDragStart = nil
@@ -194,13 +230,13 @@ struct TimelineBarView: View {
         GeometryReader { geo in
             let viewportWidth = geo.size.width
             let contentWidth = viewportWidth * zoomScale
-            let effectiveTime = effectiveCurrentTime()
-            
-            // Calculate visible time range
-            let secondsPerPixel = duration / contentWidth
+            let effectiveTime = effectiveDisplayTime()
+
+            // Calculate visible time range using effective duration (with preroll)
+            let secondsPerPixel = effectiveDuration / contentWidth
             let visibleDuration = viewportWidth * secondsPerPixel
             let visibleStartTime = max(0, effectiveTime - visibleDuration / 2)
-            let visibleEndTime = min(duration, effectiveTime + visibleDuration / 2)
+            let visibleEndTime = min(effectiveDuration, effectiveTime + visibleDuration / 2)
             
             // Choose optimal interval based on pixel density
             let (majorInterval, minorPerMajor) = chooseTimeInterval(
@@ -230,7 +266,7 @@ struct TimelineBarView: View {
                 // Collect all major tick positions first to check for label overlap
                 var majorTicks: [(time: Double, x: CGFloat)] = []
                 var time = ceil(max(0, drawStartTime) / majorInterval) * majorInterval
-                while time <= min(duration, drawEndTime) {
+                while time <= min(effectiveDuration, drawEndTime) {
                     let x = timeToX(time)
                     majorTicks.append((time, x))
                     time += majorInterval
@@ -257,7 +293,7 @@ struct TimelineBarView: View {
                 
                 // Draw minor ticks
                 time = max(0, floor(drawStartTime / minorInterval) * minorInterval)
-                while time <= min(duration, drawEndTime) {
+                while time <= min(effectiveDuration, drawEndTime) {
                     let x = timeToX(time)
                     
                     // Only draw if within viewport
@@ -456,7 +492,7 @@ struct TimelineBarView: View {
     private func timelineContent(geo: GeometryProxy) -> some View {
         let centerX = geo.size.width / 2
         let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
-        let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
+        let secondsPerPixel = effectiveDuration > 0 ? effectiveDuration / Double(contentWidth) : 0
         let offset = timelineOffset(contentWidth)
 
         return ZStack {
@@ -464,14 +500,16 @@ struct TimelineBarView: View {
                 .offset(x: centerX - offset)
 
             ForEach(Array(markers.enumerated()), id: \.element.id) { index, marker in
-                let displayTime: Double = {
+                // Convert marker's audio time to display time (add preroll offset)
+                let markerDisplayTime: Double = {
                     if draggedMarkerID == marker.id, let previewTime = draggedMarkerPreviewTime {
-                        return previewTime
+                        // Preview time is already in audio time, convert to display time
+                        return audioToDisplayTime(previewTime)
                     }
-                    return marker.timeSeconds
+                    return audioToDisplayTime(marker.timeSeconds)
                 }()
 
-                let normalizedPosition = displayTime / max(duration, 0.0001)
+                let normalizedPosition = markerDisplayTime / max(effectiveDuration, 0.0001)
                 let markerX = centerX - offset + (normalizedPosition * contentWidth)
 
                 // Get tag color for this marker
@@ -581,9 +619,9 @@ struct TimelineBarView: View {
 
                 // Regular playhead seeking - use startLocation for immediate response
                 if dragStartTime == nil {
-                    dragStartTime = currentTime
+                    dragStartTime = displayCurrentTime  // Start from display time
                     dragStartX = value.startLocation.x
-                    dragCurrentTime = currentTime
+                    dragCurrentTime = displayCurrentTime
                     isTimelineDragging = true
                     dragEndTime = nil
                 }
@@ -593,7 +631,8 @@ struct TimelineBarView: View {
                 let deltaX = value.location.x - dragStartX
                 let delta = Double(deltaX) * secondsPerPixel * -1
                 dragCurrentTime = clamp(start + delta)
-                onSeek(dragCurrentTime)
+                // Convert display time to audio time for seeking
+                onSeek(displayToAudioTime(dragCurrentTime))
             }
             .onEnded { _ in
                 if isDoubleTapZoomMode {
@@ -645,7 +684,7 @@ struct TimelineBarView: View {
         LongPressGesture(minimumDuration: 0.35)
             .onEnded { _ in
                 draggedMarkerID = marker.id
-                draggedMarkerPreviewTime = marker.timeSeconds
+                draggedMarkerPreviewTime = marker.timeSeconds  // Audio time
             }
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
@@ -657,10 +696,13 @@ struct TimelineBarView: View {
                 let offset = timelineOffset(contentWidth)
                 let originX = centerX - offset
                 let normalizedPosition = (drag.location.x - originX) / contentWidth
-                let rawTime = clamp(normalizedPosition * duration)
 
-                // Apply snap to beat grid if enabled
-                let newTime = snapToBeat(rawTime)
+                // Calculate display time from position, then convert to audio time
+                let displayTime = clampDisplayTime(normalizedPosition * effectiveDuration)
+                let rawAudioTime = clampAudioTime(displayToAudioTime(displayTime))
+
+                // Apply snap to beat grid if enabled (in audio time coordinates)
+                let newTime = snapToBeat(rawAudioTime)
 
                 draggedMarkerPreviewTime = newTime
             }
@@ -691,65 +733,20 @@ struct TimelineBarView: View {
 
             Canvas { context, size in
                 let pairCount = waveform.count / 2
-                guard pairCount > 0 else { return }
-
                 let canvasWidth = size.width
                 let amplitudeScale: CGFloat = 0.85
                 let fillColor = Color.secondary.opacity(0.5)
 
-                // For 4-channel audio, display two waveforms (top and bottom)
-                let hasSecondWaveform = waveform2 != nil && (waveform2?.isEmpty == false)
-                let waveformCount = hasSecondWaveform ? 2 : 1
-                let barHeightPerWaveform = Self.barHeight / CGFloat(waveformCount)
+                // Calculate preroll offset for positioning
+                // The canvas represents effectiveDuration (preroll + audio)
+                // Waveform should start at prerollSeconds position
+                let prerollRatio = effectiveDuration > 0 ? prerollSeconds / effectiveDuration : 0
+                let prerollOffset = prerollRatio * canvasWidth
+                let audioContentWidth = canvasWidth - prerollOffset  // Width available for audio waveform
 
-                // Draw waveforms
-                for waveformIndex in 0..<waveformCount {
-                    let currentWaveform = waveformIndex == 0 ? waveform : (waveform2 ?? [])
-                    let currentPairCount = currentWaveform.count / 2
-                    guard currentPairCount > 0 else { continue }
-
-                    let centerY = (CGFloat(waveformIndex) + 0.5) * barHeightPerWaveform
-
-                    var upperPath = Path()
-                    var lowerPath = Path()
-
-                    for i in 0..<currentPairCount {
-                        let minIndex = i * 2
-                        let maxIndex = i * 2 + 1
-
-                        guard maxIndex < currentWaveform.count else { break }
-
-                        let minValue = currentWaveform[minIndex]
-                        let maxValue = currentWaveform[maxIndex]
-
-                        let normalizedPosition = Double(i) / Double(max(currentPairCount - 1, 1))
-                        let x = normalizedPosition * canvasWidth
-
-                        let topY = centerY - CGFloat(maxValue) * (barHeightPerWaveform / 2) * amplitudeScale
-                        let bottomY = centerY - CGFloat(minValue) * (barHeightPerWaveform / 2) * amplitudeScale
-
-                        if i == 0 {
-                            upperPath.move(to: CGPoint(x: x, y: centerY))
-                            lowerPath.move(to: CGPoint(x: x, y: centerY))
-                        }
-
-                        upperPath.addLine(to: CGPoint(x: x, y: topY))
-                        lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
-                    }
-
-                    upperPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
-                    lowerPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
-
-                    upperPath.closeSubpath()
-                    lowerPath.closeSubpath()
-
-                    context.fill(upperPath, with: .color(fillColor))
-                    context.fill(lowerPath, with: .color(fillColor))
-                }
-
-                // Draw preroll zone if set
-                if prerollSeconds > 0 && duration > 0 {
-                    let prerollWidth = (prerollSeconds / duration) * canvasWidth
+                // Draw preroll zone if set (at the beginning)
+                if prerollSeconds > 0 && effectiveDuration > 0 {
+                    let prerollWidth = prerollOffset
 
                     // Draw semi-transparent red hatched zone for preroll
                     var prerollPath = Path()
@@ -782,10 +779,6 @@ struct TimelineBarView: View {
                             x2 = 0
                         }
 
-                        if x1 > prerollWidth {
-                            x1 = prerollWidth
-                        }
-
                         var hatchPath = Path()
                         hatchPath.move(to: CGPoint(x: min(x1, prerollWidth), y: y1))
                         hatchPath.addLine(to: CGPoint(x: max(0, x2), y: y2))
@@ -799,19 +792,75 @@ struct TimelineBarView: View {
                     context.stroke(prerollEndLine, with: .color(Color.red.opacity(0.4)), lineWidth: 2)
                 }
 
-                // Draw beat grid if enabled
+                // Draw waveforms (offset by preroll)
+                guard pairCount > 0 else { return }
+
+                // For 4-channel audio, display two waveforms (top and bottom)
+                let hasSecondWaveform = waveform2 != nil && (waveform2?.isEmpty == false)
+                let waveformCount = hasSecondWaveform ? 2 : 1
+                let barHeightPerWaveform = Self.barHeight / CGFloat(waveformCount)
+
+                for waveformIndex in 0..<waveformCount {
+                    let currentWaveform = waveformIndex == 0 ? waveform : (waveform2 ?? [])
+                    let currentPairCount = currentWaveform.count / 2
+                    guard currentPairCount > 0 else { continue }
+
+                    let centerY = (CGFloat(waveformIndex) + 0.5) * barHeightPerWaveform
+
+                    var upperPath = Path()
+                    var lowerPath = Path()
+
+                    for i in 0..<currentPairCount {
+                        let minIndex = i * 2
+                        let maxIndex = i * 2 + 1
+
+                        guard maxIndex < currentWaveform.count else { break }
+
+                        let minValue = currentWaveform[minIndex]
+                        let maxValue = currentWaveform[maxIndex]
+
+                        // Position waveform starting at prerollOffset
+                        let normalizedPosition = Double(i) / Double(max(currentPairCount - 1, 1))
+                        let x = prerollOffset + (normalizedPosition * audioContentWidth)
+
+                        let topY = centerY - CGFloat(maxValue) * (barHeightPerWaveform / 2) * amplitudeScale
+                        let bottomY = centerY - CGFloat(minValue) * (barHeightPerWaveform / 2) * amplitudeScale
+
+                        if i == 0 {
+                            upperPath.move(to: CGPoint(x: x, y: centerY))
+                            lowerPath.move(to: CGPoint(x: x, y: centerY))
+                        }
+
+                        upperPath.addLine(to: CGPoint(x: x, y: topY))
+                        lowerPath.addLine(to: CGPoint(x: x, y: bottomY))
+                    }
+
+                    upperPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
+                    lowerPath.addLine(to: CGPoint(x: canvasWidth, y: centerY))
+
+                    upperPath.closeSubpath()
+                    lowerPath.closeSubpath()
+
+                    context.fill(upperPath, with: .color(fillColor))
+                    context.fill(lowerPath, with: .color(fillColor))
+                }
+
+                // Draw beat grid if enabled (offset by preroll)
                 if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0 {
                     let beatInterval = 60.0 / bpm  // seconds per beat
                     let beatsPerBar = timeSignature.beatsPerBar
                     let beatCount = Int(ceil((duration - beatGridOffset) / beatInterval))
 
                     for i in 0...beatCount {
-                        let beatTime = beatGridOffset + Double(i) * beatInterval
+                        // Beat time in audio coordinates
+                        let audioTime = beatGridOffset + Double(i) * beatInterval
 
-                        // Skip if beat is outside timeline bounds
-                        guard beatTime >= 0 && beatTime <= duration else { continue }
+                        // Skip if beat is outside audio bounds
+                        guard audioTime >= 0 && audioTime <= duration else { continue }
 
-                        let normalizedPosition = beatTime / duration
+                        // Convert to display time and then to canvas position
+                        let displayTime = audioToDisplayTime(audioTime)
+                        let normalizedPosition = displayTime / effectiveDuration
                         let x = normalizedPosition * canvasWidth
 
                         // Draw vertical line
@@ -857,34 +906,49 @@ struct TimelineBarView: View {
     @ViewBuilder
     private func beatGridOffsetDragOverlay(width: CGFloat, bpm: Double) -> some View {
         GeometryReader { geometry in
-            let normalizedPosition = beatGridOffset / duration
+            // Beat grid offset is in audio time - convert to display time for positioning
+            let displayOffset = audioToDisplayTime(beatGridOffset)
+            let normalizedPosition = displayOffset / effectiveDuration
             let x = normalizedPosition * width
             let hitAreaWidth: CGFloat = 44  // Large enough to easily tap on mobile
 
             // Invisible drag handle over the first beat grid line
+            // Requires long press before dragging becomes active
             Rectangle()
                 .fill(isDraggingBeatGridOffset ? Color.accentColor.opacity(0.15) : Color.clear)
                 .frame(width: hitAreaWidth, height: Self.barHeight)
                 .position(x: x, y: Self.barHeight / 2)
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .named("beatGridOverlay"))
+                    LongPressGesture(minimumDuration: 0.35)
+                        .onEnded { _ in
+                            // Long press completed - enable drag mode and store start offset
+                            isDraggingBeatGridOffset = true
+                            beatGridOffsetDragStart = beatGridOffset
+                        }
+                        .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("beatGridOverlay")))
                         .onChanged { value in
+                            guard case .second(true, let drag?) = value else { return }
                             guard draggedMarkerID == nil else { return }
 
-                            if !isDraggingBeatGridOffset {
-                                isDraggingBeatGridOffset = true
-                                beatGridOffsetDragStart = beatGridOffset
-                            }
+                            // Calculate display time from drag position
+                            let normalizedX = drag.location.x / width
+                            let displayTime = normalizedX * effectiveDuration
 
-                            // Calculate new offset based on drag position in geometry coordinate space
-                            let normalizedX = value.location.x / width
-                            let newOffset = max(0, min(duration, normalizedX * duration))
+                            // Convert display time to audio time for the offset
+                            let newOffset = max(0, min(duration, displayToAudioTime(displayTime)))
 
                             // Apply offset immediately
                             onBeatGridOffsetChange(newOffset)
                         }
                         .onEnded { _ in
+                            // Commit the change to undo system
+                            if isDraggingBeatGridOffset {
+                                let newOffset = beatGridOffset
+                                if beatGridOffsetDragStart != newOffset {
+                                    onBeatGridOffsetCommit(beatGridOffsetDragStart, newOffset)
+                                }
+                            }
                             isDraggingBeatGridOffset = false
                         }
                 )
@@ -894,35 +958,59 @@ struct TimelineBarView: View {
 
     // MARK: - Helpers
 
-    private func effectiveCurrentTime() -> Double {
+    /// Returns the effective display time (including preroll offset) for the current playhead position
+    private func effectiveDisplayTime() -> Double {
+        // Get the raw time (either from drag or current playback)
+        let rawTime: Double
+
         if isCapsuleDragging {
-            return capsuleDragTime
+            rawTime = capsuleDragTime
         } else if let endTime = capsuleDragEndTime {
             let timeSinceDragEnd = Date().timeIntervalSince(endTime)
-            if timeSinceDragEnd < 0.1 && abs(capsuleDragTime - currentTime) > 0.05 {
-                return capsuleDragTime
+            if timeSinceDragEnd < 0.1 && abs(capsuleDragTime - displayCurrentTime) > 0.05 {
+                rawTime = capsuleDragTime
+            } else {
+                rawTime = displayCurrentTime
             }
-        }
-
-        if isTimelineDragging {
-            return dragCurrentTime
+        } else if isTimelineDragging {
+            rawTime = dragCurrentTime
         } else if let endTime = dragEndTime {
             let timeSinceDragEnd = Date().timeIntervalSince(endTime)
-            if timeSinceDragEnd < 0.1 && abs(dragCurrentTime - currentTime) > 0.05 {
-                return dragCurrentTime
+            if timeSinceDragEnd < 0.1 && abs(dragCurrentTime - displayCurrentTime) > 0.05 {
+                rawTime = dragCurrentTime
+            } else {
+                rawTime = displayCurrentTime
             }
+        } else {
+            rawTime = displayCurrentTime
         }
 
-        return currentTime
+        return rawTime
+    }
+
+    /// Legacy alias for backward compatibility
+    private func effectiveCurrentTime() -> Double {
+        effectiveDisplayTime()
     }
 
     private func timelineOffset(_ contentWidth: CGFloat) -> CGFloat {
-        guard duration > 0 else { return 0 }
-        return CGFloat(effectiveCurrentTime() / duration) * contentWidth
+        guard effectiveDuration > 0 else { return 0 }
+        return CGFloat(effectiveDisplayTime() / effectiveDuration) * contentWidth
     }
 
-    private func clamp(_ t: Double) -> Double {
+    /// Clamp display time to valid range (0 to effectiveDuration)
+    private func clampDisplayTime(_ t: Double) -> Double {
+        min(max(t, 0), effectiveDuration)
+    }
+
+    /// Clamp audio time to valid range (0 to duration)
+    private func clampAudioTime(_ t: Double) -> Double {
         min(max(t, 0), duration)
+    }
+
+    /// Legacy clamp - operates on display time
+    private func clamp(_ t: Double) -> Double {
+        clampDisplayTime(t)
     }
 
     /// Квантует время к ближайшему биту, если включена привязка к сетке
