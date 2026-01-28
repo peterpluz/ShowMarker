@@ -22,7 +22,7 @@ struct MetronomeIndicator: View {
                     .frame(width: 44, height: 44)
 
                 // Metronome icon with flash animation
-                Image(systemName: isFilled ? "metronome.fill" : "metronome")
+                Image(systemName: isFilled ? "square.filled.and.line.vertical.and.square" : "square.and.line.vertical.and.square.filled")
                     .font(.system(size: 18, weight: .regular))
                     .foregroundColor(isEnabled ? .accentColor : .secondary)
                     .animation(.linear(duration: 0.1), value: isFilled)

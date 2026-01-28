@@ -11,6 +11,7 @@ final class AudioPlayerService: ObservableObject {
 
     private var player: AVPlayer?
     private var timeObserver: Any?
+    private var isAudioSessionConfigured = false
 
     deinit {
         // Очистка происходит в stop()
@@ -25,9 +26,12 @@ final class AudioPlayerService: ObservableObject {
         let item = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: item)
 
+        // Load duration asynchronously
         Task {
             let d = try? await item.asset.load(.duration)
-            duration = d?.seconds ?? 0
+            await MainActor.run {
+                self.duration = d?.seconds ?? 0
+            }
         }
 
         addTimeObserver()
@@ -36,7 +40,11 @@ final class AudioPlayerService: ObservableObject {
     // MARK: - Playback
 
     func play() {
-        configureAudioSession()
+        // Only configure audio session once
+        if !isAudioSessionConfigured {
+            configureAudioSession()
+            isAudioSessionConfigured = true
+        }
         player?.play()
         isPlaying = true
     }
@@ -55,6 +63,7 @@ final class AudioPlayerService: ObservableObject {
         currentTime = 0
         duration = 0
         isPlaying = false
+        isAudioSessionConfigured = false
     }
 
     func togglePlayPause() {

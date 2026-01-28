@@ -18,6 +18,9 @@ final class TimelineViewModel: ObservableObject {
     @Published private(set) var duration: Double = 0
 
     @Published var zoomScale: CGFloat = 1.0
+    @Published var viewportOffset: Double = 0  // Where the visible area starts in timeline (in seconds)
+
+    @Published private(set) var isDataReady: Bool = false  // Indicates when data is loaded and UI ready
 
     @Published private(set) var cachedWaveform: [Float] = []
     private var waveformMipmaps: [[Float]] = []
@@ -210,6 +213,9 @@ final class TimelineViewModel: ObservableObject {
             print("✅ Audio loaded into player on init: \(audioURL)")
 
             loadWaveformCache(for: timelineAudio, documentURL: repository.audioTempDirectory)
+        } else {
+            // No audio file - mark data as ready immediately
+            self.isDataReady = true
         }
     }
 
@@ -384,6 +390,8 @@ final class TimelineViewModel: ObservableObject {
             for (idx, level) in cached.mipmaps.enumerated() {
                 print("   Level \(idx): \(level.count) samples")
             }
+            // Data is ready immediately from cache
+            self.isDataReady = true
             return
         }
 
@@ -413,9 +421,15 @@ final class TimelineViewModel: ObservableObject {
                 for (idx, level) in cached.mipmaps.enumerated() {
                     print("   Level \(idx): \(level.count) samples")
                 }
+                // Mark data as ready after waveform generation completes
+                self.isDataReady = true
             }
         } catch {
             print("⚠️ Waveform generation failed:", error)
+            // Mark data as ready even if generation fails so UI doesn't hang
+            await MainActor.run {
+                self.isDataReady = true
+            }
         }
     }
     
@@ -690,6 +704,26 @@ final class TimelineViewModel: ObservableObject {
     func setMetronomeVolume(_ volume: Float) {
         metronome.setVolume(volume)
         objectWillChange.send()
+    }
+
+    // MARK: - Viewport Management
+
+    func setViewportOffset(_ offset: Double) {
+        let maxOffset = max(0, duration - max(duration / Double(zoomScale), 0))
+        viewportOffset = min(max(offset, 0), maxOffset)
+        objectWillChange.send()
+    }
+
+    func snapViewportToPlayhead(viewportDuration: Double) {
+        let playheadPosition = currentTime
+        let viewportStart = viewportOffset
+        let viewportEnd = viewportStart + viewportDuration
+
+        if playheadPosition < viewportStart {
+            setViewportOffset(playheadPosition)
+        } else if playheadPosition > viewportEnd {
+            setViewportOffset(max(0, playheadPosition - viewportDuration))
+        }
     }
 
     // MARK: - Timecode

@@ -46,7 +46,7 @@ struct TimelineSettingsSheet: View {
                         Button {
                             onEditBPM()
                         } label: {
-                            Label("Установить BPM", systemImage: "metronome")
+                            Label("Установить BPM", systemImage: "square.and.line.vertical.and.square.filled")
                         }
                     }
                 } header: {

@@ -30,6 +30,7 @@ struct TimelineBarView: View {
     // MARK: - Zoom state (Binding to ViewModel for synchronization)
 
     @Binding var zoomScale: CGFloat
+    @Binding var viewportOffset: Double
     @State private var isPinching: Bool = false
     @State private var lastMagnification: CGFloat = 1.0
     @GestureState private var pinchMagnification: CGFloat = 1.0  // Resets automatically when gesture ends
@@ -102,15 +103,18 @@ struct TimelineBarView: View {
             let totalWidth = geo.size.width
             let visibleRatio = 1.0 / zoomScale
             let visibleWidth = max(20, totalWidth * visibleRatio)
-            
-            // Normalized playhead position (0...1)
-            let timeRatio = duration > 0 ? effectiveCurrentTime() / duration : 0
-            
-            // Capsule position - centered on playhead, clamped to edges
-            let capsuleCenterIdeal = totalWidth * timeRatio
+
+            // Viewport position (where the visible area starts in the timeline)
+            let viewportTimeRatio = duration > 0 ? viewportOffset / duration : 0
+            let viewportCapsuleIdealX = totalWidth * viewportTimeRatio
+
+            // Clamp capsule to stay within bounds
             let halfCapsule = visibleWidth / 2
-            let capsuleCenter = max(halfCapsule, min(totalWidth - halfCapsule, capsuleCenterIdeal))
-            let xOffset = capsuleCenter - halfCapsule
+            let clampedCapsuleX = max(0, min(totalWidth - visibleWidth, viewportCapsuleIdealX))
+
+            // Playhead position for mini-playhead
+            let playheadTimeRatio = duration > 0 ? currentTime / duration : 0
+            let playheadXOnIndicator = totalWidth * playheadTimeRatio
 
             ZStack(alignment: .leading) {
                 // Background track
@@ -118,37 +122,40 @@ struct TimelineBarView: View {
                     .fill(Color.secondary.opacity(0.15))
                     .frame(height: Self.indicatorHeight)
 
-                // Visible area capsule
+                // Visible area capsule (shows viewport)
                 Capsule()
                     .fill(Color.accentColor.opacity(0.6))
                     .frame(width: visibleWidth, height: Self.indicatorHeight)
-                    .offset(x: xOffset)
+                    .offset(x: clampedCapsuleX)
                     .overlay(
                         Capsule()
                             .stroke(Color.accentColor, lineWidth: 1)
                             .frame(width: visibleWidth, height: Self.indicatorHeight)
-                            .offset(x: xOffset)
+                            .offset(x: clampedCapsuleX)
                     )
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 if capsuleDragStart == nil {
-                                    capsuleDragStart = xOffset
-                                    capsuleDragTime = effectiveCurrentTime()
+                                    capsuleDragStart = viewportOffset
                                     isCapsuleDragging = true
                                     capsuleDragEndTime = nil
                                 }
 
                                 guard let startOffset = capsuleDragStart else { return }
 
-                                let newX = startOffset + value.translation.width
-                                let clampedX = max(0, min(totalWidth - visibleWidth, newX))
+                                // Convert pixels to timeline seconds
+                                let secondsPerPixel = duration / totalWidth
+                                let pixelDelta = value.translation.width
+                                let timeDelta = Double(pixelDelta) * secondsPerPixel
 
-                                let newTimeRatio = (clampedX + halfCapsule) / totalWidth
-                                let newTime = duration * newTimeRatio
+                                // Negative because dragging right should show left side of timeline
+                                let newOffset = startOffset - timeDelta
+                                let maxOffset = max(0, duration - (duration / Double(zoomScale)))
+                                let clampedOffset = min(max(newOffset, 0), maxOffset)
 
-                                capsuleDragTime = newTime
-                                onSeek(newTime)
+                                viewportOffset = clampedOffset
+                                isCapsuleDragging = false
                             }
                             .onEnded { _ in
                                 capsuleDragStart = nil
@@ -157,20 +164,11 @@ struct TimelineBarView: View {
                             }
                     )
 
-                // Mini playhead
+                // Mini playhead - shows actual playhead position on the indicator
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 2, height: Self.indicatorHeight + 4)
-                    .offset(x: {
-                        let idealCapsuleCenter = totalWidth * timeRatio
-                        let actualCapsuleCenter = capsuleCenter
-                        let capsuleShift = actualCapsuleCenter - idealCapsuleCenter
-                        let miniPlayheadX = actualCapsuleCenter - capsuleShift
-                        let minX = xOffset + 1
-                        let maxX = xOffset + visibleWidth - 1
-                        let clampedX = max(minX, min(maxX, miniPlayheadX))
-                        return clampedX - 1
-                    }())
+                    .offset(x: playheadXOnIndicator - 1)
                     .allowsHitTesting(false)
             }
         }
@@ -184,33 +182,31 @@ struct TimelineBarView: View {
         GeometryReader { geo in
             let viewportWidth = geo.size.width
             let contentWidth = viewportWidth * zoomScale
-            let effectiveTime = effectiveCurrentTime()
-            
-            // Calculate visible time range
+
+            // Calculate visible time range based on viewport offset
             let secondsPerPixel = duration / contentWidth
             let visibleDuration = viewportWidth * secondsPerPixel
-            let visibleStartTime = max(0, effectiveTime - visibleDuration / 2)
-            let visibleEndTime = min(duration, effectiveTime + visibleDuration / 2)
-            
+            let visibleStartTime = viewportOffset
+            let visibleEndTime = min(duration, viewportOffset + visibleDuration)
+
             // Choose optimal interval based on pixel density
             let (majorInterval, minorPerMajor) = chooseTimeInterval(
                 secondsPerPixel: secondsPerPixel,
                 viewportWidth: viewportWidth
             )
             let minorInterval = majorInterval / Double(minorPerMajor)
-            
+
             Canvas { context, size in
                 guard duration > 0 else { return }
-                
+
                 // Calculate the offset for positioning
-                // Center of viewport = effectiveTime
-                let centerX = size.width / 2
-                
+                // Left edge of viewport = viewportOffset
+                let viewportOffsetPixels = CGFloat(viewportOffset / max(duration, 0.0001)) * contentWidth
+
                 // Function to convert time to X coordinate
                 func timeToX(_ time: Double) -> CGFloat {
-                    let deltaTime = time - effectiveTime
-                    let deltaPixels = deltaTime / secondsPerPixel
-                    return centerX + deltaPixels
+                    let normalizedPosition = time / duration
+                    return normalizedPosition * contentWidth - viewportOffsetPixels
                 }
                 
                 // Extend range slightly for smooth scrolling
@@ -447,7 +443,9 @@ struct TimelineBarView: View {
         let centerX = geo.size.width / 2
         let contentWidth = max(geo.size.width * zoomScale, geo.size.width)
         let secondsPerPixel = duration > 0 ? duration / Double(contentWidth) : 0
-        let offset = timelineOffset(contentWidth)
+
+        // Timeline offset is now based on viewport offset
+        let offset = CGFloat(viewportOffset / max(duration, 0.0001)) * contentWidth
 
         return ZStack {
             cachedWaveformView(width: contentWidth)
@@ -496,13 +494,17 @@ struct TimelineBarView: View {
                 ))
             }
 
+            // Playhead can now move freely and appear at edges
+            let playheadRelativeTime = currentTime - viewportOffset
+            let playheadX = centerX + CGFloat(playheadRelativeTime / secondsPerPixel)
+
             Rectangle()
                 .fill(Color.accentColor)
                 .frame(width: Self.playheadLineWidth, height: Self.barHeight)
-                .position(x: centerX, y: Self.barHeight / 2)
+                .position(x: playheadX, y: Self.barHeight / 2)
         }
         .gesture(doubleTapGesture())
-        .gesture(playheadDrag(secondsPerPixel: secondsPerPixel))
+        .gesture(playheadDrag(secondsPerPixel: secondsPerPixel, contentWidth: contentWidth))
         .simultaneousGesture(pinchGesture())
     }
     
@@ -535,7 +537,7 @@ struct TimelineBarView: View {
             }
     }
 
-    private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
+    private func playheadDrag(secondsPerPixel: Double, contentWidth: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard draggedMarkerID == nil, !isPinching else { return }
@@ -579,6 +581,14 @@ struct TimelineBarView: View {
                 let delta = Double(value.translation.width) * secondsPerPixel * -1
                 dragCurrentTime = clamp(start + delta)
                 onSeek(dragCurrentTime)
+
+                // Auto-snap viewport if playhead goes outside visible area
+                let visibleDuration = duration / Double(zoomScale)
+                if dragCurrentTime < viewportOffset {
+                    viewportOffset = max(0, dragCurrentTime)
+                } else if dragCurrentTime > (viewportOffset + visibleDuration) {
+                    viewportOffset = min(dragCurrentTime - visibleDuration, max(0, duration - visibleDuration))
+                }
             }
             .onEnded { _ in
                 if isDoubleTapZoomMode {
@@ -638,7 +648,7 @@ struct TimelineBarView: View {
                     draggedMarkerID == marker.id
                 else { return }
 
-                let offset = timelineOffset(contentWidth)
+                let offset = CGFloat(viewportOffset / max(duration, 0.0001)) * contentWidth
                 let originX = centerX - offset
                 let normalizedPosition = (drag.location.x - originX) / contentWidth
                 let rawTime = clamp(normalizedPosition * duration)

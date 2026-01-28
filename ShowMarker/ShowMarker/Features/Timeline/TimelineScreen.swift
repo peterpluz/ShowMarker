@@ -86,40 +86,54 @@ struct TimelineScreen: View {
 
     var body: some View {
         ZStack {
-            mainContent
-                .onChange(of: viewModel.currentTime) { oldValue, newValue in
-                    // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
-                    timelineRedrawTrigger.toggle()
+            if viewModel.isDataReady {
+                mainContent
+                    .onChange(of: viewModel.currentTime) { oldValue, newValue in
+                        // ✅ FIX: Toggle trigger on every currentTime update to force timeline redraw
+                        timelineRedrawTrigger.toggle()
+                    }
+            } else {
+                // Loading screen while data is being prepared
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                    Text("Загрузка таймлайна...")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.secondary)
                 }
-                .sheet(item: $timePickerMarker) { marker in
-                    timecodePickerSheet(for: marker)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .controlBackgroundColor))
+            }
+        }
+        .sheet(item: $timePickerMarker) { marker in
+            timecodePickerSheet(for: marker)
+        }
+        .sheet(isPresented: $isTagFilterPresented) {
+            tagFilterSheet
+        }
+        .sheet(isPresented: $isTimelineSettingsPresented) {
+            TimelineSettingsSheet(
+                viewModel: viewModel,
+                onEditBPM: {
+                    isTimelineSettingsPresented = false
+                    bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
+                    isEditingBPM = true
+                },
+                onReplaceAudio: {
+                    isTimelineSettingsPresented = false
+                    isPickerPresented = true
+                },
+                onDeleteAudio: {
+                    isTimelineSettingsPresented = false
+                    viewModel.removeAudio()
+                },
+                onDeleteAllMarkers: {
+                    isTimelineSettingsPresented = false
+                    showDeleteAllMarkersConfirmation = true
                 }
-                .sheet(isPresented: $isTagFilterPresented) {
-                    tagFilterSheet
-                }
-                .sheet(isPresented: $isTimelineSettingsPresented) {
-                    TimelineSettingsSheet(
-                        viewModel: viewModel,
-                        onEditBPM: {
-                            isTimelineSettingsPresented = false
-                            bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
-                            isEditingBPM = true
-                        },
-                        onReplaceAudio: {
-                            isTimelineSettingsPresented = false
-                            isPickerPresented = true
-                        },
-                        onDeleteAudio: {
-                            isTimelineSettingsPresented = false
-                            viewModel.removeAudio()
-                        },
-                        onDeleteAllMarkers: {
-                            isTimelineSettingsPresented = false
-                            showDeleteAllMarkersConfirmation = true
-                        }
-                    )
-                }
-
+            )
+        }
+        .overlay(alignment: .center) {
             // Tag picker menu overlay
             if let marker = editingTagMarker {
                 tagPickerMenuOverlay(for: marker)
@@ -636,6 +650,7 @@ struct TimelineScreen: View {
                 }
             },
             zoomScale: $viewModel.zoomScale,
+            viewportOffset: $viewModel.viewportOffset,
             draggedMarkerID: $viewModel.draggedMarkerID,
             draggedMarkerPreviewTime: $viewModel.draggedMarkerPreviewTime
         )
