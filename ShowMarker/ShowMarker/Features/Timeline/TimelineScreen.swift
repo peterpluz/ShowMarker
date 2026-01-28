@@ -482,7 +482,7 @@ struct TimelineScreen: View {
                         get: { viewModel.isSnapToGridEnabled },
                         set: { _ in viewModel.toggleSnapToGrid() }
                     )) {
-                        Label("Привязка к сетке битов", systemImage: "magnet")
+                        Label("Привязка к сетке битов", systemImage: "scope")
                     }
                     .disabled(!viewModel.isBeatGridEnabled)
 
@@ -556,7 +556,11 @@ struct TimelineScreen: View {
                     MetronomeIndicator(
                         isPlaying: viewModel.isMetronomeEnabled,
                         currentBeat: viewModel.currentBeat,
-                        bpm: viewModel.bpm
+                        bpm: viewModel.bpm,
+                        isEnabled: viewModel.isMetronomeUserEnabled,
+                        onToggle: {
+                            viewModel.toggleMetronome()
+                        }
                     )
 
                     Spacer()

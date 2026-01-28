@@ -22,6 +22,12 @@ struct Timeline: Codable, Identifiable, Sendable {
     /// Включена ли привязка маркеров к сетке битов
     var isSnapToGridEnabled: Bool
 
+    /// Включен ли метроном
+    var isMetronomeEnabled: Bool
+
+    /// Сдвиг сетки битов в секундах (offset для первого бита)
+    var beatGridOffset: Double
+
     init(
         id: UUID = UUID(),
         name: String,
@@ -31,7 +37,9 @@ struct Timeline: Codable, Identifiable, Sendable {
         markers: [TimelineMarker] = [],
         bpm: Double? = nil,
         isBeatGridEnabled: Bool = false,
-        isSnapToGridEnabled: Bool = false
+        isSnapToGridEnabled: Bool = false,
+        isMetronomeEnabled: Bool = false,
+        beatGridOffset: Double = 0
     ) {
         self.id = id
         self.name = name
@@ -42,6 +50,8 @@ struct Timeline: Codable, Identifiable, Sendable {
         self.bpm = bpm
         self.isBeatGridEnabled = isBeatGridEnabled
         self.isSnapToGridEnabled = isSnapToGridEnabled
+        self.isMetronomeEnabled = isMetronomeEnabled
+        self.beatGridOffset = beatGridOffset
     }
 }
 
@@ -51,6 +61,7 @@ extension Timeline {
     enum CodingKeys: String, CodingKey {
         case id, name, createdAt, audio, fps, markers
         case bpm, isBeatGridEnabled, isSnapToGridEnabled
+        case isMetronomeEnabled, beatGridOffset
     }
 
     init(from decoder: Decoder) throws {
@@ -67,6 +78,8 @@ extension Timeline {
         bpm = try container.decodeIfPresent(Double.self, forKey: .bpm)
         isBeatGridEnabled = (try? container.decode(Bool.self, forKey: .isBeatGridEnabled)) ?? false
         isSnapToGridEnabled = (try? container.decode(Bool.self, forKey: .isSnapToGridEnabled)) ?? false
+        isMetronomeEnabled = (try? container.decode(Bool.self, forKey: .isMetronomeEnabled)) ?? false
+        beatGridOffset = (try? container.decode(Double.self, forKey: .beatGridOffset)) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -81,5 +94,7 @@ extension Timeline {
         try container.encodeIfPresent(bpm, forKey: .bpm)
         try container.encode(isBeatGridEnabled, forKey: .isBeatGridEnabled)
         try container.encode(isSnapToGridEnabled, forKey: .isSnapToGridEnabled)
+        try container.encode(isMetronomeEnabled, forKey: .isMetronomeEnabled)
+        try container.encode(beatGridOffset, forKey: .beatGridOffset)
     }
 }

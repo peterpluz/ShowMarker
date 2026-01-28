@@ -120,6 +120,10 @@ final class TimelineViewModel: ObservableObject {
         timeline?.isSnapToGridEnabled ?? false
     }
 
+    var isMetronomeUserEnabled: Bool {
+        timeline?.isMetronomeEnabled ?? false
+    }
+
     var isMetronomeEnabled: Bool {
         metronome.isPlaying
     }
@@ -130,6 +134,10 @@ final class TimelineViewModel: ObservableObject {
 
     var currentBeat: Int {
         metronome.currentBeat
+    }
+
+    var beatGridOffset: Double {
+        timeline?.beatGridOffset ?? 0
     }
 
     // MARK: - Computed
@@ -243,8 +251,8 @@ final class TimelineViewModel: ObservableObject {
                     self.flashedMarkers.removeAll()
                     print("▶️ [Detection] Playback started at frame \(startFrame), reset flashed markers")
 
-                    // Start metronome if BPM is set
-                    if let bpm = self.bpm {
+                    // Start metronome if enabled and BPM is set
+                    if self.isMetronomeUserEnabled, let bpm = self.bpm {
                         self.metronome.start(bpm: bpm)
                     }
                 } else {
@@ -644,6 +652,25 @@ final class TimelineViewModel: ObservableObject {
     func toggleSnapToGrid() {
         guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         repository.project.timelines[idx].isSnapToGridEnabled.toggle()
+        objectWillChange.send()
+    }
+
+    func toggleMetronome() {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].isMetronomeEnabled.toggle()
+        objectWillChange.send()
+
+        // If toggling on and currently playing, start the metronome
+        if repository.project.timelines[idx].isMetronomeEnabled && isPlaying, let bpm = bpm {
+            metronome.start(bpm: bpm)
+        } else {
+            metronome.stop()
+        }
+    }
+
+    func setBeatGridOffset(_ offset: Double) {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].beatGridOffset = offset
         objectWillChange.send()
     }
 

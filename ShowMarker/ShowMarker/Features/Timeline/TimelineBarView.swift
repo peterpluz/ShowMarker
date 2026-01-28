@@ -16,6 +16,8 @@ struct TimelineBarView: View {
     let bpm: Double?
     let isBeatGridEnabled: Bool
     let isSnapToGridEnabled: Bool
+    let beatGridOffset: Double
+    let onBeatGridOffsetChange: (Double) -> Void
 
     let hasAudio: Bool
 
@@ -70,6 +72,10 @@ struct TimelineBarView: View {
     @State private var isCapsuleDragging: Bool = false
     @State private var capsuleDragTime: Double = 0
     @State private var capsuleDragEndTime: Date?
+
+    // MARK: - Beat Grid Offset Drag State
+    @State private var isDraggingBeatGridOffset: Bool = false
+    @State private var beatGridOffsetDragStart: Double = 0
 
     var body: some View {
         VStack(spacing: 8) {
@@ -728,10 +734,14 @@ struct TimelineBarView: View {
                 // Draw beat grid if enabled
                 if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0 {
                     let beatInterval = 60.0 / bpm  // seconds per beat
-                    let beatCount = Int(ceil(duration / beatInterval))
+                    let beatCount = Int(ceil((duration - beatGridOffset) / beatInterval))
 
                     for i in 0...beatCount {
-                        let beatTime = Double(i) * beatInterval
+                        let beatTime = beatGridOffset + Double(i) * beatInterval
+
+                        // Skip if beat is outside timeline bounds
+                        guard beatTime >= 0 && beatTime <= duration else { continue }
+
                         let normalizedPosition = beatTime / duration
                         let x = normalizedPosition * canvasWidth
 
@@ -793,7 +803,9 @@ struct TimelineBarView: View {
         }
 
         let beatInterval = 60.0 / bpm  // seconds per beat
-        let beatNumber = round(time / beatInterval)
-        return beatNumber * beatInterval
+        // Apply offset to snap correctly
+        let timeFromOffset = time - beatGridOffset
+        let beatNumber = round(timeFromOffset / beatInterval)
+        return beatGridOffset + beatNumber * beatInterval
     }
 }

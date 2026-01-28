@@ -1,32 +1,36 @@
 import SwiftUI
 
-/// GarageBand-style metronome indicator with discrete pendulum animation
+/// GarageBand-style metronome indicator with beat flash animation
 struct MetronomeIndicator: View {
 
     let isPlaying: Bool
     let currentBeat: Int  // 0-3 for 4/4 time
     let bpm: Double?
+    let isEnabled: Bool
+    let onToggle: () -> Void
 
     @State private var isFilled: Bool = false
 
     var body: some View {
-        ZStack {
-            // Background capsule
-            Capsule()
-                .fill(Color.secondary.opacity(0.2))
-                .frame(width: 44, height: 44)
+        Button {
+            onToggle()
+        } label: {
+            ZStack {
+                // Background capsule
+                Capsule()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 44, height: 44)
 
-            // Metronome icon with discrete pendulum movement
-            Image(systemName: isFilled ? "metronome.fill" : "metronome")
-                .font(.system(size: 18, weight: .regular))
-                .foregroundColor(isPlaying ? .accentColor : .secondary)
-                .offset(x: pendulumOffset)
-                .animation(.linear(duration: 0.05), value: pendulumOffset)
-                .animation(.linear(duration: 0.1), value: isFilled)
+                // Metronome icon with flash animation
+                Image(systemName: isFilled ? "metronome.fill" : "metronome")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundColor(isEnabled ? .accentColor : .secondary)
+                    .animation(.linear(duration: 0.1), value: isFilled)
+            }
         }
         .onChange(of: currentBeat) { oldBeat, newBeat in
-            // Flash to filled on beat
-            if isPlaying && newBeat != oldBeat {
+            // Flash to filled on beat only if enabled
+            if isEnabled && isPlaying && newBeat != oldBeat {
                 isFilled = true
 
                 // Fade back to outline after brief moment
@@ -36,29 +40,10 @@ struct MetronomeIndicator: View {
                 }
             }
         }
-        .onChange(of: isPlaying) { oldValue, newValue in
+        .onChange(of: isEnabled) { oldValue, newValue in
             if !newValue {
                 isFilled = false
             }
-        }
-    }
-
-    /// Discrete pendulum positions based on beat (GarageBand style)
-    /// Beat 1 (downbeat) = center-left
-    /// Beat 2 = slight right
-    /// Beat 3 = center-left
-    /// Beat 4 = slight right
-    private var pendulumOffset: CGFloat {
-        guard isPlaying, bpm != nil else { return 0 }
-
-        // Discrete positions for 4/4 time
-        switch currentBeat {
-        case 1, 3:
-            return -3.0  // Left position
-        case 2, 4:
-            return 3.0   // Right position
-        default:
-            return 0
         }
     }
 }
