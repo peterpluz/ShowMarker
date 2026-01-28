@@ -756,20 +756,40 @@ struct TimelineBarView: View {
                     prerollPath.addRect(CGRect(x: 0, y: 0, width: prerollWidth, height: size.height))
                     context.fill(prerollPath, with: .color(Color.red.opacity(0.08)))
 
-                    // Draw diagonal hatching lines
+                    // Draw diagonal hatching lines (manually clipped to preroll zone)
                     let hatchSpacing: CGFloat = 12
                     let hatchCount = Int(ceil((prerollWidth + size.height) / hatchSpacing))
 
                     for i in 0..<hatchCount {
                         let startX = CGFloat(i) * hatchSpacing
-                        var hatchPath = Path()
-                        hatchPath.move(to: CGPoint(x: startX, y: 0))
-                        hatchPath.addLine(to: CGPoint(x: max(0, startX - size.height), y: size.height))
+                        let endX = startX - size.height
 
-                        // Clip to preroll zone
-                        context.clip(to: Path(CGRect(x: 0, y: 0, width: prerollWidth, height: size.height)))
+                        // Calculate clipped line endpoints within preroll zone
+                        var x1 = startX
+                        var y1: CGFloat = 0
+                        var x2 = endX
+                        var y2 = size.height
+
+                        // Clip to preroll width
+                        if x1 > prerollWidth {
+                            continue  // Line starts outside preroll zone
+                        }
+
+                        if x2 < 0 {
+                            // Line ends before left edge, calculate intersection
+                            let t = x1 / (x1 - x2)
+                            y2 = t * size.height
+                            x2 = 0
+                        }
+
+                        if x1 > prerollWidth {
+                            x1 = prerollWidth
+                        }
+
+                        var hatchPath = Path()
+                        hatchPath.move(to: CGPoint(x: min(x1, prerollWidth), y: y1))
+                        hatchPath.addLine(to: CGPoint(x: max(0, x2), y: y2))
                         context.stroke(hatchPath, with: .color(Color.red.opacity(0.15)), lineWidth: 1)
-                        context.resetClip()
                     }
 
                     // Draw preroll end line
