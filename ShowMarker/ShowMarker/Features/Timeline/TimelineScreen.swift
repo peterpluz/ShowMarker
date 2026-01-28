@@ -87,11 +87,7 @@ struct TimelineScreen: View {
     }
 
     var body: some View {
-        contentWithLoadingState
-            .sheetModifiers
-            .overlayModifiers
-            .alertModifiers
-            .fileModifiers
+        fileModifiers
     }
 
     private var contentWithLoadingState: some View {
@@ -112,7 +108,7 @@ struct TimelineScreen: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(Color(.systemGray5))
             }
         }
     }
