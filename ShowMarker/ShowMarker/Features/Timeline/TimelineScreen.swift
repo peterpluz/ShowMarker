@@ -88,6 +88,10 @@ struct TimelineScreen: View {
 
     var body: some View {
         contentWithLoadingState
+            .sheetModifiers
+            .overlayModifiers
+            .alertModifiers
+            .fileModifiers
     }
 
     private var contentWithLoadingState: some View {
@@ -111,128 +115,144 @@ struct TimelineScreen: View {
                 .background(Color(nsColor: .controlBackgroundColor))
             }
         }
-        .sheet(item: $timePickerMarker) { marker in
-            timecodePickerSheet(for: marker)
-        }
-        .sheet(isPresented: $isTagFilterPresented) {
-            tagFilterSheet
-        }
-        .sheet(isPresented: $isTimelineSettingsPresented) {
-            TimelineSettingsSheet(
-                viewModel: viewModel,
-                repository: repository,
-                onEditBPM: {
-                    isTimelineSettingsPresented = false
-                    bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
-                    isEditingBPM = true
-                },
-                onReplaceAudio: {
-                    isTimelineSettingsPresented = false
-                    isPickerPresented = true
-                },
-                onDeleteAudio: {
-                    isTimelineSettingsPresented = false
-                    viewModel.removeAudio()
-                },
-                onDeleteAllMarkers: {
-                    isTimelineSettingsPresented = false
-                    showDeleteAllMarkersConfirmation = true
-                }
-            )
-        }
-        .overlay(alignment: .center) {
-            // Tag picker menu overlay
-            if let marker = editingTagMarker {
-                tagPickerMenuOverlay(for: marker)
-            }
+    }
 
-            // Marker name popup overlay
-            if isMarkerNamePopupPresented {
-                markerNamePopupOverlay
+    private var sheetModifiers: some View {
+        contentWithLoadingState
+            .sheet(item: $timePickerMarker) { marker in
+                timecodePickerSheet(for: marker)
             }
-        }
-        .sheet(isPresented: $isPickerPresented) {
-            AudioDocumentPicker(
-                onPick: { url in
-                    print("🎵 [AudioPicker] File picked: \(url)")
-                    isPickerPresented = false
-                    handleAudioURL(url)
-                },
-                onCancel: {
-                    print("🎵 [AudioPicker] Cancelled")
-                    isPickerPresented = false
-                }
-            )
-        }
-        .onChange(of: isPickerPresented) { oldValue, newValue in
-            print("🎵 [AudioPicker] isPickerPresented changed: \(oldValue) -> \(newValue)")
-        }
-        .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
-            TextField("Название", text: $renameText)
-            Button("Готово") {
-                viewModel.renameTimeline(to: renameText)
+            .sheet(isPresented: $isTagFilterPresented) {
+                tagFilterSheet
             }
-            Button("Отмена", role: .cancel) {}
-        }
-        .alert("Переименовать маркер", isPresented: renameMarkerBinding) {
-            TextField(
-                "Название",
-                text: Binding(
-                    get: { renamingMarker?.name ?? "" },
-                    set: { renamingMarker?.name = $0 }
+            .sheet(isPresented: $isTimelineSettingsPresented) {
+                TimelineSettingsSheet(
+                    viewModel: viewModel,
+                    repository: repository,
+                    onEditBPM: {
+                        isTimelineSettingsPresented = false
+                        bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
+                        isEditingBPM = true
+                    },
+                    onReplaceAudio: {
+                        isTimelineSettingsPresented = false
+                        isPickerPresented = true
+                    },
+                    onDeleteAudio: {
+                        isTimelineSettingsPresented = false
+                        viewModel.removeAudio()
+                    },
+                    onDeleteAllMarkers: {
+                        isTimelineSettingsPresented = false
+                        showDeleteAllMarkersConfirmation = true
+                    }
                 )
+            }
+            .sheet(isPresented: $isPickerPresented) {
+                AudioDocumentPicker(
+                    onPick: { url in
+                        print("🎵 [AudioPicker] File picked: \(url)")
+                        isPickerPresented = false
+                        handleAudioURL(url)
+                    },
+                    onCancel: {
+                        print("🎵 [AudioPicker] Cancelled")
+                        isPickerPresented = false
+                    }
+                )
+            }
+    }
+
+    private var overlayModifiers: some View {
+        sheetModifiers
+            .overlay(alignment: .center) {
+                // Tag picker menu overlay
+                if let marker = editingTagMarker {
+                    tagPickerMenuOverlay(for: marker)
+                }
+
+                // Marker name popup overlay
+                if isMarkerNamePopupPresented {
+                    markerNamePopupOverlay
+                }
+            }
+            .onChange(of: isPickerPresented) { oldValue, newValue in
+                print("🎵 [AudioPicker] isPickerPresented changed: \(oldValue) -> \(newValue)")
+            }
+    }
+
+    private var alertModifiers: some View {
+        overlayModifiers
+            .alert("Переименовать таймлайн", isPresented: $isRenamingTimeline) {
+                TextField("Название", text: $renameText)
+                Button("Готово") {
+                    viewModel.renameTimeline(to: renameText)
+                }
+                Button("Отмена", role: .cancel) {}
+            }
+            .alert("Переименовать маркер", isPresented: renameMarkerBinding) {
+                TextField(
+                    "Название",
+                    text: Binding(
+                        get: { renamingMarker?.name ?? "" },
+                        set: { renamingMarker?.name = $0 }
+                    )
+                )
+                Button("Готово") {
+                    if let marker = renamingMarker {
+                        viewModel.renameMarker(marker, to: marker.name, oldName: renamingMarkerOldName)
+                    }
+                    renamingMarker = nil
+                }
+                Button("Отмена", role: .cancel) {
+                    renamingMarker = nil
+                }
+            }
+            .alert("Удалить все маркеры?", isPresented: $showDeleteAllMarkersConfirmation) {
+                Button("Удалить", role: .destructive) {
+                    viewModel.deleteAllMarkers()
+                }
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Вы уверены, что хотите удалить все маркеры этого таймлайна?")
+            }
+            .alert("Ошибка импорта", isPresented: $showCSVImportError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(csvImportError ?? "Неизвестная ошибка")
+            }
+            .alert("Установить BPM", isPresented: $isEditingBPM) {
+                TextField("BPM", text: $bpmText)
+                    .keyboardType(.numberPad)
+                Button("Готово") {
+                    if let bpm = Double(bpmText), bpm > 0, bpm <= 300 {
+                        viewModel.setBPM(bpm)
+                    }
+                }
+                Button("Удалить BPM", role: .destructive) {
+                    viewModel.setBPM(nil)
+                }
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Укажите темп композиции (20-300 BPM)")
+            }
+    }
+
+    private var fileModifiers: some View {
+        alertModifiers
+            .fileExporter(
+                isPresented: $isExportPresented,
+                document: SimpleCSVDocument(data: exportData ?? Data()),
+                contentType: .commaSeparatedText,
+                defaultFilename: "\(viewModel.name)_Markers",
+                onCompletion: { _ in }
             )
-            Button("Готово") {
-                if let marker = renamingMarker {
-                    viewModel.renameMarker(marker, to: marker.name, oldName: renamingMarkerOldName)
-                }
-                renamingMarker = nil
-            }
-            Button("Отмена", role: .cancel) {
-                renamingMarker = nil
-            }
-        }
-        .alert("Удалить все маркеры?", isPresented: $showDeleteAllMarkersConfirmation) {
-            Button("Удалить", role: .destructive) {
-                viewModel.deleteAllMarkers()
-            }
-            Button("Отмена", role: .cancel) {}
-        } message: {
-            Text("Вы уверены, что хотите удалить все маркеры этого таймлайна?")
-        }
-        .fileExporter(
-            isPresented: $isExportPresented,
-            document: SimpleCSVDocument(data: exportData ?? Data()),
-            contentType: .commaSeparatedText,
-            defaultFilename: "\(viewModel.name)_Markers",
-            onCompletion: { _ in }
-        )
-        .fileImporter(
-            isPresented: $isCSVImportPresented,
-            allowedContentTypes: [.commaSeparatedText],
-            allowsMultipleSelection: false,
-            onCompletion: handleCSVImport
-        )
-        .alert("Ошибка импорта", isPresented: $showCSVImportError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(csvImportError ?? "Неизвестная ошибка")
-        }
-        .alert("Установить BPM", isPresented: $isEditingBPM) {
-            TextField("BPM", text: $bpmText)
-                .keyboardType(.numberPad)
-            Button("Готово") {
-                if let bpm = Double(bpmText), bpm > 0, bpm <= 300 {
-                    viewModel.setBPM(bpm)
-                }
-            }
-            Button("Удалить BPM", role: .destructive) {
-                viewModel.setBPM(nil)
-            }
-            Button("Отмена", role: .cancel) {}
-        } message: {
-            Text("Укажите темп композиции (20-300 BPM)")
-        }
+            .fileImporter(
+                isPresented: $isCSVImportPresented,
+                allowedContentTypes: [.commaSeparatedText],
+                allowsMultipleSelection: false,
+                onCompletion: handleCSVImport
+            )
     }
 
     // MARK: - Main Content
