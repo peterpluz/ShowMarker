@@ -4,6 +4,7 @@ struct TimelineSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @ObservedObject var viewModel: TimelineViewModel
+    @ObservedObject var repository: ProjectRepository
 
     // Callbacks for actions that need to be performed in TimelineScreen
     let onEditBPM: () -> Void
@@ -14,6 +15,29 @@ struct TimelineSettingsSheet: View {
     var body: some View {
         NavigationView {
             List {
+                // Project Settings Section
+                Section {
+                    // FPS Section
+                    Picker("Частота кадров", selection: Binding(
+                        get: { repository.project.fps },
+                        set: { repository.project.fps = $0 }
+                    )) {
+                        ForEach([25, 30, 50, 60, 100], id: \.self) { fps in
+                            Text("\(fps) fps").tag(fps)
+                        }
+                    }
+
+                    // Haptic Feedback
+                    Toggle("Вибрация маркера", isOn: Binding(
+                        get: { repository.project.isMarkerHapticFeedbackEnabled },
+                        set: { newValue in
+                            repository.project.isMarkerHapticFeedbackEnabled = newValue
+                        }
+                    ))
+                } header: {
+                    Text("Проект")
+                }
+
                 // BPM settings
                 Section {
                     if let bpm = viewModel.bpm {
@@ -143,7 +167,7 @@ struct TimelineSettingsSheet: View {
                     Text("Опасная зона")
                 }
             }
-            .navigationTitle("Настройки таймлайна")
+            .navigationTitle("Настройки")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

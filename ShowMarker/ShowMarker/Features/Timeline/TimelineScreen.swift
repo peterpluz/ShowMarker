@@ -5,6 +5,7 @@ import AVFoundation
 struct TimelineScreen: View {
 
     @StateObject private var viewModel: TimelineViewModel
+    private let repository: ProjectRepository
 
     @State private var isPickerPresented = false
     @State private var isRenamingTimeline = false
@@ -72,6 +73,7 @@ struct TimelineScreen: View {
         _viewModel = StateObject(
             wrappedValue: Self.makeViewModel(repository: repository, timelineID: timelineID)
         )
+        self.repository = repository
     }
     
     // НОВОЕ: проверка наличия аудио
@@ -114,6 +116,7 @@ struct TimelineScreen: View {
         .sheet(isPresented: $isTimelineSettingsPresented) {
             TimelineSettingsSheet(
                 viewModel: viewModel,
+                repository: repository,
                 onEditBPM: {
                     isTimelineSettingsPresented = false
                     bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
