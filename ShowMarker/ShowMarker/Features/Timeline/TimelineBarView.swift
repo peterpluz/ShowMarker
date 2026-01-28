@@ -800,7 +800,7 @@ struct TimelineBarView: View {
         GeometryReader { geometry in
             let normalizedPosition = beatGridOffset / duration
             let x = normalizedPosition * width
-            let hitAreaWidth: CGFloat = 20  // Wide enough to easily tap
+            let hitAreaWidth: CGFloat = 60  // Wider hit area for easier dragging
 
             // Invisible drag handle over the first beat grid line
             Rectangle()
