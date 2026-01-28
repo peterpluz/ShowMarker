@@ -750,16 +750,74 @@ struct TimelineBarView: View {
                         path.move(to: CGPoint(x: x, y: 0))
                         path.addLine(to: CGPoint(x: x, y: size.height))
 
-                        // First beat of each bar (every 4 beats) is slightly brighter
+                        // First beat (i==0) is the draggable offset line - make it accent colored
+                        let isOffsetLine = i == 0
                         let isBarLine = i % 4 == 0
-                        let lineColor = isBarLine ? Color.secondary.opacity(0.35) : Color.secondary.opacity(0.2)
-                        let lineWidth: CGFloat = isBarLine ? 1.8 : 1.5
+
+                        let lineColor: Color
+                        let lineWidth: CGFloat
+
+                        if isOffsetLine {
+                            // First line (offset) is accent colored and thicker
+                            lineColor = Color.accentColor.opacity(isDraggingBeatGridOffset ? 0.6 : 0.4)
+                            lineWidth = 2.5
+                        } else if isBarLine {
+                            lineColor = Color.secondary.opacity(0.35)
+                            lineWidth = 1.8
+                        } else {
+                            lineColor = Color.secondary.opacity(0.2)
+                            lineWidth = 1.5
+                        }
 
                         context.stroke(path, with: .color(lineColor), lineWidth: lineWidth)
                     }
                 }
             }
             .frame(width: width, height: Self.barHeight)
+            .overlay {
+                // Beat grid offset drag overlay (only when beat grid is enabled)
+                if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0, beatGridOffset >= 0 {
+                    beatGridOffsetDragOverlay(width: width, bpm: bpm)
+                }
+            }
+        }
+    }
+
+    // MARK: - Beat Grid Offset Drag Overlay
+
+    @ViewBuilder
+    private func beatGridOffsetDragOverlay(width: CGFloat, bpm: Double) -> some View {
+        GeometryReader { geometry in
+            let normalizedPosition = beatGridOffset / duration
+            let x = normalizedPosition * width
+            let hitAreaWidth: CGFloat = 20  // Wide enough to easily tap
+
+            // Invisible drag handle over the first beat grid line
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: hitAreaWidth, height: Self.barHeight)
+                .position(x: x, y: Self.barHeight / 2)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard draggedMarkerID == nil else { return }
+
+                            if !isDraggingBeatGridOffset {
+                                isDraggingBeatGridOffset = true
+                                beatGridOffsetDragStart = beatGridOffset
+                            }
+
+                            // Calculate new offset based on drag position
+                            let normalizedX = value.location.x / width
+                            let newOffset = clamp(normalizedX * duration)
+
+                            // Apply offset immediately
+                            onBeatGridOffsetChange(newOffset)
+                        }
+                        .onEnded { _ in
+                            isDraggingBeatGridOffset = false
+                        }
+                )
         }
     }
 

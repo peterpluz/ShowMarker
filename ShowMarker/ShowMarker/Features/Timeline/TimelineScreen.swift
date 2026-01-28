@@ -98,7 +98,26 @@ struct TimelineScreen: View {
                     tagFilterSheet
                 }
                 .sheet(isPresented: $isTimelineSettingsPresented) {
-                    TimelineSettingsSheet(viewModel: viewModel)
+                    TimelineSettingsSheet(
+                        viewModel: viewModel,
+                        onEditBPM: {
+                            isTimelineSettingsPresented = false
+                            bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
+                            isEditingBPM = true
+                        },
+                        onReplaceAudio: {
+                            isTimelineSettingsPresented = false
+                            isPickerPresented = true
+                        },
+                        onDeleteAudio: {
+                            isTimelineSettingsPresented = false
+                            viewModel.removeAudio()
+                        },
+                        onDeleteAllMarkers: {
+                            isTimelineSettingsPresented = false
+                            showDeleteAllMarkersConfirmation = true
+                        }
+                    )
                 }
 
             // Tag picker menu overlay
@@ -420,103 +439,40 @@ struct TimelineScreen: View {
 
     private var toolbarContent: some ToolbarContent {
         Group {
-            // Timeline settings button (only if BPM is set)
-            if viewModel.bpm != nil {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isTimelineSettingsPresented = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 17, weight: .regular))
-                    }
+            // Timeline settings button (always visible)
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isTimelineSettingsPresented = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 17, weight: .regular))
                 }
             }
 
-            // Settings menu
+            // Settings menu (only import/export and rename)
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    // ✅ Auto-scroll toggle (moved to menu)
-                    Toggle(isOn: $viewModel.isAutoScrollEnabled) {
-                        Label("Автоскролл маркеров", systemImage: "arrow.down.circle")
-                    }
-
-                    // Pause on marker creation toggle
-                    Toggle(isOn: $viewModel.shouldPauseOnMarkerCreation) {
-                        Label("Останавливать воспроизведение", systemImage: "pause.circle")
-                    }
-
-                    // Show marker popup toggle
-                    Toggle(isOn: $viewModel.shouldShowMarkerPopup) {
-                        Label("Показывать окно создания маркера", systemImage: "square.and.pencil")
-                    }
-
-                    Divider()
-                
-                // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
-                if hasAudio {
                     Button {
-                        isPickerPresented = true
+                        renameText = viewModel.name
+                        isRenamingTimeline = true
                     } label: {
-                        Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
-                    }
-
-                    Button(role: .destructive) {
-                        viewModel.removeAudio()
-                    } label: {
-                        Label("Удалить аудиофайл", systemImage: "trash")
+                        Label("Переименовать таймлайн", systemImage: "pencil")
                     }
 
                     Divider()
-                }
 
-                // Beat grid options (only if BPM is set)
-                if viewModel.bpm != nil {
-                    Toggle(isOn: Binding(
-                        get: { viewModel.isBeatGridEnabled },
-                        set: { _ in viewModel.toggleBeatGrid() }
-                    )) {
-                        Label("Показать сетку битов", systemImage: "grid")
+                    Button {
+                        isCSVImportPresented = true
+                    } label: {
+                        Label("Import markers (CSV)", systemImage: "square.and.arrow.up")
                     }
 
-                    Toggle(isOn: Binding(
-                        get: { viewModel.isSnapToGridEnabled },
-                        set: { _ in viewModel.toggleSnapToGrid() }
-                    )) {
-                        Label("Привязка к сетке битов", systemImage: "scope")
+                    Button {
+                        prepareExport()
+                    } label: {
+                        Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
                     }
-                    .disabled(!viewModel.isBeatGridEnabled)
-
-                    Divider()
-                }
-
-                Button {
-                    renameText = viewModel.name
-                    isRenamingTimeline = true
-                } label: {
-                    Label("Переименовать таймлайн", systemImage: "pencil")
-                }
-
-                Divider()
-
-                Button(role: .destructive) {
-                    showDeleteAllMarkersConfirmation = true
-                } label: {
-                    Label("Удалить все маркеры", systemImage: "trash.fill")
-                }
-                .disabled(viewModel.markers.isEmpty)
-
-                Button {
-                    isCSVImportPresented = true
-                } label: {
-                    Label("Import markers (CSV)", systemImage: "square.and.arrow.up")
-                }
-
-                Button {
-                    prepareExport()
-                } label: {
-                    Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
-                }
-                .disabled(viewModel.markers.isEmpty)
+                    .disabled(viewModel.markers.isEmpty)
 
                 } label: {
                     Image(systemName: "ellipsis")
@@ -662,6 +618,10 @@ struct TimelineScreen: View {
             bpm: viewModel.bpm,
             isBeatGridEnabled: viewModel.isBeatGridEnabled,
             isSnapToGridEnabled: viewModel.isSnapToGridEnabled,
+            beatGridOffset: viewModel.beatGridOffset,
+            onBeatGridOffsetChange: { offset in
+                viewModel.setBeatGridOffset(offset)
+            },
             hasAudio: hasAudio,
             onAddAudio: {
                 print("🎵 [TimelineScreen] onAddAudio called, setting isPickerPresented = true")
