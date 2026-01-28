@@ -51,6 +51,13 @@ struct TimelineScreen: View {
     @State private var rippleRadius: CGFloat = 0
     @State private var rippleOpacity: Double = 1.0
 
+    // BPM editing state
+    @State private var isEditingBPM = false
+    @State private var bpmText = ""
+
+    // Timeline settings sheet state
+    @State private var isTimelineSettingsPresented = false
+
     private static func makeViewModel(
         repository: ProjectRepository,
         timelineID: UUID
@@ -89,6 +96,28 @@ struct TimelineScreen: View {
                 }
                 .sheet(isPresented: $isTagFilterPresented) {
                     tagFilterSheet
+                }
+                .sheet(isPresented: $isTimelineSettingsPresented) {
+                    TimelineSettingsSheet(
+                        viewModel: viewModel,
+                        onEditBPM: {
+                            isTimelineSettingsPresented = false
+                            bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
+                            isEditingBPM = true
+                        },
+                        onReplaceAudio: {
+                            isTimelineSettingsPresented = false
+                            isPickerPresented = true
+                        },
+                        onDeleteAudio: {
+                            isTimelineSettingsPresented = false
+                            viewModel.removeAudio()
+                        },
+                        onDeleteAllMarkers: {
+                            isTimelineSettingsPresented = false
+                            showDeleteAllMarkersConfirmation = true
+                        }
+                    )
                 }
 
             // Tag picker menu overlay
@@ -168,6 +197,21 @@ struct TimelineScreen: View {
             } message: {
                 Text(csvImportError ?? "Неизвестная ошибка")
             }
+            .alert("Установить BPM", isPresented: $isEditingBPM) {
+                TextField("BPM", text: $bpmText)
+                    .keyboardType(.numberPad)
+                Button("Готово") {
+                    if let bpm = Double(bpmText), bpm > 0, bpm <= 300 {
+                        viewModel.setBPM(bpm)
+                    }
+                }
+                Button("Удалить BPM", role: .destructive) {
+                    viewModel.setBPM(nil)
+                }
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Укажите темп композиции (20-300 BPM)")
+            }
     }
 
     // MARK: - Main Content
@@ -188,9 +232,13 @@ struct TimelineScreen: View {
             }
             .listStyle(.insetGrouped)
             .animation(.easeInOut(duration: 0.3), value: viewModel.visibleMarkers.map(\.id))  // ✅ Animate marker reordering
-            .navigationTitle(viewModel.name)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbarContent }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    customNavigationTitle
+                }
+                toolbarContent
+            }
             .safeAreaInset(edge: .bottom) { bottomPanel }
             .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
                 // ✅ Auto-scroll to next marker if enabled
@@ -348,75 +396,83 @@ struct TimelineScreen: View {
         )
     }
 
+    // MARK: - Custom Navigation Title
+
+    private var customNavigationTitle: some View {
+        VStack(spacing: 2) {
+            Text(viewModel.name)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.primary)
+
+            HStack(spacing: 8) {
+                if let audio = viewModel.audio {
+                    Text(audio.originalFileName)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.secondary)
+
+                    if viewModel.bpm != nil {
+                        Text("•")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if let bpm = viewModel.bpm {
+                    Text("\(Int(bpm)) BPM")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.secondary)
+                } else if viewModel.audio != nil {
+                    Text("Tap to set BPM")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+            }
+            .onTapGesture {
+                // Open BPM editing
+                bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
+                isEditingBPM = true
+            }
+        }
+    }
+
     // MARK: - Toolbar
 
     private var toolbarContent: some ToolbarContent {
         Group {
-            // Settings menu
+            // Timeline settings button (always visible)
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isTimelineSettingsPresented = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 17, weight: .regular))
+                }
+            }
+
+            // Settings menu (only import/export and rename)
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    // ✅ Auto-scroll toggle (moved to menu)
-                    Toggle(isOn: $viewModel.isAutoScrollEnabled) {
-                        Label("Автоскролл маркеров", systemImage: "arrow.down.circle")
-                    }
-
-                    // Pause on marker creation toggle
-                    Toggle(isOn: $viewModel.shouldPauseOnMarkerCreation) {
-                        Label("Останавливать воспроизведение", systemImage: "pause.circle")
-                    }
-
-                    // Show marker popup toggle
-                    Toggle(isOn: $viewModel.shouldShowMarkerPopup) {
-                        Label("Показывать окно создания маркера", systemImage: "square.and.pencil")
-                    }
-
-                    Divider()
-                
-                // ИСПРАВЛЕНО: показываем опции аудио только если оно есть
-                if hasAudio {
                     Button {
-                        isPickerPresented = true
+                        renameText = viewModel.name
+                        isRenamingTimeline = true
                     } label: {
-                        Label("Заменить аудиофайл", systemImage: "arrow.triangle.2.circlepath")
-                    }
-
-                    Button(role: .destructive) {
-                        viewModel.removeAudio()
-                    } label: {
-                        Label("Удалить аудиофайл", systemImage: "trash")
+                        Label("Переименовать таймлайн", systemImage: "pencil")
                     }
 
                     Divider()
-                }
 
-                Button {
-                    renameText = viewModel.name
-                    isRenamingTimeline = true
-                } label: {
-                    Label("Переименовать таймлайн", systemImage: "pencil")
-                }
+                    Button {
+                        isCSVImportPresented = true
+                    } label: {
+                        Label("Import markers (CSV)", systemImage: "square.and.arrow.up")
+                    }
 
-                Divider()
-
-                Button(role: .destructive) {
-                    showDeleteAllMarkersConfirmation = true
-                } label: {
-                    Label("Удалить все маркеры", systemImage: "trash.fill")
-                }
-                .disabled(viewModel.markers.isEmpty)
-
-                Button {
-                    isCSVImportPresented = true
-                } label: {
-                    Label("Import markers (CSV)", systemImage: "square.and.arrow.up")
-                }
-
-                Button {
-                    prepareExport()
-                } label: {
-                    Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
-                }
-                .disabled(viewModel.markers.isEmpty)
+                    Button {
+                        prepareExport()
+                    } label: {
+                        Label("Export markers (Reaper CSV)", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(viewModel.markers.isEmpty)
 
                 } label: {
                     Image(systemName: "ellipsis")
@@ -427,6 +483,8 @@ struct TimelineScreen: View {
     }
 
     // MARK: - Bottom Panel
+    // TODO: Реализовать Sheet с двумя режимами (половина/полный экран) для увеличенного просмотра таймлайна
+    // Требуется: .sheet с .presentationDetents([.medium, .large]) и динамическая высота TimelineBarView
 
     private var bottomPanel: some View {
         VStack(spacing: 16) {
@@ -448,6 +506,21 @@ struct TimelineScreen: View {
                 )
 
                 Spacer()
+
+                // Metronome indicator (center, only if BPM is set)
+                if viewModel.bpm != nil {
+                    MetronomeIndicator(
+                        isPlaying: viewModel.isMetronomeEnabled,
+                        currentBeat: viewModel.currentBeat,
+                        bpm: viewModel.bpm,
+                        isEnabled: viewModel.isMetronomeUserEnabled,
+                        onToggle: {
+                            viewModel.toggleMetronome()
+                        }
+                    )
+
+                    Spacer()
+                }
 
                 // Undo/Redo buttons (right side)
                 HStack(spacing: 12) {
@@ -542,6 +615,13 @@ struct TimelineScreen: View {
             markers: viewModel.visibleMarkers,
             tags: viewModel.tags,
             fps: viewModel.fps,
+            bpm: viewModel.bpm,
+            isBeatGridEnabled: viewModel.isBeatGridEnabled,
+            isSnapToGridEnabled: viewModel.isSnapToGridEnabled,
+            beatGridOffset: viewModel.beatGridOffset,
+            onBeatGridOffsetChange: { offset in
+                viewModel.setBeatGridOffset(offset)
+            },
             hasAudio: hasAudio,
             onAddAudio: {
                 print("🎵 [TimelineScreen] onAddAudio called, setting isPickerPresented = true")
@@ -662,7 +742,7 @@ struct TimelineScreen: View {
             }
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)

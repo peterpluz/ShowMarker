@@ -12,6 +12,13 @@ struct TimelineBarView: View {
 
     let fps: Int  // Project FPS for frame-based ruler divisions
 
+    // Beat grid parameters
+    let bpm: Double?
+    let isBeatGridEnabled: Bool
+    let isSnapToGridEnabled: Bool
+    let beatGridOffset: Double
+    let onBeatGridOffsetChange: (Double) -> Void
+
     let hasAudio: Bool
 
     let onAddAudio: () -> Void
@@ -66,6 +73,10 @@ struct TimelineBarView: View {
     @State private var capsuleDragTime: Double = 0
     @State private var capsuleDragEndTime: Date?
 
+    // MARK: - Beat Grid Offset Drag State
+    @State private var isDraggingBeatGridOffset: Bool = false
+    @State private var beatGridOffsetDragStart: Double = 0
+
     var body: some View {
         VStack(spacing: 8) {
             if hasAudio {
@@ -119,7 +130,7 @@ struct TimelineBarView: View {
                             .offset(x: xOffset)
                     )
                     .gesture(
-                        DragGesture()
+                        DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 if capsuleDragStart == nil {
                                     capsuleDragStart = xOffset
@@ -525,16 +536,16 @@ struct TimelineBarView: View {
     }
 
     private func playheadDrag(secondsPerPixel: Double) -> some Gesture {
-        DragGesture()
+        DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard draggedMarkerID == nil, !isPinching else { return }
 
                 // Check for double-tap-hold zoom gesture:
-                // If there was a recent tap (< 300ms before drag started), enter zoom mode
+                // If there was a recent tap (< 400ms before drag started), enter zoom mode
                 if !isDoubleTapZoomMode && doubleTapHoldStartLocation == nil {
                     if let tapTime = lastTapTime {
                         let timeSinceTap = Date().timeIntervalSince(tapTime)
-                        if timeSinceTap < 0.3 {
+                        if timeSinceTap < 0.4 {
                             // This is a double-tap-hold gesture - enable zoom mode
                             isDoubleTapZoomMode = true
                             doubleTapStartZoom = zoomScale
@@ -550,7 +561,7 @@ struct TimelineBarView: View {
                     // Dragging right increases zoom, left decreases zoom
                     // Sensitivity: every 50 pixels of drag = 1x zoom multiplier
                     let zoomMultiplier = 1.0 + (Double(translation) / 50.0)
-                    let newScale = doubleTapStartZoom * max(zoomMultiplier, 0.5) // Prevent negative zoom
+                    let newScale = doubleTapStartZoom * max(zoomMultiplier, 0.1) // Allow zooming out more
                     let clamped = min(max(newScale, Self.minZoom), Self.maxZoom)
                     zoomScale = clamped
                     return
@@ -620,7 +631,7 @@ struct TimelineBarView: View {
                 draggedMarkerID = marker.id
                 draggedMarkerPreviewTime = marker.timeSeconds
             }
-            .sequenced(before: DragGesture())
+            .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 guard
                     case .second(true, let drag?) = value,
@@ -630,7 +641,10 @@ struct TimelineBarView: View {
                 let offset = timelineOffset(contentWidth)
                 let originX = centerX - offset
                 let normalizedPosition = (drag.location.x - originX) / contentWidth
-                let newTime = clamp(normalizedPosition * duration)
+                let rawTime = clamp(normalizedPosition * duration)
+
+                // Apply snap to beat grid if enabled
+                let newTime = snapToBeat(rawTime)
 
                 draggedMarkerPreviewTime = newTime
             }
@@ -716,8 +730,94 @@ struct TimelineBarView: View {
                     context.fill(upperPath, with: .color(fillColor))
                     context.fill(lowerPath, with: .color(fillColor))
                 }
+
+                // Draw beat grid if enabled
+                if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0 {
+                    let beatInterval = 60.0 / bpm  // seconds per beat
+                    let beatCount = Int(ceil((duration - beatGridOffset) / beatInterval))
+
+                    for i in 0...beatCount {
+                        let beatTime = beatGridOffset + Double(i) * beatInterval
+
+                        // Skip if beat is outside timeline bounds
+                        guard beatTime >= 0 && beatTime <= duration else { continue }
+
+                        let normalizedPosition = beatTime / duration
+                        let x = normalizedPosition * canvasWidth
+
+                        // Draw vertical line
+                        var path = Path()
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: size.height))
+
+                        // First beat (i==0) is the draggable offset line - make it accent colored
+                        let isOffsetLine = i == 0
+                        let isBarLine = i % 4 == 0
+
+                        let lineColor: Color
+                        let lineWidth: CGFloat
+
+                        if isOffsetLine {
+                            // First line (offset) is accent colored and thicker
+                            lineColor = Color.accentColor.opacity(isDraggingBeatGridOffset ? 0.6 : 0.4)
+                            lineWidth = 2.5
+                        } else if isBarLine {
+                            lineColor = Color.secondary.opacity(0.35)
+                            lineWidth = 1.8
+                        } else {
+                            lineColor = Color.secondary.opacity(0.2)
+                            lineWidth = 1.5
+                        }
+
+                        context.stroke(path, with: .color(lineColor), lineWidth: lineWidth)
+                    }
+                }
             }
             .frame(width: width, height: Self.barHeight)
+            .overlay {
+                // Beat grid offset drag overlay (only when beat grid is enabled)
+                if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0, beatGridOffset >= 0 {
+                    beatGridOffsetDragOverlay(width: width, bpm: bpm)
+                }
+            }
+        }
+    }
+
+    // MARK: - Beat Grid Offset Drag Overlay
+
+    @ViewBuilder
+    private func beatGridOffsetDragOverlay(width: CGFloat, bpm: Double) -> some View {
+        GeometryReader { geometry in
+            let normalizedPosition = beatGridOffset / duration
+            let x = normalizedPosition * width
+            let hitAreaWidth: CGFloat = 20  // Wide enough to easily tap
+
+            // Invisible drag handle over the first beat grid line
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: hitAreaWidth, height: Self.barHeight)
+                .position(x: x, y: Self.barHeight / 2)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard draggedMarkerID == nil else { return }
+
+                            if !isDraggingBeatGridOffset {
+                                isDraggingBeatGridOffset = true
+                                beatGridOffsetDragStart = beatGridOffset
+                            }
+
+                            // Calculate new offset based on drag position
+                            let normalizedX = value.location.x / width
+                            let newOffset = clamp(normalizedX * duration)
+
+                            // Apply offset immediately
+                            onBeatGridOffsetChange(newOffset)
+                        }
+                        .onEnded { _ in
+                            isDraggingBeatGridOffset = false
+                        }
+                )
         }
     }
 
@@ -752,5 +852,18 @@ struct TimelineBarView: View {
 
     private func clamp(_ t: Double) -> Double {
         min(max(t, 0), duration)
+    }
+
+    /// Квантует время к ближайшему биту, если включена привязка к сетке
+    private func snapToBeat(_ time: Double) -> Double {
+        guard isSnapToGridEnabled, let bpm = bpm, bpm > 0 else {
+            return time
+        }
+
+        let beatInterval = 60.0 / bpm  // seconds per beat
+        // Apply offset to snap correctly
+        let timeFromOffset = time - beatGridOffset
+        let beatNumber = round(timeFromOffset / beatInterval)
+        return beatGridOffset + beatNumber * beatInterval
     }
 }
