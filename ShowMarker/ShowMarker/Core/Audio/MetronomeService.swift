@@ -2,8 +2,8 @@ import Foundation
 import AVFoundation
 import Combine
 
-/// Сервис метронома на базе AVAudioEngine для минимальной latency
-/// Использует тот же audio output что и основное аудио для синхронизации
+/// Сервис метронома на базе AVAudioEngine
+/// Поддерживает как мгновенное воспроизведение, так и pre-scheduling
 @MainActor
 class MetronomeService: ObservableObject {
 
@@ -11,18 +11,21 @@ class MetronomeService: ObservableObject {
 
     // AVAudioEngine для низкой latency
     private var audioEngine: AVAudioEngine?
-    private var clickPlayerNode: AVAudioPlayerNode?
-    private var accentPlayerNode: AVAudioPlayerNode?
+    private var playerNode: AVAudioPlayerNode?
 
     // Pre-buffered audio data
     private var clickBuffer: AVAudioPCMBuffer?
     private var accentBuffer: AVAudioPCMBuffer?
+
+    // Pre-scheduling timer
+    private var scheduleTimer: DispatchSourceTimer?
 
     init() {
         setupAudioEngine()
     }
 
     deinit {
+        scheduleTimer?.cancel()
         audioEngine?.stop()
     }
 
@@ -31,76 +34,94 @@ class MetronomeService: ObservableObject {
     private func setupAudioEngine() {
         let engine = AVAudioEngine()
 
-        // Create player nodes
-        let clickNode = AVAudioPlayerNode()
-        let accentNode = AVAudioPlayerNode()
+        let node = AVAudioPlayerNode()
+        engine.attach(node)
 
-        // Add nodes to engine
-        engine.attach(clickNode)
-        engine.attach(accentNode)
-
-        // Create mixer for volume control
         let mixer = engine.mainMixerNode
         let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
 
-        // Connect nodes to mixer
-        engine.connect(clickNode, to: mixer, format: format)
-        engine.connect(accentNode, to: mixer, format: format)
+        engine.connect(node, to: mixer, format: format)
 
-        // Generate click sounds
+        // Generate click sounds with different tones
         clickBuffer = generateClickBuffer(frequency: 1000, duration: 0.05, format: format)
         accentBuffer = generateClickBuffer(frequency: 1500, duration: 0.05, format: format)
 
-        // Store references
         self.audioEngine = engine
-        self.clickPlayerNode = clickNode
-        self.accentPlayerNode = accentNode
+        self.playerNode = node
 
-        // Start engine
         do {
             try engine.start()
+            node.play()  // Start node - it will wait for scheduled buffers
             print("✅ MetronomeService: AVAudioEngine started")
         } catch {
             print("⚠️ MetronomeService: Failed to start AVAudioEngine: \(error)")
         }
     }
 
-    /// Воспроизводит клик метронома с минимальной latency
-    /// - Parameter isAccent: true для первого бита такта (более высокий тон)
+    /// Ensures the audio engine is running
+    private func ensureEngineRunning() {
+        guard let engine = audioEngine else { return }
+        if !engine.isRunning {
+            do {
+                try engine.start()
+                playerNode?.play()
+            } catch {
+                print("⚠️ MetronomeService: Failed to restart engine: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Playback
+
+    /// Воспроизводит клик немедленно (для первого бита при старте)
     func playClick(isAccent: Bool) {
-        guard let engine = audioEngine, engine.isRunning else {
-            // Try to restart engine if not running
-            try? audioEngine?.start()
+        ensureEngineRunning()
+        guard let node = playerNode else { return }
+
+        let buffer = isAccent ? accentBuffer : clickBuffer
+        guard let buffer = buffer else { return }
+
+        node.volume = volume
+        node.scheduleBuffer(buffer, at: nil, options: .interrupts) { }
+    }
+
+    /// Планирует клик через указанную задержку (в секундах)
+    /// Использует DispatchSourceTimer для точности ~1ms
+    func scheduleClick(afterDelay delay: Double, isAccent: Bool) {
+        scheduleTimer?.cancel()
+
+        guard delay > 0.001 else {
+            // Delay too small, play immediately
+            playClick(isAccent: isAccent)
             return
         }
 
-        let node = isAccent ? accentPlayerNode : clickPlayerNode
-        let buffer = isAccent ? accentBuffer : clickBuffer
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(
+            deadline: .now() + delay,
+            leeway: .microseconds(500)  // 0.5ms precision
+        )
+        timer.setEventHandler { [weak self] in
+            self?.playClick(isAccent: isAccent)
+        }
+        timer.resume()
+        scheduleTimer = timer
+    }
 
-        guard let node = node, let buffer = buffer else { return }
-
-        // Stop any currently playing sound to prevent overlap
-        node.stop()
-
-        // Set volume on the node
-        node.volume = volume
-
-        // Schedule buffer for immediate playback
-        // Using .interrupt to play immediately without waiting
-        node.scheduleBuffer(buffer, at: nil, options: .interrupts) { }
-        node.play()
+    /// Отменяет запланированный клик
+    func cancelScheduled() {
+        scheduleTimer?.cancel()
+        scheduleTimer = nil
     }
 
     /// Обновляет громкость
     func setVolume(_ newVolume: Float) {
         self.volume = max(0, min(1, newVolume))
-        clickPlayerNode?.volume = self.volume
-        accentPlayerNode?.volume = self.volume
+        playerNode?.volume = self.volume
     }
 
     // MARK: - Audio Generation
 
-    /// Генерирует PCM буфер с кликом
     private func generateClickBuffer(
         frequency: Float,
         duration: Double,

@@ -65,16 +65,17 @@ final class TimelineViewModel: ObservableObject {
     // ✅ NEW: Track already-flashed markers during current playback session
     private var flashedMarkers: Set<UUID> = []
 
-    // MARK: - Beat Crossing Detection (Metronome)
+    // MARK: - Beat Scheduling (Metronome)
 
     /// Current beat number in bar (0-based), computed from playhead position
     @Published private(set) var currentBeat: Int = 0
 
-    /// Tracks the previous beat number for crossing detection
-    private var previousBeatNumber: Int = -1
+    /// The absolute beat number that is next scheduled to play
+    /// Int.min means nothing is scheduled
+    private var nextScheduledBeat: Int = Int.min
 
-    /// Set of beat numbers that have already clicked in this playback session
-    private var clickedBeats: Set<Int> = []
+    /// Tracks the last beat we actually played (for visual updates on reactive path)
+    private var lastPlayedBeat: Int = Int.min
 
     // MARK: - Marker Drag State
 
@@ -301,43 +302,41 @@ final class TimelineViewModel: ObservableObject {
                     self.previousFrame = startFrame
                     self.flashedMarkers.removeAll()
 
-                    // Reset beat tracking for metronome
-                    self.previousBeatNumber = self.calculateAbsoluteBeat(at: self.currentTime)
-                    self.clickedBeats.removeAll()
+                    // Reset beat scheduling and play first beat immediately
+                    self.nextScheduledBeat = Int.min
+                    self.lastPlayedBeat = Int.min
+                    self.playFirstBeatAndScheduleNext(at: self.currentTime)
 
-                    print("▶️ [Detection] Playback started at frame \(startFrame), beat \(self.previousBeatNumber)")
+                    print("▶️ [Detection] Playback started at frame \(startFrame)")
                 } else {
-                    // Playback stopped - reset to initial state
+                    // Playback stopped - cancel scheduled beats
                     self.previousFrame = -1
-                    self.previousBeatNumber = -1
-                    self.clickedBeats.removeAll()
+                    self.nextScheduledBeat = Int.min
+                    self.lastPlayedBeat = Int.min
+                    self.metronome.cancelScheduled()
                     print("🛑 [Detection] Playback stopped, tracking reset")
                 }
             }
             .store(in: &cancellables)
 
-        // MARK: - Marker & Beat Crossing Detection
-        // Reactive detection based on playhead position changes
+        // MARK: - Marker Crossing & Beat Scheduling
         $currentTime
             .sink { [weak self] newTime in
                 guard let self = self else { return }
 
-                // ✅ Update next marker for auto-scroll (always, regardless of playback state)
+                // ✅ Update next marker for auto-scroll (always)
                 self.updateNextMarker(for: newTime)
 
                 // ✅ Always update visual beat indicator (even when not playing)
                 self.updateCurrentBeat(at: newTime)
 
                 // ✅ CRITICAL: Only detect crossings during active playback
-                guard self.isPlaying else {
-                    return
-                }
+                guard self.isPlaying else { return }
 
                 let currentFrame = Int(round(newTime * Double(self.fps)))
 
                 // ✅ Handle backward movement (rewind during playback)
                 if currentFrame < self.previousFrame {
-                    // User rewound during playback - clear flashed markers and clicked beats ahead
                     let rewindedMarkers = self.markers.filter { marker in
                         let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
                         return markerFrame > currentFrame
@@ -346,38 +345,31 @@ final class TimelineViewModel: ObservableObject {
                         self.flashedMarkers.remove(marker.id)
                     }
 
-                    // Clear clicked beats that are now ahead
-                    let currentAbsoluteBeat = self.calculateAbsoluteBeat(at: newTime)
-                    self.clickedBeats = self.clickedBeats.filter { $0 <= currentAbsoluteBeat }
-                    self.previousBeatNumber = currentAbsoluteBeat
+                    // Cancel current beat schedule and reschedule from new position
+                    self.metronome.cancelScheduled()
+                    self.nextScheduledBeat = Int.min
+                    self.lastPlayedBeat = Int.min
+                    self.scheduleNextBeat(at: newTime)
 
                     self.previousFrame = currentFrame
-                    print("⏪ [Detection] Rewound to frame \(currentFrame), beat \(currentAbsoluteBeat)")
                     return
                 }
 
                 // Skip if no movement
-                guard currentFrame > self.previousFrame else {
-                    return
-                }
+                guard currentFrame > self.previousFrame else { return }
 
                 // === MARKER CROSSING DETECTION ===
                 let crossedMarkers = self.markers.filter { marker in
                     let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
-
                     if self.previousFrame == -1 {
                         return markerFrame >= 0 && markerFrame <= currentFrame
                     }
-
                     return self.previousFrame < markerFrame && markerFrame <= currentFrame
                 }
 
                 for marker in crossedMarkers {
                     guard !self.flashedMarkers.contains(marker.id) else { continue }
-
-                    let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
                     self.flashedMarkers.insert(marker.id)
-
                     self.flashCounter += 1
                     let event = MarkerFlashEvent(
                         markerID: marker.id,
@@ -386,12 +378,12 @@ final class TimelineViewModel: ObservableObject {
                         timestamp: Date()
                     )
                     self.markerFlashPublisher.send(event)
-                    print("✨ [Marker] '\(marker.name)' FLASH at frame \(markerFrame)")
                 }
 
-                // === BEAT CROSSING DETECTION (Metronome) ===
+                // === BEAT PRE-SCHEDULING ===
+                // On each time update, ensure the next beat is scheduled
                 if self.isMetronomeUserEnabled, let _ = self.bpm {
-                    self.detectBeatCrossing(at: newTime)
+                    self.scheduleNextBeat(at: newTime)
                 }
 
                 self.previousFrame = currentFrame
@@ -418,73 +410,159 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Beat Calculation (Metronome)
 
     /// Calculates the absolute beat number at a given time
-    /// This is a pure function: beat = f(time, bpm, offset)
+    /// Pure function: beat = f(time, bpm, offset)
     private func calculateAbsoluteBeat(at time: Double) -> Int {
         guard let bpm = bpm, bpm > 0 else { return 0 }
-
         let beatInterval = 60.0 / bpm
         let timeFromOffset = time - beatGridOffset
-
-        // Floor to get the beat we're currently in (or just passed)
         return Int(floor(timeFromOffset / beatInterval))
     }
 
     /// Calculates beat position within bar (0-based)
     private func calculateBeatInBar(absoluteBeat: Int) -> Int {
         let beatsPerBar = timeSignature.beatsPerBar
-        // Handle negative beats (before offset)
         return ((absoluteBeat % beatsPerBar) + beatsPerBar) % beatsPerBar
     }
 
-    /// Updates the visual beat indicator (currentBeat property)
-    /// Called on every currentTime change
+    /// Calculates the exact audio time of a given absolute beat
+    private func beatTime(forAbsoluteBeat beat: Int) -> Double {
+        guard let bpm = bpm, bpm > 0 else { return 0 }
+        let beatInterval = 60.0 / bpm
+        return beatGridOffset + Double(beat) * beatInterval
+    }
+
+    /// Updates the visual beat indicator
     private func updateCurrentBeat(at time: Double) {
         guard let _ = bpm else {
             currentBeat = 0
             return
         }
-
         let absoluteBeat = calculateAbsoluteBeat(at: time)
         let beatInBar = calculateBeatInBar(absoluteBeat: absoluteBeat)
-
         if currentBeat != beatInBar {
             currentBeat = beatInBar
         }
     }
 
-    /// Detects beat boundary crossings and triggers metronome clicks
-    /// This is the core of the reactive metronome
-    private func detectBeatCrossing(at time: Double) {
+    // MARK: - Beat Pre-Scheduling
+
+    /// Called at playback start: plays the first beat immediately and schedules the next
+    private func playFirstBeatAndScheduleNext(at time: Double) {
+        guard isMetronomeUserEnabled, let bpm = bpm, bpm > 0 else { return }
+
+        let beatInterval = 60.0 / bpm
+        let timeFromOffset = time - beatGridOffset
+        let currentBeatPosition = timeFromOffset / beatInterval
+        let currentAbsoluteBeat = Int(floor(currentBeatPosition))
+        let fractionalPart = currentBeatPosition - floor(currentBeatPosition)
+
+        // How close are we to the current beat boundary?
+        // If within 20ms (or at the very start), play the current beat immediately
+        let tolerance = 0.020  // 20ms
+        let timeSinceBeat = fractionalPart * beatInterval
+
+        if timeSinceBeat < tolerance {
+            // We're right on a beat - play it now
+            let beatInBar = calculateBeatInBar(absoluteBeat: currentAbsoluteBeat)
+            metronome.playClick(isAccent: beatInBar == 0)
+            lastPlayedBeat = currentAbsoluteBeat
+            currentBeat = beatInBar
+            print("🥁 [Metronome] First beat \(currentAbsoluteBeat) played immediately (on-beat)")
+
+            // Schedule the NEXT beat
+            let nextBeat = currentAbsoluteBeat + 1
+            let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
+            let delay = nextBeatAudioTime - time
+            scheduleSpecificBeat(nextBeat, afterDelay: delay)
+        } else {
+            // We're between beats - schedule the next upcoming beat
+            let nextBeat = currentAbsoluteBeat + 1
+            let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
+            let delay = nextBeatAudioTime - time
+
+            scheduleSpecificBeat(nextBeat, afterDelay: delay)
+            print("🥁 [Metronome] First scheduled beat \(nextBeat) in \(String(format: "%.1f", delay * 1000))ms")
+        }
+    }
+
+    /// Pre-schedules the next beat click based on current position
+    /// Called on every time observer update during playback
+    private func scheduleNextBeat(at time: Double) {
         guard let bpm = bpm, bpm > 0 else { return }
 
-        let currentAbsoluteBeat = calculateAbsoluteBeat(at: time)
+        let beatInterval = 60.0 / bpm
+        let timeFromOffset = time - beatGridOffset
+        let currentBeatPosition = timeFromOffset / beatInterval
 
-        // Check if we've crossed into a new beat
-        guard currentAbsoluteBeat > previousBeatNumber else {
-            // No new beat crossed (or went backwards, which is handled elsewhere)
-            return
+        // The next beat to schedule
+        let nextBeat = Int(ceil(currentBeatPosition))
+
+        // Already scheduled or played?
+        guard nextBeat > nextScheduledBeat else { return }
+
+        // Calculate delay to next beat
+        let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
+        let delay = nextBeatAudioTime - time
+
+        // Only schedule if the beat is within a reasonable window
+        // (not too far in the future, not in the past)
+        guard delay > -0.010 && delay < beatInterval * 2 else { return }
+
+        if delay <= 0.002 {
+            // Beat is essentially NOW or just passed - play immediately
+            let beatInBar = calculateBeatInBar(absoluteBeat: nextBeat)
+            if nextBeat > lastPlayedBeat {
+                metronome.playClick(isAccent: beatInBar == 0)
+                lastPlayedBeat = nextBeat
+                currentBeat = beatInBar
+            }
+            nextScheduledBeat = nextBeat
+
+            // Schedule the one after
+            let afterNext = nextBeat + 1
+            let afterNextDelay = beatTime(forAbsoluteBeat: afterNext) - time
+            scheduleSpecificBeat(afterNext, afterDelay: afterNextDelay)
+        } else {
+            // Schedule future beat
+            scheduleSpecificBeat(nextBeat, afterDelay: delay)
         }
+    }
 
-        // We may have crossed multiple beats (during lag or seek)
-        // Play click for each crossed beat
-        for beat in (previousBeatNumber + 1)...currentAbsoluteBeat {
-            // Skip if this beat already clicked
-            guard !clickedBeats.contains(beat) else { continue }
+    /// Schedules a specific beat to play after a delay
+    private func scheduleSpecificBeat(_ beat: Int, afterDelay delay: Double) {
+        guard delay > 0 else { return }
 
-            // Mark as clicked
-            clickedBeats.insert(beat)
+        nextScheduledBeat = beat
+        let beatInBar = calculateBeatInBar(absoluteBeat: beat)
+        let isAccent = (beatInBar == 0)
 
-            // Determine if this is an accent (first beat of bar)
-            let beatInBar = calculateBeatInBar(absoluteBeat: beat)
-            let isAccent = (beatInBar == 0)
+        // Use the metronome's precise timer
+        metronome.scheduleClick(afterDelay: delay, isAccent: isAccent)
 
-            // Play the click sound
-            metronome.playClick(isAccent: isAccent)
+        // When the beat fires, we need to update visual state and schedule next
+        // Use DispatchQueue to chain the next schedule
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.001) { [weak self] in
+            guard let self = self, self.isPlaying, self.isMetronomeUserEnabled else { return }
 
-            print("🥁 [Metronome] Beat \(beat) (bar beat \(beatInBar + 1)/\(timeSignature.beatsPerBar)) - \(isAccent ? "ACCENT" : "click")")
+            // Update visual state
+            if beat > self.lastPlayedBeat {
+                self.lastPlayedBeat = beat
+                self.currentBeat = beatInBar
+            }
+
+            // The time observer will schedule the next beat on its next update
+            // But as a safety net, schedule the next beat ourselves
+            let nextBeat = beat + 1
+            if nextBeat > self.nextScheduledBeat {
+                if let bpm = self.bpm, bpm > 0 {
+                    let beatInterval = 60.0 / bpm
+                    // We know the next beat is exactly one interval away
+                    // Adjust for any processing delay
+                    let idealDelay = beatInterval - 0.001
+                    self.scheduleSpecificBeat(nextBeat, afterDelay: max(0.001, idealDelay))
+                }
+            }
         }
-
-        previousBeatNumber = currentAbsoluteBeat
     }
     
     // MARK: - Frame Quantization
@@ -765,11 +843,19 @@ final class TimelineViewModel: ObservableObject {
         guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         repository.project.timelines[idx].isMetronomeEnabled.toggle()
 
-        // Reset beat tracking when toggling metronome on during playback
+        // Reset beat scheduling when toggling metronome
         if repository.project.timelines[idx].isMetronomeEnabled && isPlaying {
-            previousBeatNumber = calculateAbsoluteBeat(at: currentTime)
-            clickedBeats.removeAll()
-            print("🥁 [Metronome] Enabled at beat \(previousBeatNumber)")
+            // Enabled during playback - start scheduling from current position
+            nextScheduledBeat = Int.min
+            lastPlayedBeat = Int.min
+            playFirstBeatAndScheduleNext(at: currentTime)
+            print("🥁 [Metronome] Enabled during playback, scheduling from current position")
+        } else if !repository.project.timelines[idx].isMetronomeEnabled {
+            // Disabled - cancel any scheduled beats
+            metronome.cancelScheduled()
+            nextScheduledBeat = Int.min
+            lastPlayedBeat = Int.min
+            print("🥁 [Metronome] Disabled, cancelled scheduled beats")
         }
 
         objectWillChange.send()
