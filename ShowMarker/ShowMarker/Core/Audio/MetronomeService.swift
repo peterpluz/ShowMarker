@@ -2,117 +2,136 @@ import Foundation
 import AVFoundation
 import Combine
 
-/// Простой сервис метронома - только воспроизведение звука
-/// Вся логика тайминга находится в TimelineViewModel
+/// Сервис метронома на базе AVAudioEngine для минимальной latency
+/// Использует тот же audio output что и основное аудио для синхронизации
 @MainActor
 class MetronomeService: ObservableObject {
 
     @Published private(set) var volume: Float = 0.5
 
-    // Звуки метронома (синтезированные)
-    private var clickSound: AVAudioPlayer?
-    private var accentSound: AVAudioPlayer?
+    // AVAudioEngine для низкой latency
+    private var audioEngine: AVAudioEngine?
+    private var clickPlayerNode: AVAudioPlayerNode?
+    private var accentPlayerNode: AVAudioPlayerNode?
+
+    // Pre-buffered audio data
+    private var clickBuffer: AVAudioPCMBuffer?
+    private var accentBuffer: AVAudioPCMBuffer?
 
     init() {
-        setupAudioSounds()
+        setupAudioEngine()
     }
 
-    private func setupAudioSounds() {
-        do {
-            // Простой тон для обычного клика (1000 Hz)
-            if let clickData = generateClickSound(frequency: 1000, duration: 0.05) {
-                clickSound = try AVAudioPlayer(data: clickData)
-                clickSound?.prepareToPlay()
-                clickSound?.volume = volume
-            }
+    deinit {
+        audioEngine?.stop()
+    }
 
-            // Более высокий тон для акцента - первый бит такта (1500 Hz)
-            if let accentData = generateClickSound(frequency: 1500, duration: 0.05) {
-                accentSound = try AVAudioPlayer(data: accentData)
-                accentSound?.prepareToPlay()
-                accentSound?.volume = volume
-            }
+    // MARK: - Setup
+
+    private func setupAudioEngine() {
+        let engine = AVAudioEngine()
+
+        // Create player nodes
+        let clickNode = AVAudioPlayerNode()
+        let accentNode = AVAudioPlayerNode()
+
+        // Add nodes to engine
+        engine.attach(clickNode)
+        engine.attach(accentNode)
+
+        // Create mixer for volume control
+        let mixer = engine.mainMixerNode
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
+
+        // Connect nodes to mixer
+        engine.connect(clickNode, to: mixer, format: format)
+        engine.connect(accentNode, to: mixer, format: format)
+
+        // Generate click sounds
+        clickBuffer = generateClickBuffer(frequency: 1000, duration: 0.05, format: format)
+        accentBuffer = generateClickBuffer(frequency: 1500, duration: 0.05, format: format)
+
+        // Store references
+        self.audioEngine = engine
+        self.clickPlayerNode = clickNode
+        self.accentPlayerNode = accentNode
+
+        // Start engine
+        do {
+            try engine.start()
+            print("✅ MetronomeService: AVAudioEngine started")
         } catch {
-            print("⚠️ Failed to setup metronome sounds: \(error)")
+            print("⚠️ MetronomeService: Failed to start AVAudioEngine: \(error)")
         }
     }
 
-    /// Воспроизводит клик метронома
+    /// Воспроизводит клик метронома с минимальной latency
     /// - Parameter isAccent: true для первого бита такта (более высокий тон)
     func playClick(isAccent: Bool) {
-        let player = isAccent ? accentSound : clickSound
-        player?.volume = volume
-        player?.currentTime = 0
-        player?.play()
+        guard let engine = audioEngine, engine.isRunning else {
+            // Try to restart engine if not running
+            try? audioEngine?.start()
+            return
+        }
+
+        let node = isAccent ? accentPlayerNode : clickPlayerNode
+        let buffer = isAccent ? accentBuffer : clickBuffer
+
+        guard let node = node, let buffer = buffer else { return }
+
+        // Stop any currently playing sound to prevent overlap
+        node.stop()
+
+        // Set volume on the node
+        node.volume = volume
+
+        // Schedule buffer for immediate playback
+        // Using .interrupt to play immediately without waiting
+        node.scheduleBuffer(buffer, at: nil, options: .interrupts) { }
+        node.play()
     }
 
     /// Обновляет громкость
     func setVolume(_ newVolume: Float) {
         self.volume = max(0, min(1, newVolume))
-        clickSound?.volume = self.volume
-        accentSound?.volume = self.volume
+        clickPlayerNode?.volume = self.volume
+        accentPlayerNode?.volume = self.volume
     }
 
     // MARK: - Audio Generation
 
-    /// Генерирует простой звуковой клик
-    private func generateClickSound(frequency: Float, duration: Double) -> Data? {
-        let sampleRate: Double = 44100
+    /// Генерирует PCM буфер с кликом
+    private func generateClickBuffer(
+        frequency: Float,
+        duration: Double,
+        format: AVAudioFormat
+    ) -> AVAudioPCMBuffer? {
+        let sampleRate = format.sampleRate
+        let frameCount = AVAudioFrameCount(sampleRate * duration)
+
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            return nil
+        }
+
+        buffer.frameLength = frameCount
+
+        guard let channelData = buffer.floatChannelData?[0] else {
+            return nil
+        }
+
         let amplitude: Float = 0.5
-        let sampleCount = Int(sampleRate * duration)
+        let omega = 2.0 * Float.pi * frequency / Float(sampleRate)
 
-        var samples: [Float] = []
-        for i in 0..<sampleCount {
-            let time = Double(i) / sampleRate
-            let phase = 2.0 * Double.pi * Double(frequency) * time
+        for i in 0..<Int(frameCount) {
+            let phase = omega * Float(i)
             let sineValue = sin(phase)
-            let value = amplitude * Float(sineValue)
 
-            // Применяем envelope для сглаживания
-            let envelopeValue = 1.0 - (Double(i) / Double(sampleCount))
-            let envelope = Float(envelopeValue)
-            samples.append(value * envelope)
+            // Apply exponential decay envelope for crisp click
+            let envelope = exp(-Float(i) / Float(frameCount) * 5.0)
+
+            channelData[i] = amplitude * sineValue * envelope
         }
 
-        return createWAVData(samples: samples, sampleRate: Int(sampleRate))
-    }
-
-    /// Создает WAV данные из массива сэмплов
-    private func createWAVData(samples: [Float], sampleRate: Int) -> Data? {
-        var data = Data()
-
-        // WAV header
-        let numChannels: UInt16 = 1
-        let bitsPerSample: UInt16 = 16
-        let byteRate = UInt32(sampleRate) * UInt32(numChannels) * UInt32(bitsPerSample / 8)
-        let blockAlign = numChannels * (bitsPerSample / 8)
-        let dataSize = UInt32(samples.count * 2)  // 2 bytes per sample for 16-bit
-
-        // RIFF header
-        data.append("RIFF".data(using: .ascii)!)
-        data.append(withUnsafeBytes(of: (36 + dataSize).littleEndian) { Data($0) })
-        data.append("WAVE".data(using: .ascii)!)
-
-        // fmt chunk
-        data.append("fmt ".data(using: .ascii)!)
-        data.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })
-        data.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) })  // PCM
-        data.append(withUnsafeBytes(of: numChannels.littleEndian) { Data($0) })
-        data.append(withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { Data($0) })
-        data.append(withUnsafeBytes(of: byteRate.littleEndian) { Data($0) })
-        data.append(withUnsafeBytes(of: blockAlign.littleEndian) { Data($0) })
-        data.append(withUnsafeBytes(of: bitsPerSample.littleEndian) { Data($0) })
-
-        // data chunk
-        data.append("data".data(using: .ascii)!)
-        data.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
-
-        // Convert float samples to 16-bit PCM
-        for sample in samples {
-            let intSample = Int16(sample * Float(Int16.max))
-            data.append(withUnsafeBytes(of: intSample.littleEndian) { Data($0) })
-        }
-
-        return data
+        return buffer
     }
 }

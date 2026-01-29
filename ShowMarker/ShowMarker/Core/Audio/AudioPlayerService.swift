@@ -12,6 +12,9 @@ final class AudioPlayerService: ObservableObject {
     private var player: AVPlayer?
     private var timeObserver: Any?
 
+    /// Serial queue for time observer - more responsive than main queue
+    private let timeObserverQueue = DispatchQueue(label: "com.showmarker.timeObserver", qos: .userInteractive)
+
     deinit {
         // Очистка происходит в stop()
     }
@@ -106,9 +109,17 @@ final class AudioPlayerService: ObservableObject {
         let session = AVAudioSession.sharedInstance()
 
         do {
-            // ✅ ИСПРАВЛЕНО: минимальная конфигурация без проблемных опций
-            try session.setCategory(.playback, mode: .default)
+            // Use playback category with low-latency options
+            try session.setCategory(.playback, mode: .default, options: [])
+
+            // Request lower I/O buffer duration for reduced latency
+            // 0.005 = 5ms buffer (minimum supported on most devices)
+            try session.setPreferredIOBufferDuration(0.005)
+
             try session.setActive(true)
+
+            let actualBuffer = session.ioBufferDuration
+            print("✅ AudioSession configured: buffer=\(String(format: "%.1f", actualBuffer * 1000))ms")
         } catch {
             print("⚠️ AudioSession error:", error)
         }
@@ -119,19 +130,22 @@ final class AudioPlayerService: ObservableObject {
     private func addTimeObserver() {
         guard let player else { return }
 
-        let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
+        // Higher frequency updates (60fps) for more accurate beat detection
+        let interval = CMTime(seconds: 1.0 / 60.0, preferredTimescale: 600)
 
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: interval,
-            queue: .main
+            queue: timeObserverQueue  // Use dedicated queue for responsiveness
         ) { [weak self] time in
             guard let self else { return }
-            Task { @MainActor in
-                self.currentTime = time.seconds
+            let seconds = time.seconds
+            // Dispatch to main for @Published property
+            DispatchQueue.main.async {
+                self.currentTime = seconds
             }
         }
     }
-    
+
     private func cleanupObserver() {
         if let player, let obs = timeObserver {
             player.removeTimeObserver(obs)
