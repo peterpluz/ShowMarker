@@ -2,20 +2,12 @@ import Foundation
 import AVFoundation
 import Combine
 
-/// Сервис метронома для воспроизведения кликов в такт
+/// Простой сервис метронома - только воспроизведение звука
+/// Вся логика тайминга находится в TimelineViewModel
 @MainActor
 class MetronomeService: ObservableObject {
 
-    @Published var isPlaying: Bool = false
-    @Published var volume: Float = 0.5
-    @Published var currentBeat: Int = 0  // 0-based beat in bar
-
-    private var timer: Timer?
-    private var audioPlayers: [AVAudioPlayer] = []
-    private var bpm: Double = 120
-    private var beatsPerBar: Int = 4
-    private var beatGridOffset: Double = 0
-    private var startTime: Double = 0
+    @Published private(set) var volume: Float = 0.5
 
     // Звуки метронома (синтезированные)
     private var clickSound: AVAudioPlayer?
@@ -26,17 +18,15 @@ class MetronomeService: ObservableObject {
     }
 
     private func setupAudioSounds() {
-        // Создаём простые звуковые сигналы
-        // Используем системные звуки или генерируем простые тоны
         do {
-            // Простой тон для обычного клика
+            // Простой тон для обычного клика (1000 Hz)
             if let clickData = generateClickSound(frequency: 1000, duration: 0.05) {
                 clickSound = try AVAudioPlayer(data: clickData)
                 clickSound?.prepareToPlay()
                 clickSound?.volume = volume
             }
 
-            // Более высокий тон для акцента (первый бит)
+            // Более высокий тон для акцента - первый бит такта (1500 Hz)
             if let accentData = generateClickSound(frequency: 1500, duration: 0.05) {
                 accentSound = try AVAudioPlayer(data: accentData)
                 accentSound?.prepareToPlay()
@@ -46,6 +36,24 @@ class MetronomeService: ObservableObject {
             print("⚠️ Failed to setup metronome sounds: \(error)")
         }
     }
+
+    /// Воспроизводит клик метронома
+    /// - Parameter isAccent: true для первого бита такта (более высокий тон)
+    func playClick(isAccent: Bool) {
+        let player = isAccent ? accentSound : clickSound
+        player?.volume = volume
+        player?.currentTime = 0
+        player?.play()
+    }
+
+    /// Обновляет громкость
+    func setVolume(_ newVolume: Float) {
+        self.volume = max(0, min(1, newVolume))
+        clickSound?.volume = self.volume
+        accentSound?.volume = self.volume
+    }
+
+    // MARK: - Audio Generation
 
     /// Генерирует простой звуковой клик
     private func generateClickSound(frequency: Float, duration: Double) -> Data? {
@@ -66,8 +74,6 @@ class MetronomeService: ObservableObject {
             samples.append(value * envelope)
         }
 
-        // Конвертируем в Data
-        let data = samples.withUnsafeBytes { Data($0) }
         return createWAVData(samples: samples, sampleRate: Int(sampleRate))
     }
 
@@ -108,98 +114,5 @@ class MetronomeService: ObservableObject {
         }
 
         return data
-    }
-
-    /// Запускает метроном синхронизированно с сеткой
-    /// - Parameters:
-    ///   - bpm: темп в ударах в минуту
-    ///   - currentTime: текущее время воспроизведения в секундах
-    ///   - beatGridOffset: смещение сетки битов в секундах
-    ///   - beatsPerBar: количество ударов в такте (4 для 4/4, 3 для 3/4)
-    func start(bpm: Double, currentTime: Double = 0, beatGridOffset: Double = 0, beatsPerBar: Int = 4) {
-        stop()  // Останавливаем предыдущий, если был
-
-        self.bpm = bpm
-        self.beatsPerBar = beatsPerBar
-        self.beatGridOffset = beatGridOffset
-        self.startTime = currentTime
-        self.isPlaying = true
-
-        let beatInterval = 60.0 / bpm  // Интервал между кликами в секундах
-
-        // Вычисляем текущую позицию в сетке относительно offset
-        let timeFromOffset = currentTime - beatGridOffset
-
-        // Вычисляем, на каком бите мы сейчас (может быть дробным)
-        let currentBeatPosition = timeFromOffset / beatInterval
-
-        // Определяем текущий бит в такте (0-based)
-        let absoluteBeat = Int(floor(currentBeatPosition))
-        self.currentBeat = ((absoluteBeat % beatsPerBar) + beatsPerBar) % beatsPerBar
-
-        // Вычисляем время до следующего бита
-        let nextBeatPosition = ceil(currentBeatPosition)
-        let timeToNextBeat = (nextBeatPosition - currentBeatPosition) * beatInterval
-
-        // Если мы почти на бите (в пределах 20ms), играем сейчас
-        let tolerance = 0.02
-        if timeToNextBeat < tolerance || timeToNextBeat > beatInterval - tolerance {
-            playClick()
-            // Запускаем таймер с полным интервалом
-            scheduleTimer(interval: beatInterval)
-        } else {
-            // Ждём до следующего бита, затем запускаем регулярный таймер
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeToNextBeat) { [weak self] in
-                guard let self = self, self.isPlaying else { return }
-                self.playClick()
-                self.scheduleTimer(interval: beatInterval)
-            }
-        }
-
-        print("🥁 Metronome started at \(bpm) BPM, beat \(currentBeat + 1)/\(beatsPerBar), timeToNext: \(String(format: "%.3f", timeToNextBeat))s")
-    }
-
-    private func scheduleTimer(interval: Double) {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            self?.playClick()
-        }
-    }
-
-    /// Останавливает метроном
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-        isPlaying = false
-        currentBeat = 0
-        print("🥁 Metronome stopped")
-    }
-
-    /// Переключает состояние метронома
-    func toggle(bpm: Double?) {
-        if isPlaying {
-            stop()
-        } else if let bpm = bpm {
-            start(bpm: bpm)
-        }
-    }
-
-    /// Воспроизводит клик
-    private func playClick() {
-        // Переходим к следующему биту
-        currentBeat = (currentBeat + 1) % beatsPerBar
-
-        // Первый бит каждого такта (beat 0) - акцент
-        let player = (currentBeat == 0) ? accentSound : clickSound
-        player?.volume = volume
-        player?.currentTime = 0
-        player?.play()
-    }
-
-    /// Обновляет громкость
-    func setVolume(_ volume: Float) {
-        self.volume = max(0, min(1, volume))
-        clickSound?.volume = self.volume
-        accentSound?.volume = self.volume
     }
 }

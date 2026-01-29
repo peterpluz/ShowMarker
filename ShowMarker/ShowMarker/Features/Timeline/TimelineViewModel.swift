@@ -61,9 +61,20 @@ final class TimelineViewModel: ObservableObject {
     let markerFlashPublisher = PassthroughSubject<MarkerFlashEvent, Never>()
     private var flashCounter: Int = 0
     private var previousFrame: Int = -1
-    
+
     // ✅ NEW: Track already-flashed markers during current playback session
     private var flashedMarkers: Set<UUID> = []
+
+    // MARK: - Beat Crossing Detection (Metronome)
+
+    /// Current beat number in bar (0-based), computed from playhead position
+    @Published private(set) var currentBeat: Int = 0
+
+    /// Tracks the previous beat number for crossing detection
+    private var previousBeatNumber: Int = -1
+
+    /// Set of beat numbers that have already clicked in this playback session
+    private var clickedBeats: Set<Int> = []
 
     // MARK: - Marker Drag State
 
@@ -127,16 +138,13 @@ final class TimelineViewModel: ObservableObject {
         timeline?.isMetronomeEnabled ?? false
     }
 
+    /// Metronome is actively playing when user enabled it AND playback is active
     var isMetronomeEnabled: Bool {
-        metronome.isPlaying
+        isMetronomeUserEnabled && isPlaying
     }
 
     var metronomeVolume: Float {
         metronome.volume
-    }
-
-    var currentBeat: Int {
-        metronome.currentBeat
     }
 
     var beatGridOffset: Double {
@@ -292,47 +300,44 @@ final class TimelineViewModel: ObservableObject {
                     let startFrame = Int(round(self.currentTime * Double(self.fps)))
                     self.previousFrame = startFrame
                     self.flashedMarkers.removeAll()
-                    print("▶️ [Detection] Playback started at frame \(startFrame), reset flashed markers")
 
-                    // Start metronome synced to beat grid if enabled and BPM is set
-                    if self.isMetronomeUserEnabled, let bpm = self.bpm {
-                        self.metronome.start(
-                            bpm: bpm,
-                            currentTime: self.currentTime,
-                            beatGridOffset: self.beatGridOffset,
-                            beatsPerBar: self.timeSignature.beatsPerBar
-                        )
-                    }
+                    // Reset beat tracking for metronome
+                    self.previousBeatNumber = self.calculateAbsoluteBeat(at: self.currentTime)
+                    self.clickedBeats.removeAll()
+
+                    print("▶️ [Detection] Playback started at frame \(startFrame), beat \(self.previousBeatNumber)")
                 } else {
                     // Playback stopped - reset to initial state
                     self.previousFrame = -1
-                    print("🛑 [Detection] Playback stopped, frame tracking reset")
-
-                    // Stop metronome
-                    self.metronome.stop()
+                    self.previousBeatNumber = -1
+                    self.clickedBeats.removeAll()
+                    print("🛑 [Detection] Playback stopped, tracking reset")
                 }
             }
             .store(in: &cancellables)
 
-        // MARK: - Marker Crossing Detection
-        // ✅ SIMPLIFIED: Only detect during active playback
+        // MARK: - Marker & Beat Crossing Detection
+        // Reactive detection based on playhead position changes
         $currentTime
             .sink { [weak self] newTime in
                 guard let self = self else { return }
-                
+
                 // ✅ Update next marker for auto-scroll (always, regardless of playback state)
                 self.updateNextMarker(for: newTime)
-                
-                // ✅ CRITICAL: Only detect markers during active playback
+
+                // ✅ Always update visual beat indicator (even when not playing)
+                self.updateCurrentBeat(at: newTime)
+
+                // ✅ CRITICAL: Only detect crossings during active playback
                 guard self.isPlaying else {
                     return
                 }
 
                 let currentFrame = Int(round(newTime * Double(self.fps)))
-                
-                // ✅ FIX: Handle backward movement (rewind during playback)
+
+                // ✅ Handle backward movement (rewind during playback)
                 if currentFrame < self.previousFrame {
-                    // User rewound during playback - clear flashed markers that are now ahead
+                    // User rewound during playback - clear flashed markers and clicked beats ahead
                     let rewindedMarkers = self.markers.filter { marker in
                         let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
                         return markerFrame > currentFrame
@@ -340,43 +345,39 @@ final class TimelineViewModel: ObservableObject {
                     for marker in rewindedMarkers {
                         self.flashedMarkers.remove(marker.id)
                     }
+
+                    // Clear clicked beats that are now ahead
+                    let currentAbsoluteBeat = self.calculateAbsoluteBeat(at: newTime)
+                    self.clickedBeats = self.clickedBeats.filter { $0 <= currentAbsoluteBeat }
+                    self.previousBeatNumber = currentAbsoluteBeat
+
                     self.previousFrame = currentFrame
-                    print("⏪ [Detection] Rewound to frame \(currentFrame), cleared \(rewindedMarkers.count) flashed markers")
+                    print("⏪ [Detection] Rewound to frame \(currentFrame), beat \(currentAbsoluteBeat)")
                     return
                 }
-                
-                // Skip if no movement (can happen with multiple rapid updates)
+
+                // Skip if no movement
                 guard currentFrame > self.previousFrame else {
                     return
                 }
 
-                // Find all markers crossed in this frame interval
+                // === MARKER CROSSING DETECTION ===
                 let crossedMarkers = self.markers.filter { marker in
                     let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
-                    
-                    // ✅ FIX: Include frame 0 in bootstrap case
+
                     if self.previousFrame == -1 {
                         return markerFrame >= 0 && markerFrame <= currentFrame
                     }
-                    
-                    // Normal case: check if marker is in the interval (previous, current]
-                    // Using strict < on left boundary prevents duplicate detections
+
                     return self.previousFrame < markerFrame && markerFrame <= currentFrame
                 }
-                
-                // Send flash events only for markers that haven't flashed yet
+
                 for marker in crossedMarkers {
-                    // ✅ Skip if already flashed in this session
-                    guard !self.flashedMarkers.contains(marker.id) else {
-                        print("⏭️  [Detection] Marker '\(marker.name)' already flashed, skipping")
-                        continue
-                    }
-                    
+                    guard !self.flashedMarkers.contains(marker.id) else { continue }
+
                     let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
-                    
-                    // Mark as flashed
                     self.flashedMarkers.insert(marker.id)
-                    
+
                     self.flashCounter += 1
                     let event = MarkerFlashEvent(
                         markerID: marker.id,
@@ -385,7 +386,12 @@ final class TimelineViewModel: ObservableObject {
                         timestamp: Date()
                     )
                     self.markerFlashPublisher.send(event)
-                    print("✨ [Detection] Marker '\(marker.name)' FLASH #\(self.flashCounter) at frame \(markerFrame) (interval: \(self.previousFrame)→\(currentFrame))")
+                    print("✨ [Marker] '\(marker.name)' FLASH at frame \(markerFrame)")
+                }
+
+                // === BEAT CROSSING DETECTION (Metronome) ===
+                if self.isMetronomeUserEnabled, let _ = self.bpm {
+                    self.detectBeatCrossing(at: newTime)
                 }
 
                 self.previousFrame = currentFrame
@@ -394,7 +400,7 @@ final class TimelineViewModel: ObservableObject {
     }
     
     // MARK: - Auto-scroll
-    
+
     /// Updates the next marker ID based on current playhead position
     /// This is used for auto-scrolling the marker list
     private func updateNextMarker(for time: Double) {
@@ -402,11 +408,83 @@ final class TimelineViewModel: ObservableObject {
         let next = markers.first { marker in
             marker.timeSeconds > time
         }
-        
+
         // Only update if changed to avoid unnecessary UI updates
         if nextMarkerID != next?.id {
             nextMarkerID = next?.id
         }
+    }
+
+    // MARK: - Beat Calculation (Metronome)
+
+    /// Calculates the absolute beat number at a given time
+    /// This is a pure function: beat = f(time, bpm, offset)
+    private func calculateAbsoluteBeat(at time: Double) -> Int {
+        guard let bpm = bpm, bpm > 0 else { return 0 }
+
+        let beatInterval = 60.0 / bpm
+        let timeFromOffset = time - beatGridOffset
+
+        // Floor to get the beat we're currently in (or just passed)
+        return Int(floor(timeFromOffset / beatInterval))
+    }
+
+    /// Calculates beat position within bar (0-based)
+    private func calculateBeatInBar(absoluteBeat: Int) -> Int {
+        let beatsPerBar = timeSignature.beatsPerBar
+        // Handle negative beats (before offset)
+        return ((absoluteBeat % beatsPerBar) + beatsPerBar) % beatsPerBar
+    }
+
+    /// Updates the visual beat indicator (currentBeat property)
+    /// Called on every currentTime change
+    private func updateCurrentBeat(at time: Double) {
+        guard let _ = bpm else {
+            currentBeat = 0
+            return
+        }
+
+        let absoluteBeat = calculateAbsoluteBeat(at: time)
+        let beatInBar = calculateBeatInBar(absoluteBeat: absoluteBeat)
+
+        if currentBeat != beatInBar {
+            currentBeat = beatInBar
+        }
+    }
+
+    /// Detects beat boundary crossings and triggers metronome clicks
+    /// This is the core of the reactive metronome
+    private func detectBeatCrossing(at time: Double) {
+        guard let bpm = bpm, bpm > 0 else { return }
+
+        let currentAbsoluteBeat = calculateAbsoluteBeat(at: time)
+
+        // Check if we've crossed into a new beat
+        guard currentAbsoluteBeat > previousBeatNumber else {
+            // No new beat crossed (or went backwards, which is handled elsewhere)
+            return
+        }
+
+        // We may have crossed multiple beats (during lag or seek)
+        // Play click for each crossed beat
+        for beat in (previousBeatNumber + 1)...currentAbsoluteBeat {
+            // Skip if this beat already clicked
+            guard !clickedBeats.contains(beat) else { continue }
+
+            // Mark as clicked
+            clickedBeats.insert(beat)
+
+            // Determine if this is an accent (first beat of bar)
+            let beatInBar = calculateBeatInBar(absoluteBeat: beat)
+            let isAccent = (beatInBar == 0)
+
+            // Play the click sound
+            metronome.playClick(isAccent: isAccent)
+
+            print("🥁 [Metronome] Beat \(beat) (bar beat \(beatInBar + 1)/\(timeSignature.beatsPerBar)) - \(isAccent ? "ACCENT" : "click")")
+        }
+
+        previousBeatNumber = currentAbsoluteBeat
     }
     
     // MARK: - Frame Quantization
@@ -686,19 +764,15 @@ final class TimelineViewModel: ObservableObject {
     func toggleMetronome() {
         guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         repository.project.timelines[idx].isMetronomeEnabled.toggle()
-        objectWillChange.send()
 
-        // If toggling on and currently playing, start the metronome synced to beat grid
-        if repository.project.timelines[idx].isMetronomeEnabled && isPlaying, let bpm = bpm {
-            metronome.start(
-                bpm: bpm,
-                currentTime: currentTime,
-                beatGridOffset: beatGridOffset,
-                beatsPerBar: timeSignature.beatsPerBar
-            )
-        } else {
-            metronome.stop()
+        // Reset beat tracking when toggling metronome on during playback
+        if repository.project.timelines[idx].isMetronomeEnabled && isPlaying {
+            previousBeatNumber = calculateAbsoluteBeat(at: currentTime)
+            clickedBeats.removeAll()
+            print("🥁 [Metronome] Enabled at beat \(previousBeatNumber)")
         }
+
+        objectWillChange.send()
     }
 
     func setBeatGridOffset(_ offset: Double) {
