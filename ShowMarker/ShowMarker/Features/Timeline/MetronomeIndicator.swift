@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// GarageBand-style metronome indicator with beat flash animation
+/// Metronome indicator with alternating beat animation
+/// Uses square.and.line.vertical.and.square.filled and square.filled.and.line.vertical.and.square
+/// to alternate icons in rhythm with the beat
 struct MetronomeIndicator: View {
 
     let isPlaying: Bool
@@ -9,7 +11,8 @@ struct MetronomeIndicator: View {
     let isEnabled: Bool
     let onToggle: () -> Void
 
-    @State private var isFilled: Bool = false
+    /// Tracks which icon variant to show (alternates on each beat)
+    @State private var isAlternate: Bool = false
 
     var body: some View {
         Button {
@@ -21,29 +24,43 @@ struct MetronomeIndicator: View {
                     .fill(Color.secondary.opacity(0.2))
                     .frame(width: 44, height: 44)
 
-                // Metronome icon with flash animation
-                Image(systemName: isFilled ? "metronome.fill" : "metronome")
+                // Alternating metronome icons that switch on each beat
+                // When not enabled or not playing, show the first variant
+                Image(systemName: iconName)
                     .font(.system(size: 18, weight: .regular))
                     .foregroundColor(isEnabled ? .accentColor : .secondary)
-                    .animation(.linear(duration: 0.1), value: isFilled)
+                    .animation(.easeInOut(duration: 0.1), value: isAlternate)
             }
         }
         .onChange(of: currentBeat) { oldBeat, newBeat in
-            // Flash to filled on beat only if enabled
+            // Alternate icon on each beat only if enabled and playing
             if isEnabled && isPlaying && newBeat != oldBeat {
-                isFilled = true
-
-                // Fade back to outline after brief moment
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
-                    isFilled = false
-                }
+                isAlternate.toggle()
             }
         }
         .onChange(of: isEnabled) { oldValue, newValue in
             if !newValue {
-                isFilled = false
+                isAlternate = false
             }
+        }
+        .onChange(of: isPlaying) { oldValue, newValue in
+            // Reset to default state when playback stops
+            if !newValue {
+                isAlternate = false
+            }
+        }
+    }
+
+    /// Returns the appropriate SF Symbol name based on state
+    private var iconName: String {
+        if isEnabled && isPlaying {
+            // Alternate between two icons in rhythm
+            return isAlternate
+                ? "square.filled.and.line.vertical.and.square"
+                : "square.and.line.vertical.and.square.filled"
+        } else {
+            // Default icon when not active
+            return "square.and.line.vertical.and.square.filled"
         }
     }
 }

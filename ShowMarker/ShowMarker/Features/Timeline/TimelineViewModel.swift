@@ -23,6 +23,9 @@ final class TimelineViewModel: ObservableObject {
     private var waveformMipmaps: [[Float]] = []
     private var waveformCacheKey: String?
 
+    /// Indicates whether the timeline is still loading (waveform, audio, etc.)
+    @Published private(set) var isLoading: Bool = true
+
     // MARK: - Auto-scroll state
 
     @Published var isAutoScrollEnabled: Bool = true  // Enabled by default
@@ -58,9 +61,21 @@ final class TimelineViewModel: ObservableObject {
     let markerFlashPublisher = PassthroughSubject<MarkerFlashEvent, Never>()
     private var flashCounter: Int = 0
     private var previousFrame: Int = -1
-    
+
     // ✅ NEW: Track already-flashed markers during current playback session
     private var flashedMarkers: Set<UUID> = []
+
+    // MARK: - Beat Scheduling (Metronome)
+
+    /// Current beat number in bar (0-based), computed from playhead position
+    @Published private(set) var currentBeat: Int = 0
+
+    /// The absolute beat number that is next scheduled to play
+    /// Int.min means nothing is scheduled
+    private var nextScheduledBeat: Int = Int.min
+
+    /// Tracks the last beat we actually played (for visual updates on reactive path)
+    private var lastPlayedBeat: Int = Int.min
 
     // MARK: - Marker Drag State
 
@@ -124,20 +139,25 @@ final class TimelineViewModel: ObservableObject {
         timeline?.isMetronomeEnabled ?? false
     }
 
+    /// Metronome is actively playing when user enabled it AND playback is active
     var isMetronomeEnabled: Bool {
-        metronome.isPlaying
+        isMetronomeUserEnabled && isPlaying
     }
 
     var metronomeVolume: Float {
         metronome.volume
     }
 
-    var currentBeat: Int {
-        metronome.currentBeat
-    }
-
     var beatGridOffset: Double {
         timeline?.beatGridOffset ?? 0
+    }
+
+    var prerollSeconds: Double {
+        timeline?.prerollSeconds ?? 0
+    }
+
+    var timeSignature: TimeSignature {
+        timeline?.timeSignature ?? .fourFour
     }
 
     // MARK: - Computed
@@ -199,17 +219,49 @@ final class TimelineViewModel: ObservableObject {
         setupBindings()
         setupRepositoryObserver()
 
-        // Load initial audio and duration from timeline
-        // Используем временную директорию для воспроизведения (аудио извлекается туда при открытии документа)
-        if let timelineAudio = timeline?.audio {
-            self.duration = timelineAudio.duration
+        // Load audio and waveform asynchronously to prevent UI freeze
+        Task { @MainActor in
+            await loadTimelineDataAsync()
+        }
+    }
 
-            // ✅ CRITICAL FIX: Load audio into player on initialization
-            let audioURL = repository.audioPlaybackURL(relativePath: timelineAudio.relativePath)
-            audioPlayer.load(url: audioURL)
-            print("✅ Audio loaded into player on init: \(audioURL)")
+    /// Loads timeline data (audio, waveform) asynchronously
+    /// Sets isLoading = false when complete
+    private func loadTimelineDataAsync() async {
+        defer {
+            isLoading = false
+            print("✅ Timeline loading complete")
+        }
 
-            loadWaveformCache(for: timelineAudio, documentURL: repository.audioTempDirectory)
+        guard let timelineAudio = timeline?.audio else {
+            print("ℹ️ No audio in timeline, loading complete")
+            return
+        }
+
+        self.duration = timelineAudio.duration
+
+        // Load audio into player
+        let audioURL = repository.audioPlaybackURL(relativePath: timelineAudio.relativePath)
+        audioPlayer.load(url: audioURL)
+        print("✅ Audio loaded into player: \(audioURL)")
+
+        // Load or generate waveform cache
+        let cacheKey = "\(timelineID.uuidString)_\(timelineAudio.id.uuidString)"
+        self.waveformCacheKey = cacheKey
+
+        if let cached = WaveformCache.load(cacheKey: cacheKey) {
+            // Waveform found in cache
+            self.waveformMipmaps = cached.mipmaps
+            self.cachedWaveform = cached.mipmaps.first ?? []
+            print("✅ Waveform loaded from cache: \(cached.mipmaps.count) mipmap levels")
+        } else {
+            // Generate waveform in background
+            print("🌊 No waveform cache found, generating...")
+            await generateWaveformCache(
+                audio: timelineAudio,
+                documentURL: repository.audioTempDirectory,
+                cacheKey: cacheKey
+            )
         }
     }
 
@@ -249,42 +301,42 @@ final class TimelineViewModel: ObservableObject {
                     let startFrame = Int(round(self.currentTime * Double(self.fps)))
                     self.previousFrame = startFrame
                     self.flashedMarkers.removeAll()
-                    print("▶️ [Detection] Playback started at frame \(startFrame), reset flashed markers")
 
-                    // Start metronome if enabled and BPM is set
-                    if self.isMetronomeUserEnabled, let bpm = self.bpm {
-                        self.metronome.start(bpm: bpm)
-                    }
+                    // Reset beat scheduling and play first beat immediately
+                    self.nextScheduledBeat = Int.min
+                    self.lastPlayedBeat = Int.min
+                    self.playFirstBeatAndScheduleNext(at: self.currentTime)
+
+                    print("▶️ [Detection] Playback started at frame \(startFrame)")
                 } else {
-                    // Playback stopped - reset to initial state
+                    // Playback stopped - cancel scheduled beats
                     self.previousFrame = -1
-                    print("🛑 [Detection] Playback stopped, frame tracking reset")
-
-                    // Stop metronome
-                    self.metronome.stop()
+                    self.nextScheduledBeat = Int.min
+                    self.lastPlayedBeat = Int.min
+                    self.metronome.cancelScheduled()
+                    print("🛑 [Detection] Playback stopped, tracking reset")
                 }
             }
             .store(in: &cancellables)
 
-        // MARK: - Marker Crossing Detection
-        // ✅ SIMPLIFIED: Only detect during active playback
+        // MARK: - Marker Crossing & Beat Scheduling
         $currentTime
             .sink { [weak self] newTime in
                 guard let self = self else { return }
-                
-                // ✅ Update next marker for auto-scroll (always, regardless of playback state)
+
+                // ✅ Update next marker for auto-scroll (always)
                 self.updateNextMarker(for: newTime)
-                
-                // ✅ CRITICAL: Only detect markers during active playback
-                guard self.isPlaying else {
-                    return
-                }
+
+                // ✅ Always update visual beat indicator (even when not playing)
+                self.updateCurrentBeat(at: newTime)
+
+                // ✅ CRITICAL: Only detect crossings during active playback
+                guard self.isPlaying else { return }
 
                 let currentFrame = Int(round(newTime * Double(self.fps)))
-                
-                // ✅ FIX: Handle backward movement (rewind during playback)
+
+                // ✅ Handle backward movement (rewind during playback)
                 if currentFrame < self.previousFrame {
-                    // User rewound during playback - clear flashed markers that are now ahead
                     let rewindedMarkers = self.markers.filter { marker in
                         let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
                         return markerFrame > currentFrame
@@ -292,43 +344,32 @@ final class TimelineViewModel: ObservableObject {
                     for marker in rewindedMarkers {
                         self.flashedMarkers.remove(marker.id)
                     }
+
+                    // Cancel current beat schedule and reschedule from new position
+                    self.metronome.cancelScheduled()
+                    self.nextScheduledBeat = Int.min
+                    self.lastPlayedBeat = Int.min
+                    self.scheduleNextBeat(at: newTime)
+
                     self.previousFrame = currentFrame
-                    print("⏪ [Detection] Rewound to frame \(currentFrame), cleared \(rewindedMarkers.count) flashed markers")
-                    return
-                }
-                
-                // Skip if no movement (can happen with multiple rapid updates)
-                guard currentFrame > self.previousFrame else {
                     return
                 }
 
-                // Find all markers crossed in this frame interval
+                // Skip if no movement
+                guard currentFrame > self.previousFrame else { return }
+
+                // === MARKER CROSSING DETECTION ===
                 let crossedMarkers = self.markers.filter { marker in
                     let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
-                    
-                    // ✅ FIX: Include frame 0 in bootstrap case
                     if self.previousFrame == -1 {
                         return markerFrame >= 0 && markerFrame <= currentFrame
                     }
-                    
-                    // Normal case: check if marker is in the interval (previous, current]
-                    // Using strict < on left boundary prevents duplicate detections
                     return self.previousFrame < markerFrame && markerFrame <= currentFrame
                 }
-                
-                // Send flash events only for markers that haven't flashed yet
+
                 for marker in crossedMarkers {
-                    // ✅ Skip if already flashed in this session
-                    guard !self.flashedMarkers.contains(marker.id) else {
-                        print("⏭️  [Detection] Marker '\(marker.name)' already flashed, skipping")
-                        continue
-                    }
-                    
-                    let markerFrame = Int(round(marker.timeSeconds * Double(self.fps)))
-                    
-                    // Mark as flashed
+                    guard !self.flashedMarkers.contains(marker.id) else { continue }
                     self.flashedMarkers.insert(marker.id)
-                    
                     self.flashCounter += 1
                     let event = MarkerFlashEvent(
                         markerID: marker.id,
@@ -337,7 +378,12 @@ final class TimelineViewModel: ObservableObject {
                         timestamp: Date()
                     )
                     self.markerFlashPublisher.send(event)
-                    print("✨ [Detection] Marker '\(marker.name)' FLASH #\(self.flashCounter) at frame \(markerFrame) (interval: \(self.previousFrame)→\(currentFrame))")
+                }
+
+                // === BEAT PRE-SCHEDULING ===
+                // On each time update, ensure the next beat is scheduled
+                if self.isMetronomeUserEnabled, let _ = self.bpm {
+                    self.scheduleNextBeat(at: newTime)
                 }
 
                 self.previousFrame = currentFrame
@@ -346,7 +392,7 @@ final class TimelineViewModel: ObservableObject {
     }
     
     // MARK: - Auto-scroll
-    
+
     /// Updates the next marker ID based on current playhead position
     /// This is used for auto-scrolling the marker list
     private func updateNextMarker(for time: Double) {
@@ -354,10 +400,168 @@ final class TimelineViewModel: ObservableObject {
         let next = markers.first { marker in
             marker.timeSeconds > time
         }
-        
+
         // Only update if changed to avoid unnecessary UI updates
         if nextMarkerID != next?.id {
             nextMarkerID = next?.id
+        }
+    }
+
+    // MARK: - Beat Calculation (Metronome)
+
+    /// Calculates the absolute beat number at a given time
+    /// Pure function: beat = f(time, bpm, offset)
+    private func calculateAbsoluteBeat(at time: Double) -> Int {
+        guard let bpm = bpm, bpm > 0 else { return 0 }
+        let beatInterval = 60.0 / bpm
+        let timeFromOffset = time - beatGridOffset
+        return Int(floor(timeFromOffset / beatInterval))
+    }
+
+    /// Calculates beat position within bar (0-based)
+    private func calculateBeatInBar(absoluteBeat: Int) -> Int {
+        let beatsPerBar = timeSignature.beatsPerBar
+        return ((absoluteBeat % beatsPerBar) + beatsPerBar) % beatsPerBar
+    }
+
+    /// Calculates the exact audio time of a given absolute beat
+    private func beatTime(forAbsoluteBeat beat: Int) -> Double {
+        guard let bpm = bpm, bpm > 0 else { return 0 }
+        let beatInterval = 60.0 / bpm
+        return beatGridOffset + Double(beat) * beatInterval
+    }
+
+    /// Updates the visual beat indicator
+    private func updateCurrentBeat(at time: Double) {
+        guard let _ = bpm else {
+            currentBeat = 0
+            return
+        }
+        let absoluteBeat = calculateAbsoluteBeat(at: time)
+        let beatInBar = calculateBeatInBar(absoluteBeat: absoluteBeat)
+        if currentBeat != beatInBar {
+            currentBeat = beatInBar
+        }
+    }
+
+    // MARK: - Beat Pre-Scheduling
+
+    /// Called at playback start: plays the first beat immediately and schedules the next
+    private func playFirstBeatAndScheduleNext(at time: Double) {
+        guard isMetronomeUserEnabled, let bpm = bpm, bpm > 0 else { return }
+
+        let beatInterval = 60.0 / bpm
+        let timeFromOffset = time - beatGridOffset
+        let currentBeatPosition = timeFromOffset / beatInterval
+        let currentAbsoluteBeat = Int(floor(currentBeatPosition))
+        let fractionalPart = currentBeatPosition - floor(currentBeatPosition)
+
+        // How close are we to the current beat boundary?
+        // If within 20ms (or at the very start), play the current beat immediately
+        let tolerance = 0.020  // 20ms
+        let timeSinceBeat = fractionalPart * beatInterval
+
+        if timeSinceBeat < tolerance {
+            // We're right on a beat - play it now
+            let beatInBar = calculateBeatInBar(absoluteBeat: currentAbsoluteBeat)
+            metronome.playClick(isAccent: beatInBar == 0)
+            lastPlayedBeat = currentAbsoluteBeat
+            currentBeat = beatInBar
+            print("🥁 [Metronome] First beat \(currentAbsoluteBeat) played immediately (on-beat)")
+
+            // Schedule the NEXT beat
+            let nextBeat = currentAbsoluteBeat + 1
+            let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
+            let delay = nextBeatAudioTime - time
+            scheduleSpecificBeat(nextBeat, afterDelay: delay)
+        } else {
+            // We're between beats - schedule the next upcoming beat
+            let nextBeat = currentAbsoluteBeat + 1
+            let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
+            let delay = nextBeatAudioTime - time
+
+            scheduleSpecificBeat(nextBeat, afterDelay: delay)
+            print("🥁 [Metronome] First scheduled beat \(nextBeat) in \(String(format: "%.1f", delay * 1000))ms")
+        }
+    }
+
+    /// Pre-schedules the next beat click based on current position
+    /// Called on every time observer update during playback
+    private func scheduleNextBeat(at time: Double) {
+        guard let bpm = bpm, bpm > 0 else { return }
+
+        let beatInterval = 60.0 / bpm
+        let timeFromOffset = time - beatGridOffset
+        let currentBeatPosition = timeFromOffset / beatInterval
+
+        // The next beat to schedule
+        let nextBeat = Int(ceil(currentBeatPosition))
+
+        // Already scheduled or played?
+        guard nextBeat > nextScheduledBeat else { return }
+
+        // Calculate delay to next beat
+        let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
+        let delay = nextBeatAudioTime - time
+
+        // Only schedule if the beat is within a reasonable window
+        // (not too far in the future, not in the past)
+        guard delay > -0.010 && delay < beatInterval * 2 else { return }
+
+        if delay <= 0.002 {
+            // Beat is essentially NOW or just passed - play immediately
+            let beatInBar = calculateBeatInBar(absoluteBeat: nextBeat)
+            if nextBeat > lastPlayedBeat {
+                metronome.playClick(isAccent: beatInBar == 0)
+                lastPlayedBeat = nextBeat
+                currentBeat = beatInBar
+            }
+            nextScheduledBeat = nextBeat
+
+            // Schedule the one after
+            let afterNext = nextBeat + 1
+            let afterNextDelay = beatTime(forAbsoluteBeat: afterNext) - time
+            scheduleSpecificBeat(afterNext, afterDelay: afterNextDelay)
+        } else {
+            // Schedule future beat
+            scheduleSpecificBeat(nextBeat, afterDelay: delay)
+        }
+    }
+
+    /// Schedules a specific beat to play after a delay
+    private func scheduleSpecificBeat(_ beat: Int, afterDelay delay: Double) {
+        guard delay > 0 else { return }
+
+        nextScheduledBeat = beat
+        let beatInBar = calculateBeatInBar(absoluteBeat: beat)
+        let isAccent = (beatInBar == 0)
+
+        // Use the metronome's precise timer
+        metronome.scheduleClick(afterDelay: delay, isAccent: isAccent)
+
+        // When the beat fires, we need to update visual state and schedule next
+        // Use DispatchQueue to chain the next schedule
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.001) { [weak self] in
+            guard let self = self, self.isPlaying, self.isMetronomeUserEnabled else { return }
+
+            // Update visual state
+            if beat > self.lastPlayedBeat {
+                self.lastPlayedBeat = beat
+                self.currentBeat = beatInBar
+            }
+
+            // The time observer will schedule the next beat on its next update
+            // But as a safety net, schedule the next beat ourselves
+            let nextBeat = beat + 1
+            if nextBeat > self.nextScheduledBeat {
+                if let bpm = self.bpm, bpm > 0 {
+                    let beatInterval = 60.0 / bpm
+                    // We know the next beat is exactly one interval away
+                    // Adjust for any processing delay
+                    let idealDelay = beatInterval - 0.001
+                    self.scheduleSpecificBeat(nextBeat, afterDelay: max(0.001, idealDelay))
+                }
+            }
         }
     }
     
@@ -371,27 +575,6 @@ final class TimelineViewModel: ObservableObject {
     }
     
     // MARK: - Waveform Cache
-    
-    private func loadWaveformCache(for audio: TimelineAudio, documentURL: URL) {
-        let cacheKey = "\(timelineID.uuidString)_\(audio.id.uuidString)"
-        self.waveformCacheKey = cacheKey
-
-        if let cached = WaveformCache.load(cacheKey: cacheKey) {
-            // Load all mipmap levels for adaptive rendering
-            self.waveformMipmaps = cached.mipmaps
-            self.cachedWaveform = cached.mipmaps.first ?? []
-            print("✅ Waveform loaded from cache: \(cached.mipmaps.count) mipmap levels")
-            for (idx, level) in cached.mipmaps.enumerated() {
-                print("   Level \(idx): \(level.count) samples")
-            }
-            return
-        }
-
-        print("🌊 No waveform cache found, will generate...")
-        Task {
-            await generateWaveformCache(audio: audio, documentURL: documentURL, cacheKey: cacheKey)
-        }
-    }
 
     private func generateWaveformCache(audio: TimelineAudio, documentURL: URL, cacheKey: String) async {
         print("🌊 generateWaveformCache started")
@@ -522,7 +705,8 @@ final class TimelineViewModel: ObservableObject {
     
     func seek(to time: Double) {
         let clamped = max(0, min(time, duration))
-        audioPlayer.seek(by: clamped - currentTime)
+        // Use direct absolute positioning for more responsive micro-movements
+        audioPlayer.seekTo(time: clamped)
     }
     
     func seekBackward() {
@@ -658,19 +842,49 @@ final class TimelineViewModel: ObservableObject {
     func toggleMetronome() {
         guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         repository.project.timelines[idx].isMetronomeEnabled.toggle()
-        objectWillChange.send()
 
-        // If toggling on and currently playing, start the metronome
-        if repository.project.timelines[idx].isMetronomeEnabled && isPlaying, let bpm = bpm {
-            metronome.start(bpm: bpm)
-        } else {
-            metronome.stop()
+        // Reset beat scheduling when toggling metronome
+        if repository.project.timelines[idx].isMetronomeEnabled && isPlaying {
+            // Enabled during playback - start scheduling from current position
+            nextScheduledBeat = Int.min
+            lastPlayedBeat = Int.min
+            playFirstBeatAndScheduleNext(at: currentTime)
+            print("🥁 [Metronome] Enabled during playback, scheduling from current position")
+        } else if !repository.project.timelines[idx].isMetronomeEnabled {
+            // Disabled - cancel any scheduled beats
+            metronome.cancelScheduled()
+            nextScheduledBeat = Int.min
+            lastPlayedBeat = Int.min
+            print("🥁 [Metronome] Disabled, cancelled scheduled beats")
         }
+
+        objectWillChange.send()
     }
 
     func setBeatGridOffset(_ offset: Double) {
         guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
         repository.project.timelines[idx].beatGridOffset = offset
+        objectWillChange.send()
+    }
+
+    func commitBeatGridOffsetChange(oldOffset: Double, newOffset: Double) {
+        // Register the change in undo system
+        let action = ChangeBeatGridOffsetAction(oldOffset: oldOffset, newOffset: newOffset)
+        // Note: The action won't re-execute since the value is already set
+        // We just need to add it to the undo stack
+        undoManager.performAction(action)
+        print("✅ Beat grid offset change committed: \(oldOffset) → \(newOffset)")
+    }
+
+    func setPrerollSeconds(_ seconds: Double) {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].prerollSeconds = max(0, seconds)
+        objectWillChange.send()
+    }
+
+    func setTimeSignature(_ signature: TimeSignature) {
+        guard let idx = repository.project.timelines.firstIndex(where: { $0.id == timelineID }) else { return }
+        repository.project.timelines[idx].timeSignature = signature
         objectWillChange.send()
     }
 

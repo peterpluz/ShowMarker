@@ -5,6 +5,10 @@ struct TimelineSettingsSheet: View {
 
     @ObservedObject var viewModel: TimelineViewModel
 
+    // Preroll input state
+    @State private var prerollSecondsText: String = ""
+    @State private var prerollFramesText: String = ""
+
     // Callbacks for actions that need to be performed in TimelineScreen
     let onEditBPM: () -> Void
     let onReplaceAudio: () -> Void
@@ -26,6 +30,18 @@ struct TimelineSettingsSheet: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             onEditBPM()
+                        }
+
+                        // Time signature picker
+                        Picker(selection: Binding(
+                            get: { viewModel.timeSignature },
+                            set: { viewModel.setTimeSignature($0) }
+                        )) {
+                            ForEach(TimeSignature.allCases, id: \.self) { signature in
+                                Text(signature.displayName).tag(signature)
+                            }
+                        } label: {
+                            Label("Тактовый размер", systemImage: "music.note.list")
                         }
 
                         Toggle(isOn: Binding(
@@ -51,6 +67,52 @@ struct TimelineSettingsSheet: View {
                     }
                 } header: {
                     Text("Темп")
+                }
+
+                // Preroll settings
+                Section {
+                    HStack(spacing: 16) {
+                        Text("Преролл")
+
+                        Spacer()
+
+                        HStack(spacing: 4) {
+                            TextField("SS", text: $prerollSecondsText)
+                                .keyboardType(.numberPad)
+                                .frame(width: 40)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color.secondary.opacity(0.12))
+                                .cornerRadius(8)
+                                .onChange(of: prerollSecondsText) { _, newValue in
+                                    updatePrerollFromInput()
+                                }
+
+                            Text(":")
+                                .foregroundColor(.secondary)
+
+                            TextField("FF", text: $prerollFramesText)
+                                .keyboardType(.numberPad)
+                                .frame(width: 40)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color.secondary.opacity(0.12))
+                                .cornerRadius(8)
+                                .onChange(of: prerollFramesText) { _, newValue in
+                                    updatePrerollFromInput()
+                                }
+                        }
+                    }
+                } header: {
+                    Text("Преролл")
+                } footer: {
+                    Text("Время в формате SS:FF (секунды:кадры). Зона преролла выделяется на таймлайне.")
+                        .font(.system(size: 13))
+                }
+                .onAppear {
+                    initPrerollFields()
                 }
 
                 // Metronome settings section (only if BPM is set)
@@ -153,5 +215,30 @@ struct TimelineSettingsSheet: View {
                 }
             }
         }
+    }
+
+    // MARK: - Preroll Helpers
+
+    private func initPrerollFields() {
+        let fps = viewModel.fps
+        let totalSeconds = viewModel.prerollSeconds
+        let wholeSeconds = Int(totalSeconds)
+        let fractionalSeconds = totalSeconds - Double(wholeSeconds)
+        let frames = Int(round(fractionalSeconds * Double(fps)))
+
+        prerollSecondsText = wholeSeconds > 0 ? String(wholeSeconds) : ""
+        prerollFramesText = frames > 0 ? String(frames) : ""
+    }
+
+    private func updatePrerollFromInput() {
+        let fps = viewModel.fps
+        let seconds = Int(prerollSecondsText) ?? 0
+        let frames = Int(prerollFramesText) ?? 0
+
+        // Clamp frames to valid range
+        let clampedFrames = max(0, min(frames, fps - 1))
+
+        let totalSeconds = Double(seconds) + Double(clampedFrames) / Double(fps)
+        viewModel.setPrerollSeconds(totalSeconds)
     }
 }
