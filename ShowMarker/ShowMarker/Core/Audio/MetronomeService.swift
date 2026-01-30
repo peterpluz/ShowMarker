@@ -3,7 +3,8 @@ import AVFoundation
 import Combine
 
 /// Сервис метронома на базе AVAudioEngine
-/// Поддерживает как мгновенное воспроизведение, так и pre-scheduling
+/// Только мгновенное воспроизведение — никаких таймеров и pre-scheduling.
+/// Вся логика "когда играть" живёт в TimelineViewModel.
 @MainActor
 class MetronomeService: ObservableObject {
 
@@ -17,15 +18,11 @@ class MetronomeService: ObservableObject {
     private var clickBuffer: AVAudioPCMBuffer?
     private var accentBuffer: AVAudioPCMBuffer?
 
-    // Pre-scheduling timer
-    private var scheduleTimer: DispatchSourceTimer?
-
     init() {
         setupAudioEngine()
     }
 
     deinit {
-        scheduleTimer?.cancel()
         audioEngine?.stop()
     }
 
@@ -73,7 +70,7 @@ class MetronomeService: ObservableObject {
 
     // MARK: - Playback
 
-    /// Воспроизводит клик немедленно (для первого бита при старте)
+    /// Воспроизводит клик немедленно
     func playClick(isAccent: Bool) {
         ensureEngineRunning()
         guard let node = playerNode else { return }
@@ -83,35 +80,6 @@ class MetronomeService: ObservableObject {
 
         node.volume = volume
         node.scheduleBuffer(buffer, at: nil, options: .interrupts) { }
-    }
-
-    /// Планирует клик через указанную задержку (в секундах)
-    /// Использует DispatchSourceTimer для точности ~1ms
-    func scheduleClick(afterDelay delay: Double, isAccent: Bool) {
-        scheduleTimer?.cancel()
-
-        guard delay > 0.001 else {
-            // Delay too small, play immediately
-            playClick(isAccent: isAccent)
-            return
-        }
-
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(
-            deadline: .now() + delay,
-            leeway: .microseconds(500)  // 0.5ms precision
-        )
-        timer.setEventHandler { [weak self] in
-            self?.playClick(isAccent: isAccent)
-        }
-        timer.resume()
-        scheduleTimer = timer
-    }
-
-    /// Отменяет запланированный клик
-    func cancelScheduled() {
-        scheduleTimer?.cancel()
-        scheduleTimer = nil
     }
 
     /// Обновляет громкость
