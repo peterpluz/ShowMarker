@@ -350,13 +350,14 @@ final class TimelineViewModel: ObservableObject {
                         self.flashedMarkers.remove(marker.id)
                     }
 
-                    // Cancel current beat schedule and reschedule from new position
+                    // Cancel current beat schedule; don't reschedule immediately —
+                    // the next forward-moving time update will schedule the correct beat,
+                    // naturally debouncing rapid scroll/seek operations
                     if self.isMetronomeUserEnabled {
                         self.beatScheduleGeneration += 1
                         self.metronome.cancelScheduled()
                         self.nextScheduledBeat = Int.min
                         self.lastPlayedBeat = Int.min
-                        self.scheduleNextBeat(at: newTime)
                     }
 
                     self.previousFrame = currentFrame
