@@ -332,8 +332,12 @@ final class TimelineViewModel: ObservableObject {
                 // ✅ Update next marker for auto-scroll (always)
                 self.updateNextMarker(for: newTime)
 
-                // ✅ Always update visual beat indicator (even when not playing)
-                self.updateCurrentBeat(at: newTime)
+                // Update visual beat indicator only when NOT playing;
+                // during playback, currentBeat is updated by beat scheduling events
+                // to avoid rapid flickering during rewind/scrub
+                if !self.isPlaying {
+                    self.updateCurrentBeat(at: newTime)
+                }
 
                 // ✅ CRITICAL: Only detect crossings during active playback
                 guard self.isPlaying else { return }
@@ -455,6 +459,10 @@ final class TimelineViewModel: ObservableObject {
 
     // MARK: - Beat Pre-Scheduling
 
+    /// Compensation for time observer pipeline latency (queue dispatch + main thread processing).
+    /// Without this, scheduled clicks arrive ~15-20ms late relative to the audio.
+    private let timeObserverLatencyCompensation: Double = 0.018
+
     /// Called at playback start: plays the first beat immediately and schedules the next
     private func playFirstBeatAndScheduleNext(at time: Double) {
         guard isMetronomeUserEnabled, let bpm = bpm, bpm > 0 else { return }
@@ -481,13 +489,13 @@ final class TimelineViewModel: ObservableObject {
             // Schedule the NEXT beat
             let nextBeat = currentAbsoluteBeat + 1
             let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
-            let delay = nextBeatAudioTime - time
+            let delay = max(0.001, nextBeatAudioTime - time - timeObserverLatencyCompensation)
             scheduleSpecificBeat(nextBeat, afterDelay: delay)
         } else {
             // We're between beats - schedule the next upcoming beat
             let nextBeat = currentAbsoluteBeat + 1
             let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
-            let delay = nextBeatAudioTime - time
+            let delay = max(0.001, nextBeatAudioTime - time - timeObserverLatencyCompensation)
 
             scheduleSpecificBeat(nextBeat, afterDelay: delay)
             print("🥁 [Metronome] First scheduled beat \(nextBeat) in \(String(format: "%.1f", delay * 1000))ms")
@@ -503,6 +511,22 @@ final class TimelineViewModel: ObservableObject {
         let timeFromOffset = time - beatGridOffset
         let currentBeatPosition = timeFromOffset / beatInterval
 
+        // After a reset (seek/rewind), check if we just passed a beat and should play it
+        if nextScheduledBeat == Int.min {
+            let floorBeat = Int(floor(currentBeatPosition))
+            let floorBeatTime = beatTime(forAbsoluteBeat: floorBeat)
+            let timeSinceFloorBeat = time - floorBeatTime
+            if timeSinceFloorBeat >= 0 && timeSinceFloorBeat < 0.030 {
+                let beatInBar = calculateBeatInBar(absoluteBeat: floorBeat)
+                if floorBeat > lastPlayedBeat {
+                    metronome.playClick(isAccent: beatInBar == 0)
+                    lastPlayedBeat = floorBeat
+                    currentBeat = beatInBar
+                }
+                nextScheduledBeat = floorBeat
+            }
+        }
+
         // The next beat to schedule
         let nextBeat = Int(ceil(currentBeatPosition))
 
@@ -517,7 +541,10 @@ final class TimelineViewModel: ObservableObject {
         // (not too far in the future, not in the past)
         guard delay > -0.010 && delay < beatInterval * 2 else { return }
 
-        if delay <= 0.002 {
+        // Apply latency compensation
+        let compensatedDelay = delay - timeObserverLatencyCompensation
+
+        if compensatedDelay <= 0.002 {
             // Beat is essentially NOW or just passed - play immediately
             let beatInBar = calculateBeatInBar(absoluteBeat: nextBeat)
             if nextBeat > lastPlayedBeat {
@@ -529,11 +556,11 @@ final class TimelineViewModel: ObservableObject {
 
             // Schedule the one after
             let afterNext = nextBeat + 1
-            let afterNextDelay = beatTime(forAbsoluteBeat: afterNext) - time
+            let afterNextDelay = max(0.001, beatTime(forAbsoluteBeat: afterNext) - time - timeObserverLatencyCompensation)
             scheduleSpecificBeat(afterNext, afterDelay: afterNextDelay)
         } else {
-            // Schedule future beat
-            scheduleSpecificBeat(nextBeat, afterDelay: delay)
+            // Schedule future beat with compensation
+            scheduleSpecificBeat(nextBeat, afterDelay: compensatedDelay)
         }
     }
 

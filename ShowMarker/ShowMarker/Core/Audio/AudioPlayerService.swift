@@ -11,6 +11,7 @@ final class AudioPlayerService: ObservableObject {
 
     private var player: AVPlayer?
     private var timeObserver: Any?
+    private var endObserver: NSObjectProtocol?
 
     /// Serial queue for time observer - more responsive than main queue
     private let timeObserverQueue = DispatchQueue(label: "com.showmarker.timeObserver", qos: .userInteractive)
@@ -42,6 +43,7 @@ final class AudioPlayerService: ObservableObject {
         }
 
         addTimeObserver()
+        addEndObserver(item: item)
     }
 
     /// Prerolls the player to minimize delay when play() is called
@@ -146,10 +148,24 @@ final class AudioPlayerService: ObservableObject {
         }
     }
 
+    private func addEndObserver(item: AVPlayerItem) {
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isPlaying = false
+        }
+    }
+
     private func cleanupObserver() {
         if let player, let obs = timeObserver {
             player.removeTimeObserver(obs)
             timeObserver = nil
+        }
+        if let obs = endObserver {
+            NotificationCenter.default.removeObserver(obs)
+            endObserver = nil
         }
     }
 }

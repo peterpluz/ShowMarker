@@ -51,10 +51,6 @@ struct TimelineScreen: View {
     @State private var rippleRadius: CGFloat = 0
     @State private var rippleOpacity: Double = 1.0
 
-    // BPM editing state
-    @State private var isEditingBPM = false
-    @State private var bpmText = ""
-
     // Timeline settings sheet state
     @State private var isTimelineSettingsPresented = false
 
@@ -104,11 +100,6 @@ struct TimelineScreen: View {
                     .sheet(isPresented: $isTimelineSettingsPresented) {
                         TimelineSettingsSheet(
                             viewModel: viewModel,
-                            onEditBPM: {
-                                isTimelineSettingsPresented = false
-                                bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
-                                isEditingBPM = true
-                            },
                             onReplaceAudio: {
                                 isTimelineSettingsPresented = false
                                 isPickerPresented = true
@@ -201,21 +192,6 @@ struct TimelineScreen: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(csvImportError ?? "Неизвестная ошибка")
-            }
-            .alert("Установить BPM", isPresented: $isEditingBPM) {
-                TextField("BPM", text: $bpmText)
-                    .keyboardType(.numberPad)
-                Button("Готово") {
-                    if let bpm = Double(bpmText), bpm > 0, bpm <= 300 {
-                        viewModel.setBPM(bpm)
-                    }
-                }
-                Button("Удалить BPM", role: .destructive) {
-                    viewModel.setBPM(nil)
-                }
-                Button("Отмена", role: .cancel) {}
-            } message: {
-                Text("Укажите темп композиции (20-300 BPM)")
             }
     }
 
@@ -449,9 +425,8 @@ struct TimelineScreen: View {
                 }
             }
             .onTapGesture {
-                // Open BPM editing
-                bpmText = viewModel.bpm.map { String(Int($0)) } ?? ""
-                isEditingBPM = true
+                // Open timeline settings for BPM editing
+                isTimelineSettingsPresented = true
             }
         }
     }
