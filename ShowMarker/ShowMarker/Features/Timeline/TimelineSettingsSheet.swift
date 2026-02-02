@@ -13,6 +13,10 @@ struct TimelineSettingsSheet: View {
     @State private var bpmDragStartValue: Double = 120
     @State private var bpmDragAccumulated: CGFloat = 0
 
+    // Tap tempo state
+    @State private var tapTempoTimestamps: [Date] = []
+    @State private var tapTempoResetTask: DispatchWorkItem?
+
     // Callbacks for actions that need to be performed in TimelineScreen
     let onReplaceAudio: () -> Void
     let onDeleteAudio: () -> Void
@@ -27,14 +31,27 @@ struct TimelineSettingsSheet: View {
             List {
                 // BPM settings
                 Section {
-                    // BPM stepper row
+                    // BPM row: tap tempo button + stepper
                     HStack(spacing: 0) {
-                        // Left side: "Задайте темп" label
-                        Text("Задайте темп")
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 12)
+                        // Left: Tap Tempo button
+                        Button {
+                            handleTapTempo()
+                        } label: {
+                            Text("Задайте темп")
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color(UIColor.tertiarySystemFill))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 12)
+                        .padding(.vertical, 6)
 
-                        // Right side: BPM value with up/down controls
+                        // Right: BPM value with up/down controls
                         bpmStepperControl
                     }
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -274,6 +291,43 @@ struct TimelineSettingsSheet: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
+    }
+
+    // MARK: - Tap Tempo
+
+    private func handleTapTempo() {
+        let now = Date()
+
+        // Reset if last tap was more than 2 seconds ago
+        if let last = tapTempoTimestamps.last, now.timeIntervalSince(last) > 2.0 {
+            tapTempoTimestamps.removeAll()
+        }
+
+        tapTempoTimestamps.append(now)
+
+        // Keep only last 8 taps
+        if tapTempoTimestamps.count > 8 {
+            tapTempoTimestamps.removeFirst()
+        }
+
+        // Need at least 2 taps to calculate BPM
+        if tapTempoTimestamps.count >= 2 {
+            let intervals = zip(tapTempoTimestamps.dropFirst(), tapTempoTimestamps).map {
+                $0.timeIntervalSince($1)
+            }
+            let avgInterval = intervals.reduce(0, +) / Double(intervals.count)
+            let bpm = 60.0 / avgInterval
+            let clampedBPM = max(20, min(300, round(bpm)))
+            viewModel.setBPM(clampedBPM)
+        }
+
+        // Auto-reset after 2 seconds of inactivity
+        tapTempoResetTask?.cancel()
+        let task = DispatchWorkItem { [self] in
+            tapTempoTimestamps.removeAll()
+        }
+        tapTempoResetTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: task)
     }
 
     // MARK: - Preroll Helpers
