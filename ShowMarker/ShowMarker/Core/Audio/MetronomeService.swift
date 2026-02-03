@@ -3,25 +3,30 @@ import AVFoundation
 import Combine
 
 /// Сервис метронома на базе AVAudioEngine
-/// Поддерживает как мгновенное воспроизведение, так и pre-scheduling
-@MainActor
+/// Использует выделенную high-priority очередь для таймеров и воспроизведения,
+/// чтобы UI-нагрузка на main queue не влияла на точность кликов.
 class MetronomeService: ObservableObject {
 
+    /// Volume exposed for SwiftUI bindings (updated on main queue)
     @Published private(set) var volume: Float = 0.5
 
-    // AVAudioEngine для низкой latency
+    /// Dedicated high-priority queue for all audio operations and timers.
+    /// Keeps click timing independent of main queue UI load.
+    private let audioQueue = DispatchQueue(label: "com.showmarker.metronome", qos: .userInteractive)
+
+    // Audio state — accessed ONLY from audioQueue after init
     private var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
-
-    // Pre-buffered audio data
     private var clickBuffer: AVAudioPCMBuffer?
     private var accentBuffer: AVAudioPCMBuffer?
-
-    // Pre-scheduling timer
     private var scheduleTimer: DispatchSourceTimer?
+    private var currentVolume: Float = 0.5
 
     init() {
-        setupAudioEngine()
+        // Setup synchronously so engine is ready before any playback calls
+        audioQueue.sync {
+            self.setupAudioEngine()
+        }
     }
 
     deinit {
@@ -31,6 +36,7 @@ class MetronomeService: ObservableObject {
 
     // MARK: - Setup
 
+    /// Must be called on audioQueue
     private func setupAudioEngine() {
         let engine = AVAudioEngine()
 
@@ -58,7 +64,7 @@ class MetronomeService: ObservableObject {
         }
     }
 
-    /// Ensures the audio engine is running
+    /// Ensures the audio engine is running. Must be called on audioQueue.
     private func ensureEngineRunning() {
         guard let engine = audioEngine else { return }
         if !engine.isRunning {
@@ -73,8 +79,68 @@ class MetronomeService: ObservableObject {
 
     // MARK: - Playback
 
-    /// Воспроизводит клик немедленно (для первого бита при старте)
+    /// Воспроизводит клик немедленно (для первого бита при старте).
+    /// Dispatches to audioQueue so main queue load doesn't delay playback.
     func playClick(isAccent: Bool) {
+        let vol = currentVolume
+        audioQueue.async { [weak self] in
+            self?.playClickOnQueue(isAccent: isAccent, volume: vol)
+        }
+    }
+
+    /// Планирует клик через указанную задержку (в секундах).
+    /// Timer fires on audioQueue for precise timing independent of main queue.
+    func scheduleClick(afterDelay delay: Double, isAccent: Bool) {
+        let vol = currentVolume
+        audioQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            self.scheduleTimer?.cancel()
+
+            guard delay > 0.001 else {
+                // Delay too small, play immediately
+                self.playClickOnQueue(isAccent: isAccent, volume: vol)
+                return
+            }
+
+            let timer = DispatchSource.makeTimerSource(queue: self.audioQueue)
+            timer.schedule(
+                deadline: .now() + delay,
+                leeway: .microseconds(500)  // 0.5ms precision
+            )
+            timer.setEventHandler { [weak self] in
+                self?.playClickOnQueue(isAccent: isAccent, volume: vol)
+            }
+            timer.resume()
+            self.scheduleTimer = timer
+        }
+    }
+
+    /// Отменяет запланированный клик
+    func cancelScheduled() {
+        audioQueue.async { [weak self] in
+            self?.scheduleTimer?.cancel()
+            self?.scheduleTimer = nil
+        }
+    }
+
+    /// Обновляет громкость
+    func setVolume(_ newVolume: Float) {
+        let clamped = max(0, min(1, newVolume))
+        currentVolume = clamped
+        // Update @Published on main for SwiftUI
+        DispatchQueue.main.async {
+            self.volume = clamped
+        }
+        audioQueue.async { [weak self] in
+            self?.playerNode?.volume = clamped
+        }
+    }
+
+    // MARK: - Internal Playback (audioQueue only)
+
+    /// Plays a click buffer immediately. Must be called on audioQueue.
+    private func playClickOnQueue(isAccent: Bool, volume: Float) {
         ensureEngineRunning()
         guard let node = playerNode else { return }
 
@@ -83,41 +149,6 @@ class MetronomeService: ObservableObject {
 
         node.volume = volume
         node.scheduleBuffer(buffer, at: nil, options: .interrupts) { }
-    }
-
-    /// Планирует клик через указанную задержку (в секундах)
-    /// Использует DispatchSourceTimer для точности ~1ms
-    func scheduleClick(afterDelay delay: Double, isAccent: Bool) {
-        scheduleTimer?.cancel()
-
-        guard delay > 0.001 else {
-            // Delay too small, play immediately
-            playClick(isAccent: isAccent)
-            return
-        }
-
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(
-            deadline: .now() + delay,
-            leeway: .microseconds(500)  // 0.5ms precision
-        )
-        timer.setEventHandler { [weak self] in
-            self?.playClick(isAccent: isAccent)
-        }
-        timer.resume()
-        scheduleTimer = timer
-    }
-
-    /// Отменяет запланированный клик
-    func cancelScheduled() {
-        scheduleTimer?.cancel()
-        scheduleTimer = nil
-    }
-
-    /// Обновляет громкость
-    func setVolume(_ newVolume: Float) {
-        self.volume = max(0, min(1, newVolume))
-        playerNode?.volume = self.volume
     }
 
     // MARK: - Audio Generation

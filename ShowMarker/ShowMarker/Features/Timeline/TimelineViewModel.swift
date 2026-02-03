@@ -77,6 +77,9 @@ final class TimelineViewModel: ObservableObject {
     /// Tracks the last beat we actually played (for visual updates on reactive path)
     private var lastPlayedBeat: Int = Int.min
 
+    /// Generation counter to invalidate stale asyncAfter callbacks after seek/reset
+    private var beatScheduleGeneration: Int = 0
+
     // MARK: - Marker Drag State
 
     // Tracks which marker is being dragged and its preview time
@@ -303,6 +306,7 @@ final class TimelineViewModel: ObservableObject {
                     self.flashedMarkers.removeAll()
 
                     // Reset beat scheduling and play first beat immediately
+                    self.beatScheduleGeneration += 1
                     self.nextScheduledBeat = Int.min
                     self.lastPlayedBeat = Int.min
                     self.playFirstBeatAndScheduleNext(at: self.currentTime)
@@ -311,6 +315,7 @@ final class TimelineViewModel: ObservableObject {
                 } else {
                     // Playback stopped - cancel scheduled beats
                     self.previousFrame = -1
+                    self.beatScheduleGeneration += 1
                     self.nextScheduledBeat = Int.min
                     self.lastPlayedBeat = Int.min
                     self.metronome.cancelScheduled()
@@ -327,8 +332,12 @@ final class TimelineViewModel: ObservableObject {
                 // ✅ Update next marker for auto-scroll (always)
                 self.updateNextMarker(for: newTime)
 
-                // ✅ Always update visual beat indicator (even when not playing)
-                self.updateCurrentBeat(at: newTime)
+                // Update visual beat indicator only when NOT playing;
+                // during playback, currentBeat is updated by beat scheduling events
+                // to avoid rapid flickering during rewind/scrub
+                if !self.isPlaying {
+                    self.updateCurrentBeat(at: newTime)
+                }
 
                 // ✅ CRITICAL: Only detect crossings during active playback
                 guard self.isPlaying else { return }
@@ -345,11 +354,15 @@ final class TimelineViewModel: ObservableObject {
                         self.flashedMarkers.remove(marker.id)
                     }
 
-                    // Cancel current beat schedule and reschedule from new position
-                    self.metronome.cancelScheduled()
-                    self.nextScheduledBeat = Int.min
-                    self.lastPlayedBeat = Int.min
-                    self.scheduleNextBeat(at: newTime)
+                    // Cancel current beat schedule; don't reschedule immediately —
+                    // the next forward-moving time update will schedule the correct beat,
+                    // naturally debouncing rapid scroll/seek operations
+                    if self.isMetronomeUserEnabled {
+                        self.beatScheduleGeneration += 1
+                        self.metronome.cancelScheduled()
+                        self.nextScheduledBeat = Int.min
+                        self.lastPlayedBeat = Int.min
+                    }
 
                     self.previousFrame = currentFrame
                     return
@@ -446,6 +459,10 @@ final class TimelineViewModel: ObservableObject {
 
     // MARK: - Beat Pre-Scheduling
 
+    /// Compensation for time observer pipeline latency (queue dispatch + main thread processing).
+    /// Without this, scheduled clicks arrive ~15-20ms late relative to the audio.
+    private let timeObserverLatencyCompensation: Double = 0.018
+
     /// Called at playback start: plays the first beat immediately and schedules the next
     private func playFirstBeatAndScheduleNext(at time: Double) {
         guard isMetronomeUserEnabled, let bpm = bpm, bpm > 0 else { return }
@@ -472,13 +489,13 @@ final class TimelineViewModel: ObservableObject {
             // Schedule the NEXT beat
             let nextBeat = currentAbsoluteBeat + 1
             let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
-            let delay = nextBeatAudioTime - time
+            let delay = max(0.001, nextBeatAudioTime - time - timeObserverLatencyCompensation)
             scheduleSpecificBeat(nextBeat, afterDelay: delay)
         } else {
             // We're between beats - schedule the next upcoming beat
             let nextBeat = currentAbsoluteBeat + 1
             let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
-            let delay = nextBeatAudioTime - time
+            let delay = max(0.001, nextBeatAudioTime - time - timeObserverLatencyCompensation)
 
             scheduleSpecificBeat(nextBeat, afterDelay: delay)
             print("🥁 [Metronome] First scheduled beat \(nextBeat) in \(String(format: "%.1f", delay * 1000))ms")
@@ -488,11 +505,27 @@ final class TimelineViewModel: ObservableObject {
     /// Pre-schedules the next beat click based on current position
     /// Called on every time observer update during playback
     private func scheduleNextBeat(at time: Double) {
-        guard let bpm = bpm, bpm > 0 else { return }
+        guard isMetronomeUserEnabled, let bpm = bpm, bpm > 0 else { return }
 
         let beatInterval = 60.0 / bpm
         let timeFromOffset = time - beatGridOffset
         let currentBeatPosition = timeFromOffset / beatInterval
+
+        // After a reset (seek/rewind), check if we just passed a beat and should play it
+        if nextScheduledBeat == Int.min {
+            let floorBeat = Int(floor(currentBeatPosition))
+            let floorBeatTime = beatTime(forAbsoluteBeat: floorBeat)
+            let timeSinceFloorBeat = time - floorBeatTime
+            if timeSinceFloorBeat >= 0 && timeSinceFloorBeat < 0.030 {
+                let beatInBar = calculateBeatInBar(absoluteBeat: floorBeat)
+                if floorBeat > lastPlayedBeat {
+                    metronome.playClick(isAccent: beatInBar == 0)
+                    lastPlayedBeat = floorBeat
+                    currentBeat = beatInBar
+                }
+                nextScheduledBeat = floorBeat
+            }
+        }
 
         // The next beat to schedule
         let nextBeat = Int(ceil(currentBeatPosition))
@@ -508,7 +541,10 @@ final class TimelineViewModel: ObservableObject {
         // (not too far in the future, not in the past)
         guard delay > -0.010 && delay < beatInterval * 2 else { return }
 
-        if delay <= 0.002 {
+        // Apply latency compensation
+        let compensatedDelay = delay - timeObserverLatencyCompensation
+
+        if compensatedDelay <= 0.002 {
             // Beat is essentially NOW or just passed - play immediately
             let beatInBar = calculateBeatInBar(absoluteBeat: nextBeat)
             if nextBeat > lastPlayedBeat {
@@ -520,11 +556,11 @@ final class TimelineViewModel: ObservableObject {
 
             // Schedule the one after
             let afterNext = nextBeat + 1
-            let afterNextDelay = beatTime(forAbsoluteBeat: afterNext) - time
+            let afterNextDelay = max(0.001, beatTime(forAbsoluteBeat: afterNext) - time - timeObserverLatencyCompensation)
             scheduleSpecificBeat(afterNext, afterDelay: afterNextDelay)
         } else {
-            // Schedule future beat
-            scheduleSpecificBeat(nextBeat, afterDelay: delay)
+            // Schedule future beat with compensation
+            scheduleSpecificBeat(nextBeat, afterDelay: compensatedDelay)
         }
     }
 
@@ -539,29 +575,20 @@ final class TimelineViewModel: ObservableObject {
         // Use the metronome's precise timer
         metronome.scheduleClick(afterDelay: delay, isAccent: isAccent)
 
-        // When the beat fires, we need to update visual state and schedule next
-        // Use DispatchQueue to chain the next schedule
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.001) { [weak self] in
-            guard let self = self, self.isPlaying, self.isMetronomeUserEnabled else { return }
+        // Update visual state when the beat fires
+        // Use generation counter to invalidate stale callbacks after seek/reset
+        let gen = self.beatScheduleGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self,
+                  self.isPlaying,
+                  self.beatScheduleGeneration == gen else { return }
 
-            // Update visual state
             if beat > self.lastPlayedBeat {
                 self.lastPlayedBeat = beat
                 self.currentBeat = beatInBar
             }
-
-            // The time observer will schedule the next beat on its next update
-            // But as a safety net, schedule the next beat ourselves
-            let nextBeat = beat + 1
-            if nextBeat > self.nextScheduledBeat {
-                if let bpm = self.bpm, bpm > 0 {
-                    let beatInterval = 60.0 / bpm
-                    // We know the next beat is exactly one interval away
-                    // Adjust for any processing delay
-                    let idealDelay = beatInterval - 0.001
-                    self.scheduleSpecificBeat(nextBeat, afterDelay: max(0.001, idealDelay))
-                }
-            }
+            // Next beat scheduling is handled by the time observer (60fps),
+            // no safety-net chain needed — avoids cumulative drift and phase issues
         }
     }
     
@@ -846,13 +873,15 @@ final class TimelineViewModel: ObservableObject {
         // Reset beat scheduling when toggling metronome
         if repository.project.timelines[idx].isMetronomeEnabled && isPlaying {
             // Enabled during playback - start scheduling from current position
+            beatScheduleGeneration += 1
             nextScheduledBeat = Int.min
             lastPlayedBeat = Int.min
             playFirstBeatAndScheduleNext(at: currentTime)
             print("🥁 [Metronome] Enabled during playback, scheduling from current position")
         } else if !repository.project.timelines[idx].isMetronomeEnabled {
-            // Disabled - cancel any scheduled beats
+            // Disabled - cancel any scheduled beats and invalidate pending callbacks
             metronome.cancelScheduled()
+            beatScheduleGeneration += 1
             nextScheduledBeat = Int.min
             lastPlayedBeat = Int.min
             print("🥁 [Metronome] Disabled, cancelled scheduled beats")

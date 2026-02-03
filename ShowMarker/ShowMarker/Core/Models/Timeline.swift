@@ -56,7 +56,7 @@ struct Timeline: Codable, Identifiable, Sendable {
         audio: TimelineAudio? = nil,
         fps: Int = 30,
         markers: [TimelineMarker] = [],
-        bpm: Double? = nil,
+        bpm: Double? = 120,
         isBeatGridEnabled: Bool = false,
         isSnapToGridEnabled: Bool = false,
         isMetronomeEnabled: Bool = false,
