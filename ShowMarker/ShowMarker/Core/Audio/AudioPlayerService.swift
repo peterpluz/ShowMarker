@@ -9,6 +9,11 @@ final class AudioPlayerService: ObservableObject {
     @Published private(set) var currentTime: Double = 0
     @Published private(set) var duration: Double = 0
 
+    /// Host time and audio time captured simultaneously in the time observer callback.
+    /// Used by beat scheduler for precise host-time-anchored calculations.
+    private(set) var lastTimeObserverHostTime: UInt64 = 0
+    private(set) var lastTimeObserverAudioTime: Double = 0
+
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
@@ -88,6 +93,11 @@ final class AudioPlayerService: ObservableObject {
         isPlaying ? pause() : play()
     }
 
+    /// Mutes/unmutes the audio player without affecting playback state
+    func setMuted(_ muted: Bool) {
+        player?.isMuted = muted
+    }
+
     func seek(by delta: Double) {
         guard let player else { return }
         let target = max(0, currentTime + delta)
@@ -140,9 +150,14 @@ final class AudioPlayerService: ObservableObject {
             queue: timeObserverQueue  // Use dedicated queue for responsiveness
         ) { [weak self] time in
             guard let self else { return }
+            // Capture host time simultaneously with audio time —
+            // this pair serves as a reference point for sample-accurate beat scheduling
+            let hostTime = mach_absolute_time()
             let seconds = time.seconds
             // Dispatch to main for @Published property
             DispatchQueue.main.async {
+                self.lastTimeObserverHostTime = hostTime
+                self.lastTimeObserverAudioTime = seconds
                 self.currentTime = seconds
             }
         }

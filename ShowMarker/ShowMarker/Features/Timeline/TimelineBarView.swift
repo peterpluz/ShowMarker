@@ -28,6 +28,8 @@ struct TimelineBarView: View {
 
     let onAddAudio: () -> Void
     let onSeek: (Double) -> Void  // Takes audio time (not display time)
+    var onScrubStart: (() -> Void)? = nil
+    var onScrubEnd: (() -> Void)? = nil
 
     // MARK: - Computed Properties for Preroll
 
@@ -181,6 +183,7 @@ struct TimelineBarView: View {
                                     capsuleDragTime = effectiveDisplayTime()
                                     isCapsuleDragging = true
                                     capsuleDragEndTime = nil
+                                    onScrubStart?()
                                 }
 
                                 guard let startPlayheadX = capsuleDragStart else { return }
@@ -201,6 +204,7 @@ struct TimelineBarView: View {
                                 capsuleDragStart = nil
                                 isCapsuleDragging = false
                                 capsuleDragEndTime = Date()
+                                onScrubEnd?()
                             }
                     )
 
@@ -624,6 +628,7 @@ struct TimelineBarView: View {
                     dragCurrentTime = displayCurrentTime
                     isTimelineDragging = true
                     dragEndTime = nil
+                    onScrubStart?()
                 }
                 guard let start = dragStartTime else { return }
 
@@ -647,6 +652,7 @@ struct TimelineBarView: View {
                     dragStartX = 0
                     isTimelineDragging = false
                     dragEndTime = Date()
+                    onScrubEnd?()
                 }
             }
     }
