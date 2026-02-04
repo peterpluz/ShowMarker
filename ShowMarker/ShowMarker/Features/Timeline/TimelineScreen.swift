@@ -720,7 +720,7 @@ struct TimelineScreen: View {
     private var addMarkerButton: some View {
         Button {
             // Save current time for marker creation
-            markerCreationTime = viewModel.currentTime
+            markerCreationTime = max(0, viewModel.currentTime)
 
             if viewModel.shouldShowMarkerPopup {
                 // Save playback state and pause if needed

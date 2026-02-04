@@ -43,9 +43,10 @@ struct TimelineBarView: View {
         audioTime + prerollSeconds
     }
 
-    /// Convert display time to audio time (for seeking)
+    /// Convert display time to audio time (for seeking).
+    /// Can return negative values when in the preroll zone.
     private func displayToAudioTime(_ displayTime: Double) -> Double {
-        max(0, displayTime - prerollSeconds)
+        displayTime - prerollSeconds
     }
 
     /// Current time in display coordinates
@@ -914,21 +915,22 @@ struct TimelineBarView: View {
         GeometryReader { geometry in
             // Beat grid offset is in audio time - convert to display time for positioning
             let displayOffset = audioToDisplayTime(beatGridOffset)
-            let normalizedPosition = displayOffset / effectiveDuration
+            let normalizedPosition = effectiveDuration > 0 ? displayOffset / effectiveDuration : 0
             let x = normalizedPosition * width
             let hitAreaWidth: CGFloat = 44  // Large enough to easily tap on mobile
 
             // Invisible drag handle over the first beat grid line
-            // Requires long press before dragging becomes active
+            // Requires long press before dragging becomes active.
+            // IMPORTANT: contentShape + gesture MUST be before .position() —
+            // .position() expands the frame to parent size, which would make
+            // the entire area tappable instead of just the 44pt strip.
             Rectangle()
                 .fill(isDraggingBeatGridOffset ? Color.accentColor.opacity(0.15) : Color.clear)
                 .frame(width: hitAreaWidth, height: Self.barHeight)
-                .position(x: x, y: Self.barHeight / 2)
                 .contentShape(Rectangle())
                 .gesture(
                     LongPressGesture(minimumDuration: 0.35)
                         .onEnded { _ in
-                            // Long press completed - enable drag mode and store start offset
                             isDraggingBeatGridOffset = true
                             beatGridOffsetDragStart = beatGridOffset
                         }
@@ -937,18 +939,12 @@ struct TimelineBarView: View {
                             guard case .second(true, let drag?) = value else { return }
                             guard draggedMarkerID == nil else { return }
 
-                            // Calculate display time from drag position
                             let normalizedX = drag.location.x / width
                             let displayTime = normalizedX * effectiveDuration
-
-                            // Convert display time to audio time for the offset
                             let newOffset = max(0, min(duration, displayToAudioTime(displayTime)))
-
-                            // Apply offset immediately
                             onBeatGridOffsetChange(newOffset)
                         }
                         .onEnded { _ in
-                            // Commit the change to undo system
                             if isDraggingBeatGridOffset {
                                 let newOffset = beatGridOffset
                                 if beatGridOffsetDragStart != newOffset {
@@ -958,6 +954,7 @@ struct TimelineBarView: View {
                             isDraggingBeatGridOffset = false
                         }
                 )
+                .position(x: x, y: Self.barHeight / 2)
         }
         .coordinateSpace(name: "beatGridOverlay")
     }
