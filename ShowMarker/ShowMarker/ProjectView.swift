@@ -130,33 +130,29 @@ struct ProjectView: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        List {
-            if filteredTimelines.isEmpty {
-                emptyState
-            } else {
+        if filteredTimelines.isEmpty {
+            emptyState
+                .animation(.easeInOut(duration: 0.2), value: isEditing)
+        } else {
+            List {
                 timelineList
                     .transition(.opacity.combined(with: .scale))
             }
+            .animation(.easeInOut(duration: 0.2), value: isEditing)
         }
-        .animation(.easeInOut(duration: 0.2), value: isEditing)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Spacer()
-
-            Text("Нет таймлайнов")
-                .foregroundColor(.secondary)
-            Text("Создайте новый таймлайн")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-
-            Spacer()
+        ZStack {
+            VStack(spacing: 8) {
+                Text("Нет таймлайнов")
+                    .foregroundColor(.secondary)
+                Text("Создайте новый таймлайн")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity)
-        .frame(maxHeight: .infinity)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
     }
 
     private var timelineList: some View {
