@@ -125,6 +125,7 @@ struct TimecodePickerView: View {
         Picker("", selection: selection) {
             ForEach(range, id: \.self) {
                 Text(String(format: "%02d", $0))
+                    .monospacedDigit()
             }
         }
         .pickerStyle(.wheel)
