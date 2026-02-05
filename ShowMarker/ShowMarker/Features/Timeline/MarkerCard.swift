@@ -45,6 +45,7 @@ struct MarkerCard: View {
 
                 Text(timecode())
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .monospacedDigit()
                     .foregroundColor(.secondary)
                     .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
             }

@@ -649,6 +649,7 @@ struct TimelineScreen: View {
     private var timecode: some View {
         Text(viewModel.timecode())
             .font(.system(size: 32, weight: .bold))
+            .monospacedDigit()
             .foregroundColor(viewModel.isPlaying ? .green : .primary)
             .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)  // ✅ FIX: Force redraw on trigger toggle
             .frame(minWidth: 140, alignment: .center)
