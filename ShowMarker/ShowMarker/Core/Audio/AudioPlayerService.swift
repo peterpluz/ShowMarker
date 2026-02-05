@@ -55,13 +55,9 @@ final class AudioPlayerService: ObservableObject {
     private func prerollPlayer() async {
         guard let player else { return }
 
-        do {
-            let ready = try await player.preroll(atRate: 1.0)
-            if ready {
-                print("✅ Player prerolled and ready for immediate playback")
-            }
-        } catch {
-            print("⚠️ Player preroll failed: \(error)")
+        let ready = await player.preroll(atRate: 1.0)
+        if ready {
+            print("✅ Player prerolled and ready for immediate playback")
         }
     }
 
@@ -169,7 +165,9 @@ final class AudioPlayerService: ObservableObject {
             object: item,
             queue: .main
         ) { [weak self] _ in
-            self?.isPlaying = false
+            DispatchQueue.main.async {
+                self?.isPlaying = false
+            }
         }
     }
 

@@ -3,6 +3,7 @@ import AVFoundation
 
 // MARK: - Cached Data Structure
 
+@preconcurrency
 struct CachedWaveformData: Codable, @unchecked Sendable {
     let mipmaps: [[Float]]
     let generatedAt: Date

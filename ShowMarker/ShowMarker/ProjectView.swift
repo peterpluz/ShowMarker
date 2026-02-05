@@ -130,15 +130,17 @@ struct ProjectView: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        if filteredTimelines.isEmpty {
-            emptyState
-        } else {
-            List {
-                timelineList
-                    .transition(.opacity.combined(with: .scale))
+        Group {
+            if filteredTimelines.isEmpty {
+                emptyState
+            } else {
+                List {
+                    timelineList
+                        .transition(.opacity.combined(with: .scale))
+                }
             }
-            .animation(.easeInOut(duration: 0.2), value: isEditing)
         }
+        .animation(.easeInOut(duration: 0.2), value: isEditing)
     }
 
     private var emptyState: some View {

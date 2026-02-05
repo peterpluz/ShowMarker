@@ -769,8 +769,8 @@ struct TimelineBarView: View {
                         let endX = startX - size.height
 
                         // Calculate clipped line endpoints within preroll zone
-                        var x1 = startX
-                        var y1: CGFloat = 0
+                        let x1 = startX
+                        let y1: CGFloat = 0
                         var x2 = endX
                         var y2 = size.height
 
