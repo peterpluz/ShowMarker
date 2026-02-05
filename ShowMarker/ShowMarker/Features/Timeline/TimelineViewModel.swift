@@ -310,12 +310,15 @@ final class TimelineViewModel: ObservableObject {
             .store(in: &cancellables)
 
         // During preroll, currentTime is driven by preroll timer, not audio player.
+        // During scrubbing, currentTime is driven by the drag gesture.
         // Also guard against overwriting a manual preroll-zone position while paused:
         // audioPlayer.seekTo publishes currentTime=0 which would clobber our negative value.
         audioPlayer.$currentTime
             .receive(on: DispatchQueue.main)
             .sink { [weak self] t in
                 guard let self = self, !self.isInPreroll else { return }
+                // During scrubbing, position is driven by the drag gesture
+                if self.isScrubbing { return }
                 // Don't overwrite manually-set preroll position when paused
                 if self.currentTime < 0 && !self.isPlaying {
                     return
@@ -804,6 +807,11 @@ final class TimelineViewModel: ObservableObject {
         prerollLastTickTime = CFAbsoluteTimeGetCurrent()
         currentTime = startPos
 
+        // Pre-seek audio player to time 0 now so it's ready for seamless
+        // transition when preroll finishes (eliminates micro-pause at the boundary).
+        // The isInPreroll guard in the binding prevents this from overwriting currentTime.
+        audioPlayer.seekTo(time: 0)
+
         // Start beat scheduling for preroll zone
         beatScheduleGeneration += 1
         nextScheduledBeat = Int.min
@@ -840,7 +848,8 @@ final class TimelineViewModel: ObservableObject {
         isInPreroll = false
         // Don't reset beats — preroll already scheduled them through time 0
         skipNextPlaybackReset = true
-        audioPlayer.seekTo(time: 0)
+        // Audio player was pre-seeked to time 0 in startPreroll() —
+        // just start playback for a seamless, zero-gap transition.
         audioPlayer.play()
         // isPlaying will be confirmed by the audioPlayer binding
     }
@@ -889,7 +898,8 @@ final class TimelineViewModel: ObservableObject {
 
         if wasPlayingBeforeScrub {
             if currentTime < 0 {
-                // In preroll zone — restart preroll timer
+                // In preroll zone — pause audio player and start preroll timer
+                audioPlayer.pause()
                 isInPreroll = false // Reset so startPreroll can set it
                 isPlaying = false
                 startPreroll(from: currentTime)
@@ -945,6 +955,17 @@ final class TimelineViewModel: ObservableObject {
     func seek(to time: Double) {
         let minTime = prerollSeconds > 0 ? -prerollSeconds : 0
         let clamped = max(minTime, min(time, duration))
+
+        // During scrubbing: just move playhead position.
+        // Don't start/stop preroll or schedule beats — the drag gesture drives position.
+        if isScrubbing {
+            currentTime = clamped
+            if clamped >= 0 {
+                // In audio zone: also seek audio player for scrub preview
+                audioPlayer.seekTo(time: clamped)
+            }
+            return
+        }
 
         if clamped < 0 {
             // Seeking into preroll zone

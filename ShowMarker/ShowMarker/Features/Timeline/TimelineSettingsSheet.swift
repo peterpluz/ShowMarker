@@ -9,6 +9,11 @@ struct TimelineSettingsSheet: View {
     @State private var prerollSecondsText: String = ""
     @State private var prerollFramesText: String = ""
 
+    // Preroll marker deletion confirmation
+    @State private var showPrerollMarkerDeletionAlert = false
+    @State private var pendingPrerollSeconds: Double = 0
+    @State private var markersToDeleteInPreroll: [TimelineMarker] = []
+
     // BPM drag state
     @State private var bpmDragStartValue: Double = 120
     @State private var bpmDragAccumulated: CGFloat = 0
@@ -232,6 +237,21 @@ struct TimelineSettingsSheet: View {
                     }
                 }
             }
+            .alert("Маркеры за пределами преролла", isPresented: $showPrerollMarkerDeletionAlert) {
+                Button("Удалить и изменить", role: .destructive) {
+                    for marker in markersToDeleteInPreroll {
+                        viewModel.deleteMarker(marker)
+                    }
+                    viewModel.setPrerollSeconds(pendingPrerollSeconds)
+                }
+                Button("Отмена", role: .cancel) {
+                    // Revert input fields to current preroll value
+                    initPrerollFields()
+                }
+            } message: {
+                let count = markersToDeleteInPreroll.count
+                Text("При уменьшении преролла \(count) \(count == 1 ? "маркер будет удалён" : "маркеров будут удалены"). Это действие нельзя отменить.")
+            }
         }
     }
 
@@ -352,6 +372,25 @@ struct TimelineSettingsSheet: View {
         let clampedFrames = max(0, min(frames, fps - 1))
 
         let totalSeconds = Double(seconds) + Double(clampedFrames) / Double(fps)
-        viewModel.setPrerollSeconds(totalSeconds)
+
+        // If increasing or same preroll — apply immediately, no markers are affected
+        if totalSeconds >= viewModel.prerollSeconds {
+            viewModel.setPrerollSeconds(totalSeconds)
+            return
+        }
+
+        // Decreasing preroll — check for markers that would fall outside the new range.
+        // Markers in preroll have negative timeSeconds; a marker at -3.0 is outside
+        // if the new preroll is only 2 seconds (-3.0 < -2.0).
+        let markersOutside = viewModel.markers.filter { $0.timeSeconds < -totalSeconds }
+
+        if markersOutside.isEmpty {
+            viewModel.setPrerollSeconds(totalSeconds)
+        } else {
+            // Show confirmation before deleting markers
+            pendingPrerollSeconds = totalSeconds
+            markersToDeleteInPreroll = markersOutside
+            showPrerollMarkerDeletionAlert = true
+        }
     }
 }
