@@ -13,6 +13,7 @@ struct MarkerCard: View {
     let currentTime: Double  // Current playhead time
     let markerIndex: Int  // 1-based index number for display
     let isHapticFeedbackEnabled: Bool  // Whether to trigger haptic feedback
+    let prerollSeconds: Double  // Preroll offset for positive time display
     let onTagEdit: () -> Void  // Callback for tag editing
 
     @State private var flashOpacity: Double = 0
@@ -124,7 +125,10 @@ struct MarkerCard: View {
             ? draggedMarkerPreviewTime!
             : marker.timeSeconds
 
-        let totalFrames = Int(timeToDisplay * Double(fps))
+        // Display time is always positive: offset by prerollSeconds so that
+        // 0 = start of timeline (including preroll), prerollSeconds = start of audio
+        let displayTime = max(0, timeToDisplay + prerollSeconds)
+        let totalFrames = Int(displayTime * Double(fps))
         let frames = totalFrames % fps
         let totalSeconds = totalFrames / fps
         let seconds = totalSeconds % 60

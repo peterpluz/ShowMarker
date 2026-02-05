@@ -1006,9 +1006,9 @@ struct TimelineBarView: View {
         min(max(t, 0), effectiveDuration)
     }
 
-    /// Clamp audio time to valid range (0 to duration)
+    /// Clamp audio time to valid range (-prerollSeconds to duration)
     private func clampAudioTime(_ t: Double) -> Double {
-        min(max(t, 0), duration)
+        min(max(t, -prerollSeconds), duration)
     }
 
     /// Legacy clamp - operates on display time

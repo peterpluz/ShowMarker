@@ -261,6 +261,7 @@ struct TimelineScreen: View {
             currentTime: viewModel.currentTime,
             markerIndex: index,
             isHapticFeedbackEnabled: viewModel.isMarkerHapticFeedbackEnabled,
+            prerollSeconds: viewModel.prerollSeconds,
             onTagEdit: {
                 editingTagMarker = marker
             }
@@ -720,7 +721,7 @@ struct TimelineScreen: View {
     private var addMarkerButton: some View {
         Button {
             // Save current time for marker creation
-            markerCreationTime = max(0, viewModel.currentTime)
+            markerCreationTime = viewModel.currentTime
 
             if viewModel.shouldShowMarkerPopup {
                 // Save playback state and pause if needed

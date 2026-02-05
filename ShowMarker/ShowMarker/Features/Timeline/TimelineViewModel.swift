@@ -309,11 +309,17 @@ final class TimelineViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // During preroll, currentTime is driven by preroll timer, not audio player
+        // During preroll, currentTime is driven by preroll timer, not audio player.
+        // Also guard against overwriting a manual preroll-zone position while paused:
+        // audioPlayer.seekTo publishes currentTime=0 which would clobber our negative value.
         audioPlayer.$currentTime
             .receive(on: DispatchQueue.main)
             .sink { [weak self] t in
                 guard let self = self, !self.isInPreroll else { return }
+                // Don't overwrite manually-set preroll position when paused
+                if self.currentTime < 0 && !self.isPlaying {
+                    return
+                }
                 self.currentTime = t
             }
             .store(in: &cancellables)
@@ -953,9 +959,10 @@ final class TimelineViewModel: ObservableObject {
                 currentTime = clamped
                 startPreroll(from: clamped)
             } else {
-                // Not playing — just move playhead
+                // Not playing — just move playhead into preroll zone.
+                // Don't seek audio player here — preroll will handle
+                // the transition to audio time 0 when playback starts.
                 currentTime = clamped
-                audioPlayer.seekTo(time: 0)
             }
         } else {
             // Seeking into audio zone
@@ -964,6 +971,7 @@ final class TimelineViewModel: ObservableObject {
                 let wasPlaying = true // preroll means we were playing
                 stopPreroll()
                 isPlaying = false
+                currentTime = clamped
                 audioPlayer.seekTo(time: clamped)
                 if wasPlaying {
                     skipNextPlaybackReset = true
@@ -974,6 +982,9 @@ final class TimelineViewModel: ObservableObject {
                     audioPlayer.play()
                 }
             } else {
+                // Set currentTime immediately to prevent binding race
+                // (e.g. when transitioning from preroll zone where guard blocks updates)
+                currentTime = clamped
                 audioPlayer.seekTo(time: clamped)
             }
         }
@@ -1181,8 +1192,10 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Timecode
     
     func timecode() -> String {
-        let absTime = abs(currentTime)
-        let totalFrames = Int(absTime * Double(fps))
+        // Display time is always positive: 0 = start of timeline (including preroll),
+        // prerollSeconds = start of audio file.
+        let displayTime = max(0, currentTime + prerollSeconds)
+        let totalFrames = Int(displayTime * Double(fps))
         let frames = totalFrames % fps
         let totalSeconds = totalFrames / fps
         let seconds = totalSeconds % 60
@@ -1190,7 +1203,6 @@ final class TimelineViewModel: ObservableObject {
         let minutes = totalMinutes % 60
         let hours = totalMinutes / 60
 
-        let sign = currentTime < 0 ? "-" : ""
-        return String(format: "%@%02d:%02d:%02d:%02d", sign, hours, minutes, seconds, frames)
+        return String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
     }
 }
