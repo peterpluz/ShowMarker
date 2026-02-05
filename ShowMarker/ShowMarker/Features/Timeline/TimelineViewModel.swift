@@ -65,6 +65,26 @@ final class TimelineViewModel: ObservableObject {
     // ✅ NEW: Track already-flashed markers during current playback session
     private var flashedMarkers: Set<UUID> = []
 
+    // MARK: - Preroll Playback
+
+    /// True while the playhead is advancing through the preroll zone (silence before audio)
+    @Published private(set) var isInPreroll: Bool = false
+
+    /// Timer that drives currentTime during preroll at ~60fps
+    private var prerollTimer: Timer?
+
+    /// Wall-clock reference for preroll timer
+    private var prerollLastTickTime: CFTimeInterval = 0
+
+    /// Host time when preroll started — used for sample-accurate beat scheduling during preroll
+    private var prerollStartHostTime: UInt64 = 0
+
+    /// currentTime value when preroll started
+    private var prerollStartPosition: Double = 0
+
+    /// Flag to prevent the $isPlaying sink from resetting beats when transitioning from preroll to audio
+    private var skipNextPlaybackReset: Bool = false
+
     // MARK: - Beat Scheduling (Metronome)
 
     /// Current beat number in bar (0-based), computed from playhead position
@@ -279,13 +299,33 @@ final class TimelineViewModel: ObservableObject {
     }
     
     private func setupBindings() {
+        // During preroll, we manage isPlaying ourselves (audio player is paused but timeline is "playing")
         audioPlayer.$isPlaying
-            .assign(to: &$isPlaying)
+            .sink { [weak self] playing in
+                guard let self = self else { return }
+                if !self.isInPreroll {
+                    self.isPlaying = playing
+                }
+            }
+            .store(in: &cancellables)
 
-        // ✅ Direct assignment without throttle - AVPlayer already updates at ~33ms intervals
+        // During preroll, currentTime is driven by preroll timer, not audio player.
+        // During scrubbing, currentTime is driven by the drag gesture.
+        // Also guard against overwriting a manual preroll-zone position while paused:
+        // audioPlayer.seekTo publishes currentTime=0 which would clobber our negative value.
         audioPlayer.$currentTime
             .receive(on: DispatchQueue.main)
-            .assign(to: &$currentTime)
+            .sink { [weak self] t in
+                guard let self = self, !self.isInPreroll else { return }
+                // During scrubbing, position is driven by the drag gesture
+                if self.isScrubbing { return }
+                // Don't overwrite manually-set preroll position when paused
+                if self.currentTime < 0 && !self.isPlaying {
+                    return
+                }
+                self.currentTime = t
+            }
+            .store(in: &cancellables)
 
         audioPlayer.$duration
             .sink { [weak self] d in
@@ -305,21 +345,23 @@ final class TimelineViewModel: ObservableObject {
                     self.previousFrame = startFrame
                     self.flashedMarkers.removeAll()
 
-                    // Reset beat scheduling and play first beat immediately
-                    self.beatScheduleGeneration += 1
-                    self.nextScheduledBeat = Int.min
-                    self.lastPlayedBeat = Int.min
-                    self.playFirstBeatAndScheduleNext(at: self.currentTime)
-
-                    print("▶️ [Detection] Playback started at frame \(startFrame)")
+                    if self.skipNextPlaybackReset {
+                        // Transitioning from preroll to audio — beats are already scheduled
+                        self.skipNextPlaybackReset = false
+                    } else {
+                        // Normal playback start — reset and schedule beats
+                        self.beatScheduleGeneration += 1
+                        self.nextScheduledBeat = Int.min
+                        self.lastPlayedBeat = Int.min
+                        self.playFirstBeatAndScheduleNext(at: self.currentTime)
+                    }
                 } else {
                     // Playback stopped - cancel scheduled beats
                     self.previousFrame = -1
                     self.beatScheduleGeneration += 1
                     self.nextScheduledBeat = Int.min
                     self.lastPlayedBeat = Int.min
-                    self.metronome.cancelScheduled()
-                    print("🛑 [Detection] Playback stopped, tracking reset")
+                    self.metronome.cancelAllScheduled()
                 }
             }
             .store(in: &cancellables)
@@ -359,7 +401,7 @@ final class TimelineViewModel: ObservableObject {
                     // naturally debouncing rapid scroll/seek operations
                     if self.isMetronomeUserEnabled {
                         self.beatScheduleGeneration += 1
-                        self.metronome.cancelScheduled()
+                        self.metronome.cancelAllScheduled()
                         self.nextScheduledBeat = Int.min
                         self.lastPlayedBeat = Int.min
                     }
@@ -395,7 +437,8 @@ final class TimelineViewModel: ObservableObject {
 
                 // === BEAT PRE-SCHEDULING ===
                 // On each time update, ensure the next beat is scheduled
-                if self.isMetronomeUserEnabled, let _ = self.bpm {
+                // Skip during scrubbing — metronome is muted
+                if self.isMetronomeUserEnabled, !self.isScrubbing, let _ = self.bpm {
                     self.scheduleNextBeat(at: newTime)
                 }
 
@@ -457,13 +500,16 @@ final class TimelineViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Beat Pre-Scheduling
+    // MARK: - Beat Pre-Scheduling (Host-Time Accurate)
+    //
+    // Uses AVAudioTime(hostTime:) for sample-accurate beat placement.
+    // The key insight: we anchor beat scheduling to the time observer's
+    // (hostTime, audioTime) pair, making the calculation self-correcting
+    // regardless of any processing pipeline delays.
 
-    /// Compensation for time observer pipeline latency (queue dispatch + main thread processing).
-    /// Without this, scheduled clicks arrive ~15-20ms late relative to the audio.
-    private let timeObserverLatencyCompensation: Double = 0.018
-
-    /// Called at playback start: plays the first beat immediately and schedules the next
+    /// Called at playback start: plays the first beat immediately and pre-schedules the next 2.
+    /// Scheduling 2 beats ahead ensures the first beat after seek is always sample-accurate,
+    /// since both are calculated from the same host-time reference point.
     private func playFirstBeatAndScheduleNext(at time: Double) {
         guard isMetronomeUserEnabled, let bpm = bpm, bpm > 0 else { return }
 
@@ -473,10 +519,10 @@ final class TimelineViewModel: ObservableObject {
         let currentAbsoluteBeat = Int(floor(currentBeatPosition))
         let fractionalPart = currentBeatPosition - floor(currentBeatPosition)
 
-        // How close are we to the current beat boundary?
-        // If within 20ms (or at the very start), play the current beat immediately
         let tolerance = 0.020  // 20ms
         let timeSinceBeat = fractionalPart * beatInterval
+
+        var firstScheduledBeat: Int
 
         if timeSinceBeat < tolerance {
             // We're right on a beat - play it now
@@ -484,26 +530,25 @@ final class TimelineViewModel: ObservableObject {
             metronome.playClick(isAccent: beatInBar == 0)
             lastPlayedBeat = currentAbsoluteBeat
             currentBeat = beatInBar
-            print("🥁 [Metronome] First beat \(currentAbsoluteBeat) played immediately (on-beat)")
-
-            // Schedule the NEXT beat
-            let nextBeat = currentAbsoluteBeat + 1
-            let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
-            let delay = max(0.001, nextBeatAudioTime - time - timeObserverLatencyCompensation)
-            scheduleSpecificBeat(nextBeat, afterDelay: delay)
+            firstScheduledBeat = currentAbsoluteBeat + 1
         } else {
-            // We're between beats - schedule the next upcoming beat
-            let nextBeat = currentAbsoluteBeat + 1
-            let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
-            let delay = max(0.001, nextBeatAudioTime - time - timeObserverLatencyCompensation)
+            // We're between beats - start from the next upcoming beat
+            firstScheduledBeat = currentAbsoluteBeat + 1
+        }
 
-            scheduleSpecificBeat(nextBeat, afterDelay: delay)
-            print("🥁 [Metronome] First scheduled beat \(nextBeat) in \(String(format: "%.1f", delay * 1000))ms")
+        // Pre-schedule the next 2 beats for reliable timing after seek/start
+        for i in 0..<2 {
+            let beat = firstScheduledBeat + i
+            let beatAudioTime = beatTime(forAbsoluteBeat: beat)
+            let delay = beatAudioTime - time
+            if delay > 0 && delay < beatInterval * 3 {
+                scheduleSpecificBeat(beat, afterDelay: delay)
+            }
         }
     }
 
-    /// Pre-schedules the next beat click based on current position
-    /// Called on every time observer update during playback
+    /// Pre-schedules the next beat click based on current position.
+    /// Called on every time observer update during playback.
     private func scheduleNextBeat(at time: Double) {
         guard isMetronomeUserEnabled, let bpm = bpm, bpm > 0 else { return }
 
@@ -511,7 +556,7 @@ final class TimelineViewModel: ObservableObject {
         let timeFromOffset = time - beatGridOffset
         let currentBeatPosition = timeFromOffset / beatInterval
 
-        // After a reset (seek/rewind), check if we just passed a beat and should play it
+        // After a reset (seek/rewind), check if we just passed a beat
         if nextScheduledBeat == Int.min {
             let floorBeat = Int(floor(currentBeatPosition))
             let floorBeatTime = beatTime(forAbsoluteBeat: floorBeat)
@@ -524,28 +569,25 @@ final class TimelineViewModel: ObservableObject {
                     currentBeat = beatInBar
                 }
                 nextScheduledBeat = floorBeat
+                // Pre-schedule next beat immediately to avoid gap
+                let nextBeat = floorBeat + 1
+                let nextBeatDelay = beatTime(forAbsoluteBeat: nextBeat) - time
+                if nextBeatDelay > 0 && nextBeatDelay < beatInterval * 3 {
+                    scheduleSpecificBeat(nextBeat, afterDelay: nextBeatDelay)
+                }
+                return
             }
         }
 
-        // The next beat to schedule
         let nextBeat = Int(ceil(currentBeatPosition))
-
-        // Already scheduled or played?
         guard nextBeat > nextScheduledBeat else { return }
 
-        // Calculate delay to next beat
         let nextBeatAudioTime = beatTime(forAbsoluteBeat: nextBeat)
         let delay = nextBeatAudioTime - time
-
-        // Only schedule if the beat is within a reasonable window
-        // (not too far in the future, not in the past)
         guard delay > -0.010 && delay < beatInterval * 2 else { return }
 
-        // Apply latency compensation
-        let compensatedDelay = delay - timeObserverLatencyCompensation
-
-        if compensatedDelay <= 0.002 {
-            // Beat is essentially NOW or just passed - play immediately
+        if delay <= 0.002 {
+            // Beat is essentially NOW - play immediately
             let beatInBar = calculateBeatInBar(absoluteBeat: nextBeat)
             if nextBeat > lastPlayedBeat {
                 metronome.playClick(isAccent: beatInBar == 0)
@@ -556,15 +598,16 @@ final class TimelineViewModel: ObservableObject {
 
             // Schedule the one after
             let afterNext = nextBeat + 1
-            let afterNextDelay = max(0.001, beatTime(forAbsoluteBeat: afterNext) - time - timeObserverLatencyCompensation)
+            let afterNextDelay = max(0.001, beatTime(forAbsoluteBeat: afterNext) - time)
             scheduleSpecificBeat(afterNext, afterDelay: afterNextDelay)
         } else {
-            // Schedule future beat with compensation
-            scheduleSpecificBeat(nextBeat, afterDelay: compensatedDelay)
+            scheduleSpecificBeat(nextBeat, afterDelay: delay)
         }
     }
 
-    /// Schedules a specific beat to play after a delay
+    /// Schedules a specific beat using host-time-anchored calculation.
+    /// Self-correcting: uses the time observer's (hostTime, audioTime) pair
+    /// to calculate the exact host time for the beat, eliminating pipeline latency.
     private func scheduleSpecificBeat(_ beat: Int, afterDelay delay: Double) {
         guard delay > 0 else { return }
 
@@ -572,11 +615,39 @@ final class TimelineViewModel: ObservableObject {
         let beatInBar = calculateBeatInBar(absoluteBeat: beat)
         let isAccent = (beatInBar == 0)
 
-        // Use the metronome's precise timer
-        metronome.scheduleClick(afterDelay: delay, isAccent: isAccent)
+        // Calculate exact host time for the beat.
+        // Two reference sources depending on playback mode:
+        // 1. During audio playback: anchor to time observer's (hostTime, audioTime) pair
+        // 2. During preroll: anchor to preroll start (hostTime, position) pair
+        let beatAudioTime = beatTime(forAbsoluteBeat: beat)
+
+        let hostTime: UInt64
+        if isInPreroll && prerollStartHostTime > 0 {
+            // Preroll mode: calculate from preroll start reference
+            let delayFromPrerollStart = beatAudioTime - prerollStartPosition
+            if delayFromPrerollStart > 0 {
+                hostTime = prerollStartHostTime + UInt64(delayFromPrerollStart * MetronomeService.hostTicksPerSecond)
+            } else {
+                hostTime = mach_absolute_time()
+            }
+        } else {
+            let observerHostTime = audioPlayer.lastTimeObserverHostTime
+            let observerAudioTime = audioPlayer.lastTimeObserverAudioTime
+            if observerHostTime > 0 {
+                let delayFromObserver = beatAudioTime - observerAudioTime
+                if delayFromObserver > 0 {
+                    hostTime = observerHostTime + UInt64(delayFromObserver * MetronomeService.hostTicksPerSecond)
+                } else {
+                    hostTime = mach_absolute_time()
+                }
+            } else {
+                hostTime = MetronomeService.hostTime(afterDelay: delay)
+            }
+        }
+
+        metronome.scheduleClickAtHostTime(hostTime, isAccent: isAccent)
 
         // Update visual state when the beat fires
-        // Use generation counter to invalidate stale callbacks after seek/reset
         let gen = self.beatScheduleGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self = self,
@@ -587,8 +658,6 @@ final class TimelineViewModel: ObservableObject {
                 self.lastPlayedBeat = beat
                 self.currentBeat = beatInBar
             }
-            // Next beat scheduling is handled by the time observer (60fps),
-            // no safety-net chain needed — avoids cumulative drift and phase issues
         }
     }
     
@@ -724,24 +793,230 @@ final class TimelineViewModel: ObservableObject {
         print("✅ Audio player stopped and state cleared")
     }
     
+    // MARK: - Preroll Playback Control
+
+    /// Starts preroll countdown. Drives currentTime from negative toward 0, then starts audio.
+    private func startPreroll(from position: Double? = nil) {
+        let startPos = position ?? currentTime
+        guard startPos < 0 else { return }
+
+        isInPreroll = true
+        isPlaying = true
+        prerollStartHostTime = mach_absolute_time()
+        prerollStartPosition = startPos
+        prerollLastTickTime = CFAbsoluteTimeGetCurrent()
+        currentTime = startPos
+
+        // Pre-seek audio player to time 0 now so it's ready for seamless
+        // transition when preroll finishes (eliminates micro-pause at the boundary).
+        // The isInPreroll guard in the binding prevents this from overwriting currentTime.
+        audioPlayer.seekTo(time: 0)
+
+        // Start beat scheduling for preroll zone
+        beatScheduleGeneration += 1
+        nextScheduledBeat = Int.min
+        lastPlayedBeat = Int.min
+        let startFrame = Int(round(startPos * Double(fps)))
+        previousFrame = startFrame
+        flashedMarkers.removeAll()
+        playFirstBeatAndScheduleNext(at: startPos)
+
+        // 60fps timer to advance currentTime through preroll
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            guard let self = self, self.isInPreroll else { return }
+            let now = CFAbsoluteTimeGetCurrent()
+            let elapsed = now - self.prerollLastTickTime
+            self.prerollLastTickTime = now
+
+            let newTime = self.currentTime + elapsed
+            if newTime >= 0 {
+                // Preroll finished — transition to audio playback
+                self.currentTime = 0
+                self.finishPreroll()
+            } else {
+                self.currentTime = newTime
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        prerollTimer = timer
+    }
+
+    /// Transitions from preroll to audio playback seamlessly
+    private func finishPreroll() {
+        prerollTimer?.invalidate()
+        prerollTimer = nil
+        isInPreroll = false
+        // Don't reset beats — preroll already scheduled them through time 0
+        skipNextPlaybackReset = true
+        // Audio player was pre-seeked to time 0 in startPreroll() —
+        // just start playback for a seamless, zero-gap transition.
+        audioPlayer.play()
+        // isPlaying will be confirmed by the audioPlayer binding
+    }
+
+    /// Stops preroll without transitioning to audio
+    private func stopPreroll() {
+        prerollTimer?.invalidate()
+        prerollTimer = nil
+        isInPreroll = false
+        isPlaying = false
+        beatScheduleGeneration += 1
+        nextScheduledBeat = Int.min
+        lastPlayedBeat = Int.min
+        metronome.cancelAllScheduled()
+    }
+
+    // MARK: - Scrubbing (mute audio/metronome during drag)
+
+    /// True while user is dragging the playhead or capsule
+    private var isScrubbing: Bool = false
+    /// Remembers whether playback was active before scrub started
+    private var wasPlayingBeforeScrub: Bool = false
+
+    func startScrubbing() {
+        guard !isScrubbing else { return }
+        isScrubbing = true
+        wasPlayingBeforeScrub = isPlaying || isInPreroll
+        // Mute audio output but keep player running so time updates continue
+        audioPlayer.setMuted(true)
+        // Stop preroll timer during scrub (position is driven by drag)
+        if isInPreroll {
+            prerollTimer?.invalidate()
+            prerollTimer = nil
+        }
+        // Cancel metronome beats during scrub
+        metronome.cancelAllScheduled()
+        beatScheduleGeneration += 1
+        nextScheduledBeat = Int.min
+        lastPlayedBeat = Int.min
+    }
+
+    func stopScrubbing() {
+        guard isScrubbing else { return }
+        isScrubbing = false
+        audioPlayer.setMuted(false)
+
+        if wasPlayingBeforeScrub {
+            if currentTime < 0 {
+                // In preroll zone — pause audio player and start preroll timer
+                audioPlayer.pause()
+                isInPreroll = false // Reset so startPreroll can set it
+                isPlaying = false
+                startPreroll(from: currentTime)
+            } else if isInPreroll {
+                // Was in preroll but now in audio zone
+                isInPreroll = false
+                isPlaying = false
+                skipNextPlaybackReset = true
+                beatScheduleGeneration += 1
+                nextScheduledBeat = Int.min
+                lastPlayedBeat = Int.min
+                playFirstBeatAndScheduleNext(at: currentTime)
+                audioPlayer.seekTo(time: currentTime)
+                audioPlayer.play()
+            } else if isPlaying && isMetronomeUserEnabled {
+                // Normal audio playback — re-schedule metronome
+                beatScheduleGeneration += 1
+                nextScheduledBeat = Int.min
+                lastPlayedBeat = Int.min
+                playFirstBeatAndScheduleNext(at: currentTime)
+            }
+        } else if isInPreroll {
+            // Was paused in preroll — just stop preroll state
+            stopPreroll()
+        }
+    }
+
     // MARK: - Playback
-    
+
     func togglePlayPause() {
-        audioPlayer.togglePlayPause()
+        // Already playing (including preroll) — stop
+        if isPlaying || isInPreroll {
+            if isInPreroll { stopPreroll() }
+            audioPlayer.pause()
+            isPlaying = false
+            return
+        }
+
+        // Don't start playback if playhead is at the end of timeline
+        if duration > 0 && currentTime >= duration - 0.01 {
+            return
+        }
+
+        if currentTime < 0 {
+            // Playhead is in preroll zone — start preroll countdown
+            startPreroll()
+        } else {
+            // Playhead is in audio zone — start audio playback
+            audioPlayer.play()
+        }
     }
-    
+
     func seek(to time: Double) {
-        let clamped = max(0, min(time, duration))
-        // Use direct absolute positioning for more responsive micro-movements
-        audioPlayer.seekTo(time: clamped)
+        let minTime = prerollSeconds > 0 ? -prerollSeconds : 0
+        let clamped = max(minTime, min(time, duration))
+
+        // During scrubbing: just move playhead position.
+        // Don't start/stop preroll or schedule beats — the drag gesture drives position.
+        if isScrubbing {
+            currentTime = clamped
+            if clamped >= 0 {
+                // In audio zone: also seek audio player for scrub preview
+                audioPlayer.seekTo(time: clamped)
+            }
+            return
+        }
+
+        if clamped < 0 {
+            // Seeking into preroll zone
+            if isInPreroll {
+                // Already in preroll — restart timer from new position
+                stopPreroll()
+                currentTime = clamped
+                startPreroll(from: clamped)
+            } else if isPlaying {
+                // Was playing audio — pause audio and start preroll
+                audioPlayer.pause()
+                currentTime = clamped
+                startPreroll(from: clamped)
+            } else {
+                // Not playing — just move playhead into preroll zone.
+                // Don't seek audio player here — preroll will handle
+                // the transition to audio time 0 when playback starts.
+                currentTime = clamped
+            }
+        } else {
+            // Seeking into audio zone
+            if isInPreroll {
+                // Was in preroll — stop it and resume audio from new position
+                let wasPlaying = true // preroll means we were playing
+                stopPreroll()
+                isPlaying = false
+                currentTime = clamped
+                audioPlayer.seekTo(time: clamped)
+                if wasPlaying {
+                    skipNextPlaybackReset = true
+                    beatScheduleGeneration += 1
+                    nextScheduledBeat = Int.min
+                    lastPlayedBeat = Int.min
+                    playFirstBeatAndScheduleNext(at: clamped)
+                    audioPlayer.play()
+                }
+            } else {
+                // Set currentTime immediately to prevent binding race
+                // (e.g. when transitioning from preroll zone where guard blocks updates)
+                currentTime = clamped
+                audioPlayer.seekTo(time: clamped)
+            }
+        }
     }
-    
+
     func seekBackward() {
-        audioPlayer.seek(by: -5)
+        seek(to: currentTime - 5)
     }
-    
+
     func seekForward() {
-        audioPlayer.seek(by: 5)
+        seek(to: currentTime + 5)
     }
     
     // MARK: - Markers
@@ -880,7 +1155,7 @@ final class TimelineViewModel: ObservableObject {
             print("🥁 [Metronome] Enabled during playback, scheduling from current position")
         } else if !repository.project.timelines[idx].isMetronomeEnabled {
             // Disabled - cancel any scheduled beats and invalidate pending callbacks
-            metronome.cancelScheduled()
+            metronome.cancelAllScheduled()
             beatScheduleGeneration += 1
             nextScheduledBeat = Int.min
             lastPlayedBeat = Int.min
@@ -938,14 +1213,17 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Timecode
     
     func timecode() -> String {
-        let totalFrames = Int(currentTime * Double(fps))
+        // Display time is always positive: 0 = start of timeline (including preroll),
+        // prerollSeconds = start of audio file.
+        let displayTime = max(0, currentTime + prerollSeconds)
+        let totalFrames = Int(displayTime * Double(fps))
         let frames = totalFrames % fps
         let totalSeconds = totalFrames / fps
         let seconds = totalSeconds % 60
         let totalMinutes = totalSeconds / 60
         let minutes = totalMinutes % 60
         let hours = totalMinutes / 60
-        
+
         return String(format: "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames)
     }
 }

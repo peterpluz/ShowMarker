@@ -57,7 +57,7 @@ struct Timeline: Codable, Identifiable, Sendable {
         fps: Int = 30,
         markers: [TimelineMarker] = [],
         bpm: Double? = 120,
-        isBeatGridEnabled: Bool = false,
+        isBeatGridEnabled: Bool = true,
         isSnapToGridEnabled: Bool = false,
         isMetronomeEnabled: Bool = false,
         beatGridOffset: Double = 0,
@@ -102,7 +102,7 @@ extension Timeline {
 
         // New fields with defaults for backward compatibility
         bpm = try container.decodeIfPresent(Double.self, forKey: .bpm)
-        isBeatGridEnabled = (try? container.decode(Bool.self, forKey: .isBeatGridEnabled)) ?? false
+        isBeatGridEnabled = (try? container.decode(Bool.self, forKey: .isBeatGridEnabled)) ?? true
         isSnapToGridEnabled = (try? container.decode(Bool.self, forKey: .isSnapToGridEnabled)) ?? false
         isMetronomeEnabled = (try? container.decode(Bool.self, forKey: .isMetronomeEnabled)) ?? false
         beatGridOffset = (try? container.decode(Double.self, forKey: .beatGridOffset)) ?? 0

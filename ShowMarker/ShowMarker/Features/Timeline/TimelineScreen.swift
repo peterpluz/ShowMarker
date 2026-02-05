@@ -261,6 +261,7 @@ struct TimelineScreen: View {
             currentTime: viewModel.currentTime,
             markerIndex: index,
             isHapticFeedbackEnabled: viewModel.isMarkerHapticFeedbackEnabled,
+            prerollSeconds: viewModel.prerollSeconds,
             onTagEdit: {
                 editingTagMarker = marker
             }
@@ -630,6 +631,8 @@ struct TimelineScreen: View {
                 print("🎵 [TimelineScreen] isPickerPresented is now: \(isPickerPresented)")
             },
             onSeek: { viewModel.seek(to: $0) },
+            onScrubStart: { viewModel.startScrubbing() },
+            onScrubEnd: { viewModel.stopScrubbing() },
             onPreviewMoveMarker: { _, _ in },
             onCommitMoveMarker: { id, time in
                 if let marker = viewModel.markers.first(where: { $0.id == id }) {
