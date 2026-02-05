@@ -133,6 +133,7 @@ struct ProjectView: View {
         List {
             if filteredTimelines.isEmpty {
                 emptyState
+                    .transition(.opacity)
             } else {
                 timelineList
                     .transition(.opacity.combined(with: .scale))
@@ -153,8 +154,7 @@ struct ProjectView: View {
 
             Spacer()
         }
-        .frame(maxWidth: .infinity)
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
     }

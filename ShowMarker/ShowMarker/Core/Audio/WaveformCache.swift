@@ -3,7 +3,7 @@ import AVFoundation
 
 // MARK: - Cached Data Structure
 
-struct CachedWaveformData: Codable, @unchecked Sendable {
+struct CachedWaveformData: Codable {
     let mipmaps: [[Float]]
     let generatedAt: Date
     let audioID: String
@@ -90,12 +90,14 @@ struct WaveformCache {
     
     // MARK: - Save
 
-    nonisolated private static func save(_ cached: CachedWaveformData, cacheKey: String) throws {
+    private static func save(_ cached: CachedWaveformData, cacheKey: String) throws {
         let paths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
         let cacheDir = paths[0].appendingPathComponent("WaveformCache", isDirectory: true)
 
         let fileURL = cacheDir.appendingPathComponent("\(cacheKey).waveform")
-        let data = try JSONEncoder().encode(cached)
+        // Create mutable copy to avoid Sendable conformance issues
+        let encodable = CachedWaveformData(mipmaps: cached.mipmaps, generatedAt: cached.generatedAt, audioID: cached.audioID)
+        let data = try JSONEncoder().encode(encodable)
         try data.write(to: fileURL, options: .atomic)
         print("✅ Waveform saved to cache: \(fileURL.lastPathComponent)")
     }
