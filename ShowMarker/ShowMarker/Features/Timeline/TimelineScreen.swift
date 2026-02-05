@@ -257,14 +257,11 @@ struct TimelineScreen: View {
                     }
                 }
 
-                // Dimming overlay for expanded mode
-                if sheetDetent == .expanded && sheetDragOffset >= 0 {
-                    Color.black
-                        .opacity(0.3)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                }
+                // Dimming overlay — progressive, proportional to sheet expansion
+                Color.black
+                    .opacity(sheetDimmingOpacity(screenHeight: screenHeight))
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
 
                 // Player sheet
                 playerSheet(screenHeight: screenHeight)
@@ -820,8 +817,37 @@ struct TimelineScreen: View {
 
     private func effectiveSheetHeight(screenHeight: CGFloat) -> CGFloat {
         let base = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
-        let result = base - sheetDragOffset
-        return max(compactSheetHeight * 0.7, min(expandedSheetHeight(screenHeight: screenHeight) + 20, result))
+        let raw = base - sheetDragOffset
+        let minH = compactSheetHeight
+        let maxH = expandedSheetHeight(screenHeight: screenHeight)
+
+        if raw < minH {
+            // Rubber band below compact (dragging down past limit)
+            let overscroll = minH - raw
+            return minH - rubberBand(overscroll, dimension: minH)
+        } else if raw > maxH {
+            // Rubber band above expanded (dragging up past limit)
+            let overscroll = raw - maxH
+            return maxH + rubberBand(overscroll, dimension: maxH)
+        }
+        return raw
+    }
+
+    /// Standard iOS rubber-band formula (same as UIScrollView)
+    private func rubberBand(_ offset: CGFloat, dimension: CGFloat) -> CGFloat {
+        let c: CGFloat = 0.55
+        return (1 - (1 / (offset * c / dimension + 1))) * dimension
+    }
+
+    /// Progressive dimming: 0 at medium, 0.3 at expanded (Apple standard max)
+    private func sheetDimmingOpacity(screenHeight: CGFloat) -> Double {
+        let effHeight = effectiveSheetHeight(screenHeight: screenHeight)
+        let medium = mediumSheetHeight
+        let expanded = expandedSheetHeight(screenHeight: screenHeight)
+
+        guard effHeight > medium else { return 0 }
+        let progress = min(1, (effHeight - medium) / (expanded - medium))
+        return Double(progress) * 0.3
     }
 
     private func waveformDynamicHeight(sheetHeight h: CGFloat) -> CGFloat {
@@ -852,9 +878,9 @@ struct TimelineScreen: View {
         .frame(maxWidth: .infinity)
         .clipped()
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
+            UnevenRoundedRectangle(topLeadingRadius: 10, topTrailingRadius: 10)
                 .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.12), radius: 8, y: -4)
+                .shadow(color: .black.opacity(0.08), radius: 4, y: -2)
                 .ignoresSafeArea(edges: .bottom)
         )
         // Animation is applied explicitly via withAnimation in the drag gesture onEnded
@@ -863,12 +889,14 @@ struct TimelineScreen: View {
     private func sheetGrabHandle(screenHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
             Capsule()
-                .fill(Color.secondary.opacity(0.4))
+                .fill(Color(UIColor.tertiaryLabel))
                 .frame(width: 36, height: 5)
+                .padding(.top, 5)
+                .padding(.bottom, 5)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 28)
-        .contentShape(Rectangle())
+        .frame(height: 20)
+        .contentShape(Rectangle().inset(by: -12))  // Larger hit area than visual
         .gesture(sheetHandleDragGesture(screenHeight: screenHeight))
     }
 
