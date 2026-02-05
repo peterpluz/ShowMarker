@@ -823,18 +823,20 @@ final class TimelineViewModel: ObservableObject {
 
         // 60fps timer to advance currentTime through preroll
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            guard let self = self, self.isInPreroll else { return }
-            let now = CFAbsoluteTimeGetCurrent()
-            let elapsed = now - self.prerollLastTickTime
-            self.prerollLastTickTime = now
+            DispatchQueue.main.async {
+                guard let self = self, self.isInPreroll else { return }
+                let now = CFAbsoluteTimeGetCurrent()
+                let elapsed = now - self.prerollLastTickTime
+                self.prerollLastTickTime = now
 
-            let newTime = self.currentTime + elapsed
-            if newTime >= 0 {
-                // Preroll finished — transition to audio playback
-                self.currentTime = 0
-                self.finishPreroll()
-            } else {
-                self.currentTime = newTime
+                let newTime = self.currentTime + elapsed
+                if newTime >= 0 {
+                    // Preroll finished — transition to audio playback
+                    self.currentTime = 0
+                    self.finishPreroll()
+                } else {
+                    self.currentTime = newTime
+                }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
