@@ -143,16 +143,20 @@ struct ProjectView: View {
     }
 
     private var emptyState: some View {
-        ZStack {
-            VStack(spacing: 8) {
-                Text("Нет таймлайнов")
-                    .foregroundColor(.secondary)
-                Text("Создайте новый таймлайн")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 8) {
+            Spacer()
+
+            Text("Нет таймлайнов")
+                .foregroundColor(.secondary)
+            Text("Создайте новый таймлайн")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+
+            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
     private var timelineList: some View {

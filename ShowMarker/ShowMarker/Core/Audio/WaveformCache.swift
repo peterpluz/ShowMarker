@@ -95,7 +95,9 @@ struct WaveformCache {
         let cacheDir = paths[0].appendingPathComponent("WaveformCache", isDirectory: true)
 
         let fileURL = cacheDir.appendingPathComponent("\(cacheKey).waveform")
-        let data = try JSONEncoder().encode(cached)
+        // Create mutable copy to avoid Sendable conformance issues
+        let encodable = CachedWaveformData(mipmaps: cached.mipmaps, generatedAt: cached.generatedAt, audioID: cached.audioID)
+        let data = try JSONEncoder().encode(encodable)
         try data.write(to: fileURL, options: .atomic)
         print("✅ Waveform saved to cache: \(fileURL.lastPathComponent)")
     }

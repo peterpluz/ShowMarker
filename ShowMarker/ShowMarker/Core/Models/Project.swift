@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 
 // ✅ ИСПРАВЛЕНО: добавлен Sendable для Swift 6
 struct Project: Codable, Identifiable, @unchecked Sendable {
