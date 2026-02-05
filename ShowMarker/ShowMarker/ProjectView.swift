@@ -132,7 +132,9 @@ struct ProjectView: View {
     private var mainContent: some View {
         Group {
             if filteredTimelines.isEmpty {
-                emptyState
+                ScrollView {
+                    emptyState
+                }
             } else {
                 List {
                     timelineList
