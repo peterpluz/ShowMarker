@@ -145,11 +145,13 @@ struct ProjectView: View {
         VStack(spacing: 8) {
             Spacer()
 
-            Text("Нет таймлайнов")
-                .foregroundColor(.secondary)
-            Text("Создайте новый таймлайн")
-                .font(.footnote)
-                .foregroundColor(.secondary)
+            VStack(spacing: 8) {
+                Text("Нет таймлайнов")
+                    .foregroundColor(.secondary)
+                Text("Создайте новый таймлайн")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
 
             Spacer()
         }
