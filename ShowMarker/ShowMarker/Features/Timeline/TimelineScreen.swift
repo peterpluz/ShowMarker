@@ -833,9 +833,9 @@ struct TimelineScreen: View {
     @ViewBuilder
     private func playerSheet(screenHeight: CGFloat) -> some View {
         let effHeight = effectiveSheetHeight(screenHeight: screenHeight)
-        let compactThreshold = (compactSheetHeight + mediumSheetHeight) / 2
-        let isCompact = effHeight < compactThreshold
-        let wfHeight = waveformDynamicHeight(sheetHeight: effHeight)
+        let isCompact = sheetDetent == .compact
+        let baseDetentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+        let wfHeight = waveformDynamicHeight(sheetHeight: baseDetentHeight)
 
         VStack(spacing: 0) {
             // Grab handle
@@ -857,7 +857,7 @@ struct TimelineScreen: View {
                 .shadow(color: .black.opacity(0.12), radius: 8, y: -4)
                 .ignoresSafeArea(edges: .bottom)
         )
-        .animation(.interactiveSpring(response: 0.4, dampingFraction: 0.86), value: sheetDetent)
+        // Animation is applied explicitly via withAnimation in the drag gesture onEnded
     }
 
     private func sheetGrabHandle(screenHeight: CGFloat) -> some View {
@@ -873,8 +873,9 @@ struct TimelineScreen: View {
     }
 
     private func sheetHandleDragGesture(screenHeight: CGFloat) -> some Gesture {
-        DragGesture()
+        DragGesture(minimumDistance: 0)
             .onChanged { value in
+                // Direct 1:1 tracking — no animation during drag
                 sheetDragOffset = value.translation.height
             }
             .onEnded { value in
@@ -882,12 +883,14 @@ struct TimelineScreen: View {
                 let currentHeight = baseHeight - value.translation.height
                 let velocity = value.predictedEndTranslation.height - value.translation.height
 
-                withAnimation(.interactiveSpring(response: 0.4, dampingFraction: 0.86)) {
-                    sheetDetent = resolveDetent(
-                        currentHeight: currentHeight,
-                        velocity: velocity,
-                        screenHeight: screenHeight
-                    )
+                let newDetent = resolveDetent(
+                    currentHeight: currentHeight,
+                    velocity: velocity,
+                    screenHeight: screenHeight
+                )
+
+                withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.86)) {
+                    sheetDetent = newDetent
                     sheetDragOffset = 0
                 }
             }
