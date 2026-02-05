@@ -1,7 +1,7 @@
-import Foundation
+@preconcurrency import Foundation
 
 // ✅ ИСПРАВЛЕНО: добавлен Sendable для Swift 6
-struct Project: Codable, Identifiable, Sendable {
+struct Project: Codable, Identifiable, @unchecked Sendable {
     static let currentFormatVersion = 2  // Increased for tags support
 
     let formatVersion: Int
