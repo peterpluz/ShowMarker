@@ -2,6 +2,14 @@ import SwiftUI
 import UniformTypeIdentifiers
 import AVFoundation
 
+// MARK: - Player Sheet Detent
+
+enum PlayerSheetDetent: Equatable {
+    case compact
+    case medium
+    case expanded
+}
+
 struct TimelineScreen: View {
 
     @StateObject private var viewModel: TimelineViewModel
@@ -53,6 +61,10 @@ struct TimelineScreen: View {
 
     // Timeline settings sheet state
     @State private var isTimelineSettingsPresented = false
+
+    // Player sheet state
+    @State private var sheetDetent: PlayerSheetDetent = .medium
+    @State private var sheetDragOffset: CGFloat = 0
 
     private static func makeViewModel(
         repository: ProjectRepository,
@@ -214,36 +226,55 @@ struct TimelineScreen: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        ScrollViewReader { proxy in
-            List {
-                Section {
-                    ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
-                        markerRow(marker, index: index + 1)
-                            .id(marker.id)  // ✅ Required for ScrollViewReader
-                            .transition(.asymmetric(
-                                insertion: .opacity.combined(with: .scale(scale: 0.95)),
-                                removal: .opacity
-                            ))
+        GeometryReader { geometry in
+            let screenHeight = geometry.size.height
+            let effHeight = effectiveSheetHeight(screenHeight: screenHeight)
+
+            ZStack(alignment: .bottom) {
+                ScrollViewReader { proxy in
+                    List {
+                        Section {
+                            ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
+                                markerRow(marker, index: index + 1)
+                                    .id(marker.id)
+                                    .transition(.asymmetric(
+                                        insertion: .opacity.combined(with: .scale(scale: 0.95)),
+                                        removal: .opacity
+                                    ))
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .animation(.easeInOut(duration: 0.3), value: viewModel.visibleMarkers.map(\.id))
+                    .safeAreaInset(edge: .bottom) {
+                        Color.clear.frame(height: effHeight + 8)
+                    }
+                    .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
+                        guard viewModel.isAutoScrollEnabled, let nextID = nextID else { return }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo(nextID, anchor: .center)
+                        }
                     }
                 }
+
+                // Dimming overlay for expanded mode
+                if sheetDetent == .expanded && sheetDragOffset >= 0 {
+                    Color.black
+                        .opacity(0.3)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+
+                // Player sheet
+                playerSheet(screenHeight: screenHeight)
             }
-            .listStyle(.insetGrouped)
-            .animation(.easeInOut(duration: 0.3), value: viewModel.visibleMarkers.map(\.id))  // ✅ Animate marker reordering
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     customNavigationTitle
                 }
                 toolbarContent
-            }
-            .safeAreaInset(edge: .bottom) { bottomPanel }
-            .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
-                // ✅ Auto-scroll to next marker if enabled
-                guard viewModel.isAutoScrollEnabled, let nextID = nextID else { return }
-
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    proxy.scrollTo(nextID, anchor: .center)
-                }
             }
         }
     }
@@ -479,11 +510,9 @@ struct TimelineScreen: View {
         }
     }
 
-    // MARK: - Bottom Panel
-    // TODO: Реализовать Sheet с двумя режимами (половина/полный экран) для увеличенного просмотра таймлайна
-    // Требуется: .sheet с .presentationDetents([.medium, .large]) и динамическая высота TimelineBarView
+    // MARK: - Full Player Content (Medium / Expanded)
 
-    private var bottomPanel: some View {
+    private func fullPlayerContent(waveformHeight: CGFloat) -> some View {
         VStack(spacing: 16) {
             // Undo/Redo and Tag Filter buttons above timeline
             HStack {
@@ -584,7 +613,7 @@ struct TimelineScreen: View {
             }
             .padding(.bottom, 8)
 
-            timelineBar
+            timelineBar(waveformHeight: waveformHeight)
 
             // ИСПРАВЛЕНО: тайм и контролы видимы только с аудио
             if hasAudio {
@@ -596,14 +625,10 @@ struct TimelineScreen: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
-        .padding(.top, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.regularMaterial)
-        )
+        .padding(.top, 4)
     }
 
-    private var timelineBar: some View {
+    private func timelineBar(waveformHeight: CGFloat = 140) -> some View {
         TimelineBarView(
             duration: viewModel.duration,
             currentTime: viewModel.currentTime,
@@ -625,6 +650,7 @@ struct TimelineScreen: View {
             timeSignature: viewModel.timeSignature,
             prerollSeconds: viewModel.prerollSeconds,
             hasAudio: hasAudio,
+            barHeight: waveformHeight,
             onAddAudio: {
                 print("🎵 [TimelineScreen] onAddAudio called, setting isPickerPresented = true")
                 isPickerPresented = true
@@ -773,6 +799,217 @@ struct TimelineScreen: View {
                     }
                 }
         )
+    }
+
+    // MARK: - Player Sheet
+
+    private let compactSheetHeight: CGFloat = 220
+    private let mediumSheetHeight: CGFloat = 500
+
+    private func expandedSheetHeight(screenHeight: CGFloat) -> CGFloat {
+        max(mediumSheetHeight + 100, screenHeight - 20)
+    }
+
+    private func sheetHeight(for detent: PlayerSheetDetent, screenHeight: CGFloat) -> CGFloat {
+        switch detent {
+        case .compact: return compactSheetHeight
+        case .medium: return mediumSheetHeight
+        case .expanded: return expandedSheetHeight(screenHeight: screenHeight)
+        }
+    }
+
+    private func effectiveSheetHeight(screenHeight: CGFloat) -> CGFloat {
+        let base = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+        let result = base - sheetDragOffset
+        return max(compactSheetHeight * 0.7, min(expandedSheetHeight(screenHeight: screenHeight) + 20, result))
+    }
+
+    private func waveformDynamicHeight(sheetHeight h: CGFloat) -> CGFloat {
+        let base: CGFloat = 140
+        let extra = max(0, h - mediumSheetHeight)
+        return base + extra
+    }
+
+    @ViewBuilder
+    private func playerSheet(screenHeight: CGFloat) -> some View {
+        let effHeight = effectiveSheetHeight(screenHeight: screenHeight)
+        let compactThreshold = (compactSheetHeight + mediumSheetHeight) / 2
+        let isCompact = effHeight < compactThreshold
+        let wfHeight = waveformDynamicHeight(sheetHeight: effHeight)
+
+        VStack(spacing: 0) {
+            // Grab handle
+            sheetGrabHandle(screenHeight: screenHeight)
+
+            // Content
+            if isCompact {
+                compactPlayerContent
+            } else {
+                fullPlayerContent(waveformHeight: wfHeight)
+            }
+        }
+        .frame(height: effHeight)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .background(
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
+                .fill(.regularMaterial)
+                .shadow(color: .black.opacity(0.12), radius: 8, y: -4)
+                .ignoresSafeArea(edges: .bottom)
+        )
+        .animation(.interactiveSpring(response: 0.4, dampingFraction: 0.86), value: sheetDetent)
+    }
+
+    private func sheetGrabHandle(screenHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.4))
+                .frame(width: 36, height: 5)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 28)
+        .contentShape(Rectangle())
+        .gesture(sheetHandleDragGesture(screenHeight: screenHeight))
+    }
+
+    private func sheetHandleDragGesture(screenHeight: CGFloat) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                sheetDragOffset = value.translation.height
+            }
+            .onEnded { value in
+                let baseHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+                let currentHeight = baseHeight - value.translation.height
+                let velocity = value.predictedEndTranslation.height - value.translation.height
+
+                withAnimation(.interactiveSpring(response: 0.4, dampingFraction: 0.86)) {
+                    sheetDetent = resolveDetent(
+                        currentHeight: currentHeight,
+                        velocity: velocity,
+                        screenHeight: screenHeight
+                    )
+                    sheetDragOffset = 0
+                }
+            }
+    }
+
+    private func resolveDetent(
+        currentHeight: CGFloat,
+        velocity: CGFloat,
+        screenHeight: CGFloat
+    ) -> PlayerSheetDetent {
+        let compact = compactSheetHeight
+        let medium = mediumSheetHeight
+        let expanded = expandedSheetHeight(screenHeight: screenHeight)
+
+        // Strong velocity overrides position
+        if velocity > 500 {
+            // Swipe down → shrink
+            switch sheetDetent {
+            case .expanded: return .medium
+            case .medium: return .compact
+            case .compact: return .compact
+            }
+        } else if velocity < -500 {
+            // Swipe up → grow
+            switch sheetDetent {
+            case .compact: return .medium
+            case .medium: return .expanded
+            case .expanded: return .expanded
+            }
+        }
+
+        // Snap to nearest detent
+        let options: [(PlayerSheetDetent, CGFloat)] = [
+            (.compact, abs(currentHeight - compact)),
+            (.medium, abs(currentHeight - medium)),
+            (.expanded, abs(currentHeight - expanded))
+        ]
+        return options.min(by: { $0.1 < $1.1 })?.0 ?? .medium
+    }
+
+    // MARK: - Compact Player Content
+
+    private var compactPlayerContent: some View {
+        VStack(spacing: 12) {
+            if hasAudio {
+                compactProgressBar
+
+                HStack(spacing: 40) {
+                    Button { viewModel.seekBackward() } label: {
+                        Image(systemName: "gobackward.5")
+                            .font(.system(size: 24, weight: .medium))
+                    }
+                    .frame(width: 44, height: 44)
+
+                    Button { playButtonAction() } label: {
+                        Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 32, weight: .medium))
+                    }
+                    .frame(width: 56, height: 56)
+
+                    Button { viewModel.seekForward() } label: {
+                        Image(systemName: "goforward.5")
+                            .font(.system(size: 24, weight: .medium))
+                    }
+                    .frame(width: 44, height: 44)
+                }
+                .foregroundColor(.primary)
+            }
+
+            addMarkerButton
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
+        .padding(.top, 4)
+    }
+
+    private var compactProgressBar: some View {
+        VStack(spacing: 4) {
+            GeometryReader { geo in
+                let progress = viewModel.duration > 0
+                    ? CGFloat(viewModel.currentTime / viewModel.duration)
+                    : 0
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.15))
+
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: max(2, geo.size.width * min(1, progress)))
+                }
+                .frame(height: 6)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let ratio = max(0, min(1, value.location.x / geo.size.width))
+                            viewModel.seek(to: viewModel.duration * Double(ratio))
+                        }
+                )
+            }
+            .frame(height: 6)
+
+            HStack {
+                Text(formatCompactTime(viewModel.currentTime))
+                    .font(.system(size: 11, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("-\(formatCompactTime(max(0, viewModel.duration - viewModel.currentTime)))")
+                    .font(.system(size: 11, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func formatCompactTime(_ seconds: Double) -> String {
+        let total = Int(max(0, seconds))
+        let mins = total / 60
+        let secs = total % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 
     // MARK: - Helpers
