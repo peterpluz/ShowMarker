@@ -25,6 +25,7 @@ struct TimelineBarView: View {
     let prerollSeconds: Double
 
     let hasAudio: Bool
+    var barHeight: CGFloat = 140
 
     let onAddAudio: () -> Void
     let onSeek: (Double) -> Void  // Takes audio time (not display time)
@@ -81,7 +82,6 @@ struct TimelineBarView: View {
 
     // MARK: - Constants
 
-    private static let barHeight: CGFloat = 140
     private static let playheadLineWidth: CGFloat = 2
     private static let markerLineWidth: CGFloat = 3
 
@@ -121,7 +121,7 @@ struct TimelineBarView: View {
                     timelineContent(geo: geo)
                 }
             }
-            .frame(height: Self.barHeight)
+            .frame(height: barHeight)
         }
     }
     
@@ -528,7 +528,7 @@ struct TimelineBarView: View {
                 ZStack(alignment: .top) {
                     Rectangle()
                         .fill(markerColor)
-                        .frame(width: Self.markerLineWidth, height: Self.barHeight)
+                        .frame(width: Self.markerLineWidth, height: barHeight)
 
                     // Marker number label at the top
                     Text("\(index + 1)")
@@ -538,7 +538,7 @@ struct TimelineBarView: View {
                         .background(markerColor)
                         .cornerRadius(3)
                 }
-                .position(x: markerX, y: Self.barHeight / 2)
+                .position(x: markerX, y: barHeight / 2)
                 .simultaneousGesture(TapGesture().onEnded {
                     onSeek(marker.timeSeconds)
                 })
@@ -551,8 +551,8 @@ struct TimelineBarView: View {
 
             Rectangle()
                 .fill(Color.accentColor)
-                .frame(width: Self.playheadLineWidth, height: Self.barHeight)
-                .position(x: centerX, y: Self.barHeight / 2)
+                .frame(width: Self.playheadLineWidth, height: barHeight)
+                .position(x: centerX, y: barHeight / 2)
         }
         .gesture(doubleTapGesture())
         .gesture(playheadDrag(secondsPerPixel: secondsPerPixel))
@@ -736,7 +736,7 @@ struct TimelineBarView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.secondary.opacity(0.12))
-                .frame(width: width, height: Self.barHeight)
+                .frame(width: width, height: barHeight)
 
             Canvas { context, size in
                 let pairCount = waveform.count / 2
@@ -805,7 +805,7 @@ struct TimelineBarView: View {
                 // For 4-channel audio, display two waveforms (top and bottom)
                 let hasSecondWaveform = waveform2 != nil && (waveform2?.isEmpty == false)
                 let waveformCount = hasSecondWaveform ? 2 : 1
-                let barHeightPerWaveform = Self.barHeight / CGFloat(waveformCount)
+                let barHeightPerWaveform = barHeight / CGFloat(waveformCount)
 
                 for waveformIndex in 0..<waveformCount {
                     let currentWaveform = waveformIndex == 0 ? waveform : (waveform2 ?? [])
@@ -898,7 +898,7 @@ struct TimelineBarView: View {
                     }
                 }
             }
-            .frame(width: width, height: Self.barHeight)
+            .frame(width: width, height: barHeight)
             .overlay {
                 // Beat grid offset drag overlay (only when beat grid is enabled)
                 if isBeatGridEnabled, let bpm = bpm, bpm > 0, duration > 0, beatGridOffset >= 0 {
@@ -926,7 +926,7 @@ struct TimelineBarView: View {
             // the entire area tappable instead of just the 44pt strip.
             Rectangle()
                 .fill(isDraggingBeatGridOffset ? Color.accentColor.opacity(0.15) : Color.clear)
-                .frame(width: hitAreaWidth, height: Self.barHeight)
+                .frame(width: hitAreaWidth, height: barHeight)
                 .contentShape(Rectangle())
                 .gesture(
                     LongPressGesture(minimumDuration: 0.35)
@@ -954,7 +954,7 @@ struct TimelineBarView: View {
                             isDraggingBeatGridOffset = false
                         }
                 )
-                .position(x: x, y: Self.barHeight / 2)
+                .position(x: x, y: barHeight / 2)
         }
         .coordinateSpace(name: "beatGridOverlay")
     }
