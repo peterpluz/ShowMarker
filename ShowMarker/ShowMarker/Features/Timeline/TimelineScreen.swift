@@ -851,34 +851,28 @@ struct TimelineScreen: View {
     }
 
     private func waveformDynamicHeight(sheetHeight h: CGFloat) -> CGFloat {
-        let compact = compactSheetHeight     // 220
-        let medium = mediumSheetHeight       // 500
-        let minWaveform: CGFloat = 60
-        let baseWaveform: CGFloat = 140
-
-        if h <= compact {
-            return minWaveform
-        } else if h <= medium {
-            // Proportional interpolation: 60pt at compact → 140pt at medium
-            let progress = (h - compact) / (medium - compact)
-            return minWaveform + progress * (baseWaveform - minWaveform)
-        } else {
-            // Above medium: keeps growing linearly
-            return baseWaveform + (h - medium)
-        }
+        let base: CGFloat = 140
+        let extra = max(0, h - mediumSheetHeight)
+        return base + extra
     }
 
     @ViewBuilder
     private func playerSheet(screenHeight: CGFloat) -> some View {
         let effHeight = effectiveSheetHeight(screenHeight: screenHeight)
-        let wfHeight = waveformDynamicHeight(sheetHeight: effHeight)
+        let isCompact = sheetDetent == .compact
+        let baseDetentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+        let wfHeight = waveformDynamicHeight(sheetHeight: baseDetentHeight)
 
         VStack(spacing: 0) {
             // Grab handle
             sheetGrabHandle(screenHeight: screenHeight)
 
-            // Single unified content — clipped by sheet frame, never switches layout
-            fullPlayerContent(waveformHeight: wfHeight)
+            // Content
+            if isCompact {
+                compactPlayerContent
+            } else {
+                fullPlayerContent(waveformHeight: wfHeight)
+            }
         }
         .frame(height: effHeight)
         .frame(maxWidth: .infinity)
