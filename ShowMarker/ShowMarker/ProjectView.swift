@@ -457,37 +457,40 @@ struct ProjectView: View {
     private var searchBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .font(.system(size: 16, weight: .semibold))
 
             TextField("Поиск", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .font(.system(size: 16, weight: .regular))
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-        )
-        .scaleEffect(isSearchPressed ? 0.95 : 1.0)
-        .brightness(isSearchPressed ? -0.05 : 0)
-        .gesture(
-            DragGesture()
-                .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isSearchPressed = true
+
+            if !searchText.isEmpty {
+                Button {
+                    withAnimation(.smooth(duration: 0.25)) {
+                        searchText = ""
                     }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 16))
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .clipShape(Capsule())
+        .glassEffect(.regular.interactive, in: .capsule)
+        .scaleEffect(isSearchPressed ? 0.97 : 1.0)
+        .animation(.smooth(duration: 0.2), value: isSearchPressed)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    isSearchPressed = true
                 }
                 .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isSearchPressed = false
-                    }
+                    isSearchPressed = false
                 }
         )
     }
@@ -497,25 +500,26 @@ struct ProjectView: View {
             isAddTimelinePresented = true
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundColor(.white)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(Circle().fill(Color.accentColor))
+                .background(
+                    Circle()
+                        .fill(Color.accentColor.gradient)
+                )
+                .clipShape(Circle())
+                .glassEffect(.regular.interactive, in: .circle)
         }
         .buttonStyle(.plain)
         .scaleEffect(isAddButtonPressed ? 0.92 : 1.0)
-        .brightness(isAddButtonPressed ? -0.1 : 0)
+        .animation(.smooth(duration: 0.2), value: isAddButtonPressed)
         .gesture(
-            DragGesture()
+            DragGesture(minimumDistance: 0)
                 .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isAddButtonPressed = true
-                    }
+                    isAddButtonPressed = true
                 }
                 .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isAddButtonPressed = false
-                    }
+                    isAddButtonPressed = false
                 }
         )
     }
