@@ -106,6 +106,9 @@ struct TimelineScreen: View {
                     .sheet(item: $timePickerMarker) { marker in
                         timecodePickerSheet(for: marker)
                     }
+                    .sheet(item: $editingTagMarker) { marker in
+                        tagPickerSheet(for: marker)
+                    }
                     .sheet(isPresented: $isTagFilterPresented) {
                         tagFilterSheet
                     }
@@ -126,11 +129,6 @@ struct TimelineScreen: View {
                             }
                         )
                     }
-
-                // Tag picker menu overlay
-                if let marker = editingTagMarker {
-                    tagPickerMenuOverlay(for: marker)
-                }
 
                 // Marker name popup overlay
                 if isMarkerNamePopupPresented {
@@ -366,7 +364,7 @@ struct TimelineScreen: View {
         .presentationDragIndicator(.visible)
     }
 
-    private func tagPickerMenuOverlay(for marker: TimelineMarker) -> some View {
+    private func tagPickerSheet(for marker: TimelineMarker) -> some View {
         MarkerTagPopup(
             tags: viewModel.tags,
             selectedTagId: marker.tagId,
