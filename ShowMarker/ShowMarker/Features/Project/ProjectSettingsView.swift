@@ -8,6 +8,11 @@ struct ProjectSettingsView: View {
     @State private var isAddingTag = false
     @State private var tagToDelete: Tag?
     @State private var showDeleteConfirmation = false
+    @State private var showTagInUseAlert = false
+
+    // Rename tag states
+    @State private var renamingTag: Tag?
+    @State private var renameTagText = ""
 
     var body: some View {
         ZStack {
@@ -122,70 +127,121 @@ struct ProjectSettingsView: View {
     // MARK: - Tags Section
 
     private var tagsSection: some View {
-        Section {
-            ForEach(repository.project.tags) { tag in
-                HStack(spacing: 12) {
-                    // Color circle
-                    Circle()
-                        .fill(Color(hex: tag.colorHex))
-                        .frame(width: 14, height: 14)
+        Group {
+            Section {
+                ForEach(repository.project.tags) { tag in
+                    HStack(spacing: 12) {
+                        Text(tag.name)
+                            .font(.system(size: 17))
 
-                    // Tag name
-                    Text(tag.name)
-                        .font(.system(size: 17))
+                        Spacer()
 
-                    Spacer()
-
-                    // Edit button
-                    Button {
-                        editingTag = tag
-                    } label: {
-                        Image(systemName: "pencil")
-                            .foregroundColor(.secondary)
+                        Circle()
+                            .fill(Color(hex: tag.colorHex))
+                            .frame(width: 24, height: 24)
                     }
-                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .contextMenu {
+                        Button {
+                            renamingTag = tag
+                            renameTagText = tag.name
+                        } label: {
+                            Label("Переименовать", systemImage: "pencil")
+                        }
+
+                        Button {
+                            editingTag = tag
+                        } label: {
+                            Label("Изменить цвет", systemImage: "paintbrush")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            attemptDeleteTag(tag)
+                        } label: {
+                            Label("Удалить", systemImage: "trash")
+                        }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            attemptDeleteTag(tag)
+                        } label: {
+                            Label("Удалить", systemImage: "trash")
+                        }
+
+                        Button {
+                            renamingTag = tag
+                            renameTagText = tag.name
+                        } label: {
+                            Label("Переименовать", systemImage: "pencil")
+                        }
+                        .tint(.orange)
+                    }
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        tagToDelete = tag
-                        showDeleteConfirmation = true
-                    } label: {
-                        Label("Удалить", systemImage: "trash")
+            } header: {
+                Text("Теги")
+            }
+
+            Section {
+                Button {
+                    isAddingTag = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.green)
+
+                        Text("Добавить новый тег...")
+                            .font(.system(size: 17))
+                            .foregroundStyle(.primary)
+
+                        Spacer()
                     }
                 }
             }
-
-            // Add tag button
-            Button {
-                isAddingTag = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(.green))
-
-                    Text("Добавить тег")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundColor(.primary)
-
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(Color(.systemGray5).opacity(0.6))
-                        .background(Capsule().fill(.regularMaterial))
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                )
+        }
+        .alert("Переименовать тег", isPresented: renameTagBinding) {
+            TextField("Название", text: $renameTagText)
+            Button("Готово") {
+                applyTagRename()
             }
-        } header: {
-            Text("Теги")
+            Button("Отмена", role: .cancel) {
+                renamingTag = nil
+            }
+        }
+        .alert("Невозможно удалить", isPresented: $showTagInUseAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Этот тег используется в маркерах. Сначала измените тег у маркеров, затем удалите его.")
+        }
+    }
+
+    private var renameTagBinding: Binding<Bool> {
+        Binding(
+            get: { renamingTag != nil },
+            set: { if !$0 { renamingTag = nil } }
+        )
+    }
+
+    private func applyTagRename() {
+        guard var tag = renamingTag else { return }
+        let name = renameTagText.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            renamingTag = nil
+            return
+        }
+        tag.name = name
+        repository.updateTag(tag)
+        renamingTag = nil
+    }
+
+    private func attemptDeleteTag(_ tag: Tag) {
+        if repository.isTagUsedByMarkers(tag.id) {
+            showTagInUseAlert = true
+        } else {
+            tagToDelete = tag
+            showDeleteConfirmation = true
         }
     }
 }
