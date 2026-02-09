@@ -8,108 +8,96 @@ struct MarkerTagPopup: View {
 
     var body: some View {
         ZStack {
-            // Dimmed background with blur
-            Color.black.opacity(0.3)
+            // Dimmed backdrop — lighter than before to let glass refraction show
+            Color.black.opacity(0.2)
                 .ignoresSafeArea()
                 .onTapGesture {
                     onCancel()
                 }
 
-            // Popup content with Liquid Glass style
-            VStack(spacing: 20) {
+            // Floating glass sheet
+            VStack(spacing: 0) {
                 // Title
                 Text("Выбрать тег")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .padding(.top, 24)
+                    .padding(.bottom, 16)
 
-                // Tag selector with Liquid Glass style
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(tags) { tag in
+                // Tag rows — clean list with dividers
+                VStack(spacing: 0) {
+                    ForEach(Array(tags.enumerated()), id: \.element.id) { index, tag in
+                        let isSelected = selectedTagId == tag.id
+
                         Button {
-                            // Haptic feedback on selection
                             let impact = UIImpactFeedbackGenerator(style: .light)
                             impact.impactOccurred()
                             onTagSelected(tag.id)
                         } label: {
-                            HStack(spacing: 12) {
+                            HStack(spacing: 14) {
+                                // Glass-tinted color dot with glow
                                 Circle()
-                                    .fill(Color(hex: tag.colorHex))
-                                    .frame(width: 16, height: 16)
+                                    .fill(Color(hex: tag.colorHex).opacity(0.9))
+                                    .frame(width: 12, height: 12)
+                                    .shadow(
+                                        color: Color(hex: tag.colorHex).opacity(0.5),
+                                        radius: 4, x: 0, y: 0
+                                    )
 
+                                // Tag name — primary with subtle tint
                                 Text(tag.name)
                                     .font(.system(size: 16, weight: .regular))
-                                    .foregroundColor(Color(hex: tag.colorHex))
+                                    .foregroundStyle(.primary)
 
                                 Spacer()
 
-                                if selectedTagId == tag.id {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(Color(hex: tag.colorHex))
-                                        .font(.system(size: 20, weight: .semibold))
+                                // Selection: subtle checkmark
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(Color(hex: tag.colorHex))
                                 }
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .background(
-                                Capsule()
-                                    .fill(Color(.systemGray5).opacity(0.6))
-                                    .background(
-                                        Capsule()
-                                            .fill(.regularMaterial)
-                                    )
-                            )
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                            )
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 13)
+                            .background {
+                                if isSelected {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(Color(hex: tag.colorHex).opacity(0.1))
+                                }
+                            }
                         }
                         .buttonStyle(.plain)
+
+                        // Divider between rows
+                        if index < tags.count - 1 {
+                            Divider()
+                                .padding(.leading, 42)
+                                .padding(.trailing, 16)
+                        }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 8)
 
-                // Cancel button
+                // Cancel button — glass capsule
                 Button {
                     onCancel()
                 } label: {
                     Text("Отмена")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(
-                            Capsule()
-                                .fill(Color(.systemGray5).opacity(0.6))
-                                .background(
-                                    Capsule()
-                                        .fill(.regularMaterial)
-                                )
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                        )
+                        .frame(height: 44)
+                        .glassEffect(.regular.interactive(), in: .capsule)
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 24)
+                .padding(.top, 16)
+                .padding(.bottom, 20)
             }
             .frame(width: 320)
-            .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color(.systemGray6).opacity(0.9))
-                    .background(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(.ultraThickMaterial)
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 10)
+            .glassEffect(.regular, in: .rect(cornerRadius: 28))
         }
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
     }
 }
