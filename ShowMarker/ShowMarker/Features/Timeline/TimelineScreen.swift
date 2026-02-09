@@ -107,7 +107,7 @@ struct TimelineScreen: View {
                         timecodePickerSheet(for: marker)
                     }
                     .sheet(item: $editingTagMarker) { marker in
-                        tagPickerSheet(for: marker.wrappedValue)
+                        tagPickerSheet(for: marker)
                     }
                     .sheet(isPresented: $isTagFilterPresented) {
                         tagFilterSheet
