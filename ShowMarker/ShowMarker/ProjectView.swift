@@ -467,14 +467,15 @@ struct ProjectView: View {
 
             if !searchText.isEmpty {
                 Button {
-                    withAnimation(.smooth(duration: 0.25)) {
-                        searchText = ""
-                    }
+                    searchText = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.tertiaryLabel))
                         .font(.system(size: 16))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Circle())
                 }
+                .buttonStyle(.borderless)
                 .transition(.scale.combined(with: .opacity))
             }
         }
