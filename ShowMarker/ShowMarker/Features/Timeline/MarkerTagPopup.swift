@@ -8,29 +8,27 @@ struct MarkerTagPopup: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(tags, id: \.id) { tag in
-                    Button {
-                        let impact = UIImpactFeedbackGenerator(style: .light)
-                        impact.impactOccurred()
-                        onTagSelected(tag.id)
-                    } label: {
-                        HStack {
-                            Text(tag.name)
-                                .font(.system(size: 17))
-                                .foregroundStyle(.primary)
+            List(tags, id: \.id) { tag in
+                Button {
+                    let impact = UIImpactFeedbackGenerator(style: .light)
+                    impact.impactOccurred()
+                    onTagSelected(tag.id)
+                } label: {
+                    HStack {
+                        Text(tag.name)
+                            .font(.system(size: 17))
+                            .foregroundStyle(.primary)
 
-                            Spacer()
+                        Spacer()
 
-                            Circle()
-                                .fill(Color(hex: tag.colorHex))
-                                .frame(width: 24, height: 24)
+                        Circle()
+                            .fill(Color(hex: tag.colorHex))
+                            .frame(width: 24, height: 24)
 
-                            if tag.id == selectedTagId {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(.accentColor)
-                            }
+                        if tag.id == selectedTagId {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.accentColor)
                         }
                     }
                 }
