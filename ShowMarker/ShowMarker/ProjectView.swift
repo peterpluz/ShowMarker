@@ -10,8 +10,6 @@ struct ProjectView: View {
     @ObservedObject private var repository: ProjectRepository
 
     @State private var searchText = ""
-    @State private var isSearchPressed = false
-    @State private var isAddButtonPressed = false
 
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
@@ -394,11 +392,13 @@ struct ProjectView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
             } else {
-                HStack(spacing: 12) {
-                    searchBar
-                    addButton
+                GlassEffectContainer {
+                    HStack(spacing: 12) {
+                        searchBar
+                        addButton
+                    }
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
     }
@@ -480,19 +480,8 @@ struct ProjectView: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 44)
-        .clipShape(Capsule())
         .glassEffect(.regular.interactive, in: .capsule)
-        .scaleEffect(isSearchPressed ? 0.97 : 1.0)
-        .animation(.smooth(duration: 0.2), value: isSearchPressed)
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    isSearchPressed = true
-                }
-                .onEnded { _ in
-                    isSearchPressed = false
-                }
-        )
+        .hoverEffect(.highlight)
     }
 
     private var addButton: some View {
@@ -507,21 +496,11 @@ struct ProjectView: View {
                     Circle()
                         .fill(Color.accentColor.gradient)
                 )
-                .clipShape(Circle())
-                .glassEffect(.regular.interactive, in: .circle)
         }
         .buttonStyle(.plain)
-        .scaleEffect(isAddButtonPressed ? 0.92 : 1.0)
-        .animation(.smooth(duration: 0.2), value: isAddButtonPressed)
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    isAddButtonPressed = true
-                }
-                .onEnded { _ in
-                    isAddButtonPressed = false
-                }
-        )
+        .glassEffect(.regular.interactive, in: .circle)
+        .hoverEffect(.highlight)
+        .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.5), trigger: isAddTimelinePresented)
     }
 
     // MARK: - Timeline Subtitle
