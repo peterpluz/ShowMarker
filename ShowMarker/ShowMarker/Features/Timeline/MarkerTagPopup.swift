@@ -34,28 +34,28 @@ struct MarkerTagPopup: View {
     }
 
     private func tagRow(_ tag: Tag) -> some View {
-        Button {
+        HStack {
+            Text(tag.name)
+                .font(.system(size: 17))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            Circle()
+                .fill(Color(hex: tag.colorHex))
+                .frame(width: 24, height: 24)
+
+            if tag.id == selectedTagId {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
             let impact = UIImpactFeedbackGenerator(style: .light)
             impact.impactOccurred()
             onTagSelected(tag.id)
-        } label: {
-            HStack {
-                Text(tag.name)
-                    .font(.system(size: 17))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Circle()
-                    .fill(Color(hex: tag.colorHex))
-                    .frame(width: 24, height: 24)
-
-                if tag.id == selectedTagId {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
-            }
         }
     }
 }
