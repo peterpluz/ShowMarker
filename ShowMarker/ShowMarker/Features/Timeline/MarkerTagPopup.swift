@@ -9,7 +9,7 @@ struct MarkerTagPopup: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(tags) { tag in
+                ForEach(tags, id: \.id) { tag in
                     Button {
                         let impact = UIImpactFeedbackGenerator(style: .light)
                         impact.impactOccurred()
