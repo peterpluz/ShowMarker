@@ -53,7 +53,7 @@ struct MarkerTagPopup: View {
                 if tag.id == selectedTagId {
                     Image(systemName: "checkmark")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.accentColor)
+                        .foregroundStyle(Color.accentColor)
                 }
             }
         }
