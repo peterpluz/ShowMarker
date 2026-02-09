@@ -480,7 +480,7 @@ struct ProjectView: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 44)
-        .glassEffect(.regular.interactive, in: .capsule)
+        .glassEffect(.regular.interactive(), in: .capsule)
         .hoverEffect(.highlight)
     }
 
@@ -498,7 +498,7 @@ struct ProjectView: View {
                 )
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive, in: .circle)
+        .glassEffect(.regular.interactive(), in: .circle)
         .hoverEffect(.highlight)
         .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.5), trigger: isAddTimelinePresented)
     }
