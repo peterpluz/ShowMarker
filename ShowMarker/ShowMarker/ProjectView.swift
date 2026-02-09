@@ -392,13 +392,16 @@ struct ProjectView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
             } else {
-                GlassEffectContainer {
-                    HStack(spacing: 12) {
-                        searchBar
-                        addButton
-                    }
-                    .padding(16)
+                HStack(spacing: 12) {
+                    searchBar
+                        .compositingGroup()
+                        .zIndex(0)
+
+                    addButton
+                        .compositingGroup()
+                        .zIndex(1)
                 }
+                .padding(16)
             }
         }
     }
