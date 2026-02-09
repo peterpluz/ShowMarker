@@ -22,10 +22,11 @@ struct MarkerTagPopup: View {
                         onCancel()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
+                            .font(.system(size: 28))
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -34,22 +35,29 @@ struct MarkerTagPopup: View {
     }
 
     private func tagRow(_ tag: Tag) -> some View {
-        HStack {
+        HStack(spacing: 12) {
+            // Checkbox circle — left side
+            if tag.id == selectedTagId {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Color.accentColor)
+            } else {
+                Circle()
+                    .stroke(Color(.tertiaryLabel), lineWidth: 1.5)
+                    .frame(width: 22, height: 22)
+            }
+
+            // Tag name
             Text(tag.name)
                 .font(.system(size: 17))
                 .foregroundStyle(.primary)
 
             Spacer()
 
+            // Color indicator — right side
             Circle()
                 .fill(Color(hex: tag.colorHex))
                 .frame(width: 24, height: 24)
-
-            if tag.id == selectedTagId {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
         }
         .contentShape(Rectangle())
         .onTapGesture {
