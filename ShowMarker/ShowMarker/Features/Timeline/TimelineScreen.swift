@@ -509,9 +509,22 @@ struct TimelineScreen: View {
 
     // MARK: - Full Player Content (Medium / Expanded)
 
-    private func fullPlayerContent(waveformHeight: CGFloat) -> some View {
+    /// Whether keyframe tracks should be shown (expanded mode, has audio & markers)
+    private var showKeyframeTracks: Bool {
+        sheetDetent == .expanded && hasAudio && !viewModel.visibleMarkers.isEmpty
+    }
+
+    /// Estimated height of keyframe tracks based on active tags with markers
+    private var keyframeTracksEstimatedHeight: CGFloat {
+        let markerTagIds = Set(viewModel.visibleMarkers.map(\.tagId))
+        let activeTagCount = viewModel.tags.filter { markerTagIds.contains($0.id) }.count
+        guard activeTagCount > 0 else { return 0 }
+        return CGFloat(activeTagCount) * 22 + 8  // trackHeight(22) * count + vertical padding(8)
+    }
+
+    private func fullPlayerContent() -> some View {
         VStack(spacing: 16) {
-            // Undo/Redo, Tag Filter, Metronome buttons — Liquid Glass, uniform height
+            // MARK: Fixed top — Undo/Redo, Tag Filter, Metronome buttons
             HStack(spacing: 8) {
                 // Tag filter button
                 Button {
@@ -602,24 +615,35 @@ struct TimelineScreen: View {
             }
             .padding(.bottom, 8)
 
-            timelineBar(waveformHeight: waveformHeight)
+            // MARK: Flexible middle — Timeline bar + keyframe tracks
+            // GeometryReader fills the remaining space after fixed elements.
+            // The waveform height is computed from available space minus keyframe tracks overhead.
+            GeometryReader { geo in
+                let available = geo.size.height
+                let kfHeight: CGFloat = showKeyframeTracks ? keyframeTracksEstimatedHeight : 0
+                let kfSpacing: CGFloat = showKeyframeTracks ? 8 : 0
+                // TimelineBarView overhead: overview indicator(6) + spacing(8) + ruler(24) + spacing(8) = 46
+                let timelineOverhead: CGFloat = hasAudio ? 46 : 0
+                let wfHeight = max(60, available - kfHeight - kfSpacing - timelineOverhead)
 
-            // Keyframe tracks — only visible in expanded sheet mode
-            if sheetDetent == .expanded && hasAudio && !viewModel.visibleMarkers.isEmpty {
-                KeyframeTracksView(
-                    duration: viewModel.duration,
-                    currentTime: viewModel.currentTime,
-                    markers: viewModel.visibleMarkers,
-                    tags: viewModel.tags,
-                    prerollSeconds: viewModel.prerollSeconds,
-                    zoomScale: viewModel.zoomScale,
-                    effectiveDisplayTime: viewModel.currentTime + viewModel.prerollSeconds
-                )
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .animation(.easeInOut(duration: 0.25), value: sheetDetent)
+                VStack(spacing: 8) {
+                    timelineBar(waveformHeight: wfHeight)
+
+                    if showKeyframeTracks {
+                        KeyframeTracksView(
+                            duration: viewModel.duration,
+                            currentTime: viewModel.currentTime,
+                            markers: viewModel.visibleMarkers,
+                            tags: viewModel.tags,
+                            prerollSeconds: viewModel.prerollSeconds,
+                            zoomScale: viewModel.zoomScale,
+                            effectiveDisplayTime: viewModel.currentTime + viewModel.prerollSeconds
+                        )
+                    }
+                }
             }
 
-            // ИСПРАВЛЕНО: тайм и контролы видимы только с аудио
+            // MARK: Fixed bottom — Timecode, controls, marker button
             if hasAudio {
                 timecode
                 playbackControls
@@ -811,18 +835,11 @@ struct TimelineScreen: View {
         }
     }
 
-    private func waveformDynamicHeight(sheetHeight h: CGFloat) -> CGFloat {
-        let base: CGFloat = 140
-        let extra = max(0, h - mediumSheetHeight)
-        return base + extra
-    }
-
     @ViewBuilder
     private func playerSheet(screenHeight: CGFloat) -> some View {
         // Sheet grows upward from bottom — use continuous height for smooth 1:1 tracking
         let dragHeight = sheetDragHeight(screenHeight: screenHeight)
         let isCompact = sheetDetent == .compact && dragStartHeight == nil  // Only compact when not dragging
-        let wfHeight = waveformDynamicHeight(sheetHeight: dragHeight)  // Use current height for waveform
 
         VStack(spacing: 0) {
             // Grab handle
@@ -832,10 +849,8 @@ struct TimelineScreen: View {
             if isCompact {
                 compactPlayerContent
             } else {
-                fullPlayerContent(waveformHeight: wfHeight)
+                fullPlayerContent()
             }
-
-            Spacer(minLength: 0)
         }
         .frame(height: dragHeight)
         .frame(maxWidth: .infinity)
