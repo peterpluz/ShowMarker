@@ -342,13 +342,13 @@ struct ProjectView: View {
                     Button {
                         isEditing = false
                     } label: {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(.white)
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
                     }
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.accentColor))
-                    .clipShape(Circle())
+                    .frame(width: 44, height: 44, alignment: .center)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .hoverEffect(.highlight)
                 }
             } else {
                 // Settings button (left)
@@ -431,54 +431,49 @@ struct ProjectView: View {
     }
 
     private var editingBottomBar: some View {
-        HStack(spacing: 12) {
-                // Share button
-                Button {
-                    exportSelectedTimelines()
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(.white)
-                        .frame(width: 50, height: 50)
-                        .background(
-                            Circle()
-                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
-                        )
-                }
-                .disabled(selectedTimelines.isEmpty)
-
-                // Duplicate button
-                Button {
-                    duplicateSelectedTimelines()
-                } label: {
-                    Image(systemName: "plus.square.on.square")
-                        .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(.white)
-                        .frame(width: 50, height: 50)
-                        .background(
-                            Circle()
-                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : Color.accentColor)
-                        )
-                }
-                .disabled(selectedTimelines.isEmpty)
-
-                Spacer()
-
-                // Delete button
-                Button {
-                    deleteSelectedTimelines()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(.white)
-                        .frame(width: 50, height: 50)
-                        .background(
-                            Circle()
-                                .fill(selectedTimelines.isEmpty ? Color.gray.opacity(0.4) : .red)
-                        )
-                }
-                .disabled(selectedTimelines.isEmpty)
+        HStack(spacing: 16) {
+            // Share button
+            Button {
+                exportSelectedTimelines()
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor)
+                    .frame(width: 44, height: 44)
             }
+            .disabled(selectedTimelines.isEmpty)
+            .contentShape(Circle())
+
+            // Duplicate button
+            Button {
+                duplicateSelectedTimelines()
+            } label: {
+                Image(systemName: "plus.square.on.square")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor)
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(selectedTimelines.isEmpty)
+            .contentShape(Circle())
+
+            Spacer()
+
+            // Delete button
+            Button {
+                deleteSelectedTimelines()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.red.opacity(0.8))
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(selectedTimelines.isEmpty)
+            .contentShape(Circle())
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
+        .hoverEffect(.highlight)
     }
 
     private var searchBar: some View {
