@@ -10,8 +10,6 @@ struct ProjectView: View {
     @ObservedObject private var repository: ProjectRepository
 
     @State private var searchText = ""
-    @State private var isSearchPressed = false
-    @State private var isAddButtonPressed = false
 
     @State private var isAddTimelinePresented = false
     @State private var newTimelineName = ""
@@ -396,7 +394,12 @@ struct ProjectView: View {
             } else {
                 HStack(spacing: 12) {
                     searchBar
+                        .compositingGroup()
+                        .zIndex(0)
+
                     addButton
+                        .compositingGroup()
+                        .zIndex(1)
                 }
                 .padding(16)
             }
@@ -457,39 +460,32 @@ struct ProjectView: View {
     private var searchBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .font(.system(size: 16, weight: .semibold))
 
             TextField("Поиск", text: $searchText)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .font(.system(size: 16, weight: .regular))
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Color(.tertiaryLabel))
+                        .font(.system(size: 16))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.borderless)
+                .transition(.scale.combined(with: .opacity))
+            }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .frame(height: 44)
-        .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-        )
-        .scaleEffect(isSearchPressed ? 0.95 : 1.0)
-        .brightness(isSearchPressed ? -0.05 : 0)
-        .gesture(
-            DragGesture()
-                .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isSearchPressed = true
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isSearchPressed = false
-                    }
-                }
-        )
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .hoverEffect(.highlight)
     }
 
     private var addButton: some View {
@@ -497,27 +493,18 @@ struct ProjectView: View {
             isAddTimelinePresented = true
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundColor(.white)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(Circle().fill(Color.accentColor))
+                .background(
+                    Circle()
+                        .fill(Color.accentColor.gradient)
+                )
         }
         .buttonStyle(.plain)
-        .scaleEffect(isAddButtonPressed ? 0.92 : 1.0)
-        .brightness(isAddButtonPressed ? -0.1 : 0)
-        .gesture(
-            DragGesture()
-                .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isAddButtonPressed = true
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isAddButtonPressed = false
-                    }
-                }
-        )
+        .glassEffect(.regular.interactive(), in: .circle)
+        .hoverEffect(.highlight)
+        .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.5), trigger: isAddTimelinePresented)
     }
 
     // MARK: - Timeline Subtitle

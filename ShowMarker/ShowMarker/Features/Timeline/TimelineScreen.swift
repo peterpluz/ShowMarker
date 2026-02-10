@@ -47,9 +47,6 @@ struct TimelineScreen: View {
     // Delete all markers confirmation
     @State private var showDeleteAllMarkersConfirmation = false
 
-    // Add marker button interaction
-    @State private var isAddMarkerButtonPressed = false
-
     // History menu states
     @State private var showUndoHistory = false
     @State private var showRedoHistory = false
@@ -106,6 +103,9 @@ struct TimelineScreen: View {
                     .sheet(item: $timePickerMarker) { marker in
                         timecodePickerSheet(for: marker)
                     }
+                    .sheet(item: $editingTagMarker) { marker in
+                        tagPickerSheet(for: marker)
+                    }
                     .sheet(isPresented: $isTagFilterPresented) {
                         tagFilterSheet
                     }
@@ -126,11 +126,6 @@ struct TimelineScreen: View {
                             }
                         )
                     }
-
-                // Tag picker menu overlay
-                if let marker = editingTagMarker {
-                    tagPickerMenuOverlay(for: marker)
-                }
 
                 // Marker name popup overlay
                 if isMarkerNamePopupPresented {
@@ -366,7 +361,7 @@ struct TimelineScreen: View {
         .presentationDragIndicator(.visible)
     }
 
-    private func tagPickerMenuOverlay(for marker: TimelineMarker) -> some View {
+    private func tagPickerSheet(for marker: TimelineMarker) -> some View {
         MarkerTagPopup(
             tags: viewModel.tags,
             selectedTagId: marker.tagId,
@@ -774,31 +769,20 @@ struct TimelineScreen: View {
         } label: {
             Text("ДОБАВИТЬ МАРКЕР")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
                 .background(
                     Capsule()
-                        .fill(Color.accentColor)
+                        .fill(Color.accentColor.gradient)
                 )
         }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .hoverEffect(.highlight)
         .disabled(!hasAudio)
         .opacity(hasAudio ? 1 : 0.5)
-        .scaleEffect(isAddMarkerButtonPressed ? 0.95 : 1.0)
-        .brightness(isAddMarkerButtonPressed ? -0.05 : 0)
-        .gesture(
-            DragGesture()
-                .onChanged { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isAddMarkerButtonPressed = true
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isAddMarkerButtonPressed = false
-                    }
-                }
-        )
+        .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.5), trigger: isMarkerNamePopupPresented)
     }
 
     // MARK: - Player Sheet

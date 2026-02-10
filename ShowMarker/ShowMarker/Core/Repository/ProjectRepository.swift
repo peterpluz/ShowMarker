@@ -147,6 +147,12 @@ final class ProjectRepository: ObservableObject {
         }
     }
 
+    func isTagUsedByMarkers(_ tagId: UUID) -> Bool {
+        project.timelines.contains { timeline in
+            timeline.markers.contains { $0.tagId == tagId }
+        }
+    }
+
     func getTag(id: UUID) -> Tag? {
         project.tags.first(where: { $0.id == id })
     }
