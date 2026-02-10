@@ -62,6 +62,8 @@ struct TimelineScreen: View {
     // Player sheet state
     @State private var sheetDetent: PlayerSheetDetent = .medium
     @State private var sheetDragOffset: CGFloat = 0
+    @State private var currentSheetHeight: CGFloat = 500  // Absolute height tracking (medium = 500)
+    @State private var dragStartHeight: CGFloat?  // Initial height when drag starts (nil = not dragging)
 
     private static func makeViewModel(
         repository: ProjectRepository,
@@ -802,10 +804,10 @@ struct TimelineScreen: View {
 
     @ViewBuilder
     private func playerSheet(screenHeight: CGFloat) -> some View {
-        // Sheet grows upward from bottom — use continuous height for smooth tracking
+        // Sheet grows upward from bottom — use continuous height for smooth 1:1 tracking
         let dragHeight = sheetDragHeight(screenHeight: screenHeight)
-        let isCompact = sheetDetent == .compact && sheetDragOffset == 0
-        let wfHeight = waveformDynamicHeight(sheetHeight: sheetHeight(for: sheetDetent, screenHeight: screenHeight))
+        let isCompact = sheetDetent == .compact && dragStartHeight == nil  // Only compact when not dragging
+        let wfHeight = waveformDynamicHeight(sheetHeight: dragHeight)  // Use current height for waveform
 
         VStack(spacing: 0) {
             // Grab handle
@@ -831,13 +833,12 @@ struct TimelineScreen: View {
         )
     }
 
-    /// Continuous sheet height during drag — anchored to bottom, grows upward
+    /// Continuous sheet height during drag — uses absolute height tracking for 1:1 correspondence
     private func sheetDragHeight(screenHeight: CGFloat) -> CGFloat {
-        let base = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
-        // sheetDragOffset: positive = dragged down (shrink), negative = dragged up (grow)
-        let h = base - sheetDragOffset
         let maxH = expandedSheetHeight(screenHeight: screenHeight)
-        return max(compactSheetHeight, min(maxH, h))
+        // Use currentSheetHeight directly for smooth 1:1 drag without lag
+        // Clamp between min and max to prevent over-dragging
+        return max(compactSheetHeight, min(maxH, currentSheetHeight))
     }
 
     private func sheetGrabHandle(screenHeight: CGFloat) -> some View {
@@ -855,22 +856,43 @@ struct TimelineScreen: View {
     private func sheetHandleDragGesture(screenHeight: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 4)
             .onChanged { value in
+                // Initialize drag start height on first change
+                if dragStartHeight == nil {
+                    dragStartHeight = currentSheetHeight
+                }
+
+                guard let startHeight = dragStartHeight else { return }
+
+                // 1:1 correspondence: translate drag directly to height change
+                // Negative translation.height = drag up (increase height)
+                // Positive translation.height = drag down (decrease height)
+                let maxH = expandedSheetHeight(screenHeight: screenHeight)
+                let newHeight = startHeight - value.translation.height
+
+                // Update currentSheetHeight directly for immediate visual feedback (no lag)
+                // Clamp to prevent over-dragging
+                currentSheetHeight = max(compactSheetHeight, min(maxH, newHeight))
                 sheetDragOffset = value.translation.height
             }
             .onEnded { value in
-                let detentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
-                let currentHeight = detentHeight - value.translation.height
+                // Calculate velocity for snap behavior
                 let velocity = value.predictedEndTranslation.height - value.translation.height
 
+                // Find nearest detent based on current height
                 let newDetent = resolveDetent(
-                    currentHeight: currentHeight,
+                    currentHeight: currentSheetHeight,
                     velocity: velocity,
                     screenHeight: screenHeight
                 )
 
+                // Animate to new detent height with spring animation
+                let targetHeight = sheetHeight(for: newDetent, screenHeight: screenHeight)
+
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                    currentSheetHeight = targetHeight
                     sheetDetent = newDetent
                     sheetDragOffset = 0
+                    dragStartHeight = nil  // Reset for next drag
                 }
             }
     }
