@@ -23,8 +23,8 @@ struct MarkerCard: View {
     var body: some View {
         HStack(spacing: 12) {
 
-            // Vertical colored stripe instead of bookmark icon
-            Rectangle()
+            // Vertical colored stripe with rounded corners
+            RoundedRectangle(cornerRadius: 2)
                 .fill(tag.map { Color(hex: $0.colorHex) } ?? Color.accentColor)
                 .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
                 .frame(width: 4, height: 32)
@@ -32,9 +32,9 @@ struct MarkerCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text("\(markerIndex)")
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.secondary)
-                        .frame(width: 20, alignment: .center)
+                        .frame(width: 20, alignment: .leading)
 
                     Text(marker.name)
                         .font(.system(size: 15, weight: .semibold))
@@ -44,7 +44,7 @@ struct MarkerCard: View {
                 .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
 
                 Text(timecode())
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(.system(size: 11, weight: .regular))
                     .monospacedDigit()
                     .foregroundColor(.secondary)
                     .opacity(currentTime > marker.timeSeconds ? 0.4 : 1.0)
@@ -64,14 +64,6 @@ struct MarkerCard: View {
         )
         .contentShape(Rectangle())
         .listRowInsets(EdgeInsets())
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-            Button {
-                onTagEdit()
-            } label: {
-                Label("Тег", systemImage: "tag.fill")
-            }
-            .tint(.orange)
-        }
         .onLongPressGesture {
             onTagEdit()
         }

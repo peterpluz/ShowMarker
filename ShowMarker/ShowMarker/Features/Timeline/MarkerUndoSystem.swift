@@ -333,18 +333,18 @@ class MarkerUndoManager: ObservableObject {
         }
     }
 
+    /// Undo (index+1) actions. Index 0 = undo 1 (most recent), index 1 = undo 2, etc.
     func undoToIndex(_ index: Int) {
-        guard index < undoStack.count else { return }
-        let count = undoStack.count - index - 1
-        for _ in 0..<count {
+        for _ in 0...index {
+            guard canUndo else { break }
             undo()
         }
     }
 
+    /// Redo (index+1) actions. Index 0 = redo 1 (most recent), index 1 = redo 2, etc.
     func redoToIndex(_ index: Int) {
-        guard index < redoStack.count else { return }
-        let count = redoStack.count - index - 1
-        for _ in 0..<count {
+        for _ in 0...index {
+            guard canRedo else { break }
             redo()
         }
     }

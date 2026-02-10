@@ -64,3 +64,38 @@ struct MetronomeIndicator: View {
         }
     }
 }
+
+/// Standalone metronome icon (no button/background) for embedding in custom containers
+struct MetronomeIcon: View {
+    let isPlaying: Bool
+    let currentBeat: Int
+    let isEnabled: Bool
+
+    @State private var isAlternate: Bool = false
+
+    var body: some View {
+        Image(systemName: iconName)
+            .animation(.easeInOut(duration: 0.1), value: isAlternate)
+            .onChange(of: currentBeat) { oldBeat, newBeat in
+                if isEnabled && isPlaying && newBeat != oldBeat {
+                    isAlternate.toggle()
+                }
+            }
+            .onChange(of: isEnabled) { _, newValue in
+                if !newValue { isAlternate = false }
+            }
+            .onChange(of: isPlaying) { _, newValue in
+                if !newValue { isAlternate = false }
+            }
+    }
+
+    private var iconName: String {
+        if isEnabled && isPlaying {
+            return isAlternate
+                ? "square.filled.and.line.vertical.and.square"
+                : "square.and.line.vertical.and.square.filled"
+        } else {
+            return "square.and.line.vertical.and.square.filled"
+        }
+    }
+}

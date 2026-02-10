@@ -199,6 +199,7 @@ struct ProjectSettingsView: View {
                         Spacer()
                     }
                 }
+                .buttonStyle(.plain)
             }
         }
         .alert("Переименовать тег", isPresented: renameTagBinding) {
