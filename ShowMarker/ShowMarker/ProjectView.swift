@@ -176,23 +176,23 @@ struct ProjectView: View {
             if isEditing {
                 // Selection mode with checkbox
                 HStack(spacing: 12) {
-                    // Circular checkbox - properly sized to not clip
+                    // Circular checkbox - native iOS size
                     ZStack {
                         Circle()
-                            .stroke(selectedTimelines.contains(timeline.id) ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 2)
-                            .frame(width: 26, height: 26)
+                            .stroke(selectedTimelines.contains(timeline.id) ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 1.5)
+                            .frame(width: 20, height: 20)
 
                         if selectedTimelines.contains(timeline.id) {
                             Circle()
                                 .fill(Color.accentColor)
-                                .frame(width: 26, height: 26)
+                                .frame(width: 20, height: 20)
 
                             Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(.white)
                         }
                     }
-                    .frame(width: 32, height: 32)  // Extra padding to prevent clipping
+                    .frame(width: 28, height: 28)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(timeline.name)
@@ -342,11 +342,16 @@ struct ProjectView: View {
                     Button {
                         isEditing = false
                     } label: {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(Color.white)
+                        ZStack {
+                            Circle()
+                                .fill(Color.accentColor)
+
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(Color.white)
+                        }
+                        .frame(width: 44, height: 44)
                     }
-                    .frame(width: 44, height: 44, alignment: .center)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .hoverEffect(.highlight)
                 }
@@ -431,15 +436,15 @@ struct ProjectView: View {
     }
 
     private var editingBottomBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             // Share button
             Button {
                 exportSelectedTimelines()
             } label: {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.white)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 50, height: 50)
             }
             .disabled(selectedTimelines.isEmpty)
             .glassEffect(.regular.interactive(), in: .circle)
@@ -450,9 +455,9 @@ struct ProjectView: View {
                 duplicateSelectedTimelines()
             } label: {
                 Image(systemName: "plus.square.on.square")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.white)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 50, height: 50)
             }
             .disabled(selectedTimelines.isEmpty)
             .glassEffect(.regular.interactive(), in: .circle)
@@ -465,9 +470,9 @@ struct ProjectView: View {
                 deleteSelectedTimelines()
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.red.opacity(0.8))
-                    .frame(width: 44, height: 44)
+                    .frame(width: 50, height: 50)
             }
             .disabled(selectedTimelines.isEmpty)
             .glassEffect(.regular.interactive(), in: .circle)
