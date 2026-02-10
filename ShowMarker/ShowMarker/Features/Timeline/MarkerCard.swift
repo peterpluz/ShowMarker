@@ -30,7 +30,7 @@ struct MarkerCard: View {
                 .frame(width: 4, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Text("\(markerIndex)")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.secondary)
