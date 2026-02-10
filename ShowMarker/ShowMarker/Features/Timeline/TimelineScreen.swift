@@ -434,38 +434,20 @@ struct TimelineScreen: View {
     // MARK: - Custom Navigation Title
 
     private var customNavigationTitle: some View {
-        VStack(spacing: 2) {
-            Text(viewModel.name)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(.primary)
-
-            HStack(spacing: 8) {
-                if let audio = viewModel.audio {
-                    Text(audio.originalFileName)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundColor(.secondary)
-
-                    if viewModel.bpm != nil {
-                        Text("•")
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundColor(.secondary)
-                    }
-                }
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
 
                 if let bpm = viewModel.bpm {
                     Text("\(Int(bpm)) BPM")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(.secondary)
-                } else if viewModel.audio != nil {
-                    Text("Tap to set BPM")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundColor(.secondary.opacity(0.7))
                 }
             }
-            .onTapGesture {
-                // Open timeline settings for BPM editing
-                isTimelineSettingsPresented = true
-            }
+            Spacer()
         }
     }
 
@@ -486,6 +468,13 @@ struct TimelineScreen: View {
             // Settings menu (only import/export and rename)
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    // Audio file info
+                    if let audio = viewModel.audio {
+                        Section {
+                            Label(audio.originalFileName, systemImage: "info.circle")
+                        }
+                    }
+
                     Button {
                         renameText = viewModel.name
                         isRenamingTimeline = true
