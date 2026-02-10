@@ -223,8 +223,6 @@ struct TimelineScreen: View {
     private var mainContent: some View {
         GeometryReader { geometry in
             let screenHeight = geometry.size.height
-            let effHeight = effectiveSheetHeight(screenHeight: screenHeight)
-            // Use detent-only height for list inset to avoid relayout during drag
             let stableInsetHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
 
             ZStack(alignment: .bottom) {
@@ -255,12 +253,12 @@ struct TimelineScreen: View {
                 }
 
                 // Dimming overlay for expanded mode
-                if sheetDetent == .expanded && sheetDragOffset >= 0 {
+                if sheetDetent == .expanded {
                     Color.black
-                        .opacity(0.3)
+                        .opacity(sheetDragOffset > 0 ? max(0, 0.3 - Double(sheetDragOffset) / 400) : 0.3)
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
-                        .transition(.opacity)
+                        .animation(.easeOut(duration: 0.2), value: sheetDetent)
                 }
 
                 // Player sheet
@@ -804,14 +802,6 @@ struct TimelineScreen: View {
         }
     }
 
-    private func effectiveSheetHeight(screenHeight: CGFloat) -> CGFloat {
-        let base = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
-        let result = base - sheetDragOffset
-        // Clamp to valid range; use compactSheetHeight as hard floor to maintain usability
-        let maxH = expandedSheetHeight(screenHeight: screenHeight)
-        return max(compactSheetHeight, min(maxH, result))
-    }
-
     private func waveformDynamicHeight(sheetHeight h: CGFloat) -> CGFloat {
         let base: CGFloat = 140
         let extra = max(0, h - mediumSheetHeight)
@@ -820,37 +810,32 @@ struct TimelineScreen: View {
 
     @ViewBuilder
     private func playerSheet(screenHeight: CGFloat) -> some View {
-        let effHeight = effectiveSheetHeight(screenHeight: screenHeight)
-        let compactThreshold = (compactSheetHeight + mediumSheetHeight) / 2
-        let isCompact = effHeight < compactThreshold
-        let wfHeight = waveformDynamicHeight(sheetHeight: effHeight)
+        // Height is based on committed detent only — never changes during drag
+        let detentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+        let isCompact = sheetDetent == .compact
+        let wfHeight = waveformDynamicHeight(sheetHeight: detentHeight)
 
         VStack(spacing: 0) {
             // Grab handle
             sheetGrabHandle(screenHeight: screenHeight)
 
-            // Content
+            // Content — switches only on committed detent, never mid-gesture
             if isCompact {
                 compactPlayerContent
             } else {
                 fullPlayerContent(waveformHeight: wfHeight)
             }
         }
-        .frame(height: effHeight)
+        .frame(height: detentHeight)
         .frame(maxWidth: .infinity)
-        .clipped()
         .background(
             UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
                 .fill(.regularMaterial)
                 .shadow(color: .black.opacity(0.12), radius: 8, y: -4)
                 .ignoresSafeArea(edges: .bottom)
         )
-        .animation(sheetDragOffset == 0 ? .interactiveSpring(response: 0.35, dampingFraction: 0.9) : nil, value: sheetDetent)
-        .transaction { t in
-            if sheetDragOffset != 0 {
-                t.animation = nil
-            }
-        }
+        // Offset-based drag: GPU-composited, no layout recalculation, true 1:1 tracking
+        .offset(y: sheetDragOffset)
     }
 
     private func sheetGrabHandle(screenHeight: CGFloat) -> some View {
@@ -868,16 +853,28 @@ struct TimelineScreen: View {
     private func sheetHandleDragGesture(screenHeight: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 4)
             .onChanged { value in
-                // Direct assignment without animation for 1:1 finger tracking
-                var t = Transaction()
-                t.animation = nil
-                withTransaction(t) {
-                    sheetDragOffset = value.translation.height
+                let detentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+                let raw = value.translation.height
+
+                // Clamp: don't let sheet go above expanded or below compact
+                let maxUp = -(expandedSheetHeight(screenHeight: screenHeight) - detentHeight)
+                let maxDown = detentHeight - compactSheetHeight
+
+                // Rubber-band at boundaries for natural feel
+                if raw < maxUp {
+                    let over = maxUp - raw
+                    sheetDragOffset = maxUp - rubberBand(over, dimension: 300)
+                } else if raw > maxDown {
+                    let over = raw - maxDown
+                    sheetDragOffset = maxDown + rubberBand(over, dimension: 300)
+                } else {
+                    sheetDragOffset = raw
                 }
             }
             .onEnded { value in
-                let baseHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
-                let currentHeight = baseHeight - value.translation.height
+                let detentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+                // Visual height the user dragged to (offset is positive when dragged down)
+                let currentHeight = detentHeight - value.translation.height
                 let velocity = value.predictedEndTranslation.height - value.translation.height
 
                 let newDetent = resolveDetent(
@@ -886,12 +883,25 @@ struct TimelineScreen: View {
                     screenHeight: screenHeight
                 )
 
-                // Animate snap to target detent
-                withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.9)) {
-                    sheetDetent = newDetent
+                let targetHeight = sheetHeight(for: newDetent, screenHeight: screenHeight)
+                // Residual offset so the sheet doesn't jump when detent changes
+                let residual = detentHeight - sheetDragOffset - targetHeight
+
+                // Set residual offset immediately (no animation) to maintain visual position
+                sheetDragOffset = -residual
+                sheetDetent = newDetent
+
+                // Then animate offset to 0 for smooth snap
+                withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.88)) {
                     sheetDragOffset = 0
                 }
             }
+    }
+
+    /// Rubber-band effect for dragging past boundaries
+    private func rubberBand(_ offset: CGFloat, dimension: CGFloat) -> CGFloat {
+        let clamped = max(0, offset)
+        return (1.0 - (1.0 / ((clamped * 0.55 / dimension) + 1.0))) * dimension
     }
 
     private func resolveDetent(
