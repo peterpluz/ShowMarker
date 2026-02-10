@@ -344,7 +344,7 @@ struct ProjectView: View {
                     } label: {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Color.white)
                     }
                     .frame(width: 44, height: 44, alignment: .center)
                     .glassEffect(.regular.interactive(), in: .circle)
@@ -431,18 +431,19 @@ struct ProjectView: View {
     }
 
     private var editingBottomBar: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             // Share button
             Button {
                 exportSelectedTimelines()
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor)
+                    .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.white)
                     .frame(width: 44, height: 44)
             }
             .disabled(selectedTimelines.isEmpty)
-            .contentShape(Circle())
+            .glassEffect(.regular.interactive(), in: .circle)
+            .hoverEffect(.highlight)
 
             // Duplicate button
             Button {
@@ -450,11 +451,12 @@ struct ProjectView: View {
             } label: {
                 Image(systemName: "plus.square.on.square")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor)
+                    .foregroundStyle(selectedTimelines.isEmpty ? Color.secondary.opacity(0.5) : Color.white)
                     .frame(width: 44, height: 44)
             }
             .disabled(selectedTimelines.isEmpty)
-            .contentShape(Circle())
+            .glassEffect(.regular.interactive(), in: .circle)
+            .hoverEffect(.highlight)
 
             Spacer()
 
@@ -468,12 +470,11 @@ struct ProjectView: View {
                     .frame(width: 44, height: 44)
             }
             .disabled(selectedTimelines.isEmpty)
-            .contentShape(Circle())
+            .glassEffect(.regular.interactive(), in: .circle)
+            .hoverEffect(.highlight)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
-        .hoverEffect(.highlight)
     }
 
     private var searchBar: some View {
