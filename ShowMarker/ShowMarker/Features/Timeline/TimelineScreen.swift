@@ -291,7 +291,9 @@ struct TimelineScreen: View {
             isHapticFeedbackEnabled: viewModel.isMarkerHapticFeedbackEnabled,
             prerollSeconds: viewModel.prerollSeconds,
             onTagEdit: {
-                editingTagMarker = marker
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    editingTagMarker = marker
+                }
             }
         )
         .contentShape(Rectangle())
@@ -324,7 +326,9 @@ struct TimelineScreen: View {
         }
 
         Button {
-            editingTagMarker = marker
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                editingTagMarker = marker
+            }
         } label: {
             Label("Изменить тег", systemImage: "tag")
         }
@@ -369,14 +373,17 @@ struct TimelineScreen: View {
             selectedTagId: marker.tagId,
             onTagSelected: { tagId in
                 viewModel.changeMarkerTag(marker, to: tagId)
-                editingTagMarker = nil
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    editingTagMarker = nil
+                }
             },
             onCancel: {
-                editingTagMarker = nil
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    editingTagMarker = nil
+                }
             }
         )
         .transition(.opacity.combined(with: .scale(scale: 0.9)))
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: editingTagMarker)
     }
 
     private var tagFilterSheet: some View {
