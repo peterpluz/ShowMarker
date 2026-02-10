@@ -254,13 +254,13 @@ struct TimelineScreen: View {
                     }
                 }
 
-                // Dimming overlay for expanded mode
-                if sheetDetent == .expanded {
+                // Dimming overlay — fades in continuously as sheet approaches expanded height
+                let dimmingOpacity = dimmingOverlayOpacity(screenHeight: screenHeight)
+                if dimmingOpacity > 0.001 {
                     Color.black
-                        .opacity(sheetDragOffset > 0 ? max(0, 0.3 - Double(sheetDragOffset) / 400) : 0.3)
+                        .opacity(dimmingOpacity)
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
-                        .animation(.easeOut(duration: 0.2), value: sheetDetent)
                 }
 
                 // Player sheet
@@ -833,6 +833,16 @@ struct TimelineScreen: View {
         )
     }
 
+    /// Continuous dimming opacity based on current sheet height — fades in as height exceeds medium
+    private func dimmingOverlayOpacity(screenHeight: CGFloat) -> Double {
+        let medium = mediumSheetHeight
+        let expanded = expandedSheetHeight(screenHeight: screenHeight)
+        let current = currentSheetHeight
+        guard current > medium else { return 0 }
+        let progress = Double((current - medium) / (expanded - medium))
+        return min(0.3, 0.3 * progress)
+    }
+
     /// Continuous sheet height during drag — uses absolute height tracking for 1:1 correspondence
     private func sheetDragHeight(screenHeight: CGFloat) -> CGFloat {
         let maxH = expandedSheetHeight(screenHeight: screenHeight)
@@ -854,7 +864,7 @@ struct TimelineScreen: View {
     }
 
     private func sheetHandleDragGesture(screenHeight: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 4)
+        DragGesture(minimumDistance: 4, coordinateSpace: .global)
             .onChanged { value in
                 // Initialize drag start height on first change
                 if dragStartHeight == nil {
@@ -864,35 +874,30 @@ struct TimelineScreen: View {
                 guard let startHeight = dragStartHeight else { return }
 
                 // 1:1 correspondence: translate drag directly to height change
-                // Negative translation.height = drag up (increase height)
-                // Positive translation.height = drag down (decrease height)
+                // Using .global coordinate space so the translation is not affected
+                // by the view's own movement — this ensures true 1:1 finger tracking.
                 let maxH = expandedSheetHeight(screenHeight: screenHeight)
                 let newHeight = startHeight - value.translation.height
 
-                // Update currentSheetHeight directly for immediate visual feedback (no lag)
-                // Clamp to prevent over-dragging
                 currentSheetHeight = max(compactSheetHeight, min(maxH, newHeight))
                 sheetDragOffset = value.translation.height
             }
             .onEnded { value in
-                // Calculate velocity for snap behavior
                 let velocity = value.predictedEndTranslation.height - value.translation.height
 
-                // Find nearest detent based on current height
                 let newDetent = resolveDetent(
                     currentHeight: currentSheetHeight,
                     velocity: velocity,
                     screenHeight: screenHeight
                 )
 
-                // Animate to new detent height with spring animation
                 let targetHeight = sheetHeight(for: newDetent, screenHeight: screenHeight)
 
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
                     currentSheetHeight = targetHeight
                     sheetDetent = newDetent
                     sheetDragOffset = 0
-                    dragStartHeight = nil  // Reset for next drag
+                    dragStartHeight = nil
                 }
             }
     }
