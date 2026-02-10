@@ -604,6 +604,21 @@ struct TimelineScreen: View {
 
             timelineBar(waveformHeight: waveformHeight)
 
+            // Keyframe tracks — only visible in expanded sheet mode
+            if sheetDetent == .expanded && hasAudio && !viewModel.visibleMarkers.isEmpty {
+                KeyframeTracksView(
+                    duration: viewModel.duration,
+                    currentTime: viewModel.currentTime,
+                    markers: viewModel.visibleMarkers,
+                    tags: viewModel.tags,
+                    prerollSeconds: viewModel.prerollSeconds,
+                    zoomScale: viewModel.zoomScale,
+                    effectiveDisplayTime: viewModel.currentTime + viewModel.prerollSeconds
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .animation(.easeInOut(duration: 0.25), value: sheetDetent)
+            }
+
             // ИСПРАВЛЕНО: тайм и контролы видимы только с аудио
             if hasAudio {
                 timecode
