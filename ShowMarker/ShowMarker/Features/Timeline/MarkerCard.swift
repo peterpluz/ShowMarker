@@ -64,14 +64,6 @@ struct MarkerCard: View {
         )
         .contentShape(Rectangle())
         .listRowInsets(EdgeInsets())
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-            Button {
-                onTagEdit()
-            } label: {
-                Label("Тег", systemImage: "tag.fill")
-            }
-            .tint(.orange)
-        }
         .onLongPressGesture {
             onTagEdit()
         }

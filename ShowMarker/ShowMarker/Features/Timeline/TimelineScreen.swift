@@ -314,7 +314,7 @@ struct TimelineScreen: View {
             } label: {
                 Label("Переименовать", systemImage: "pencil")
             }
-            .tint(.orange)
+            .tint(.blue)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button {
@@ -322,7 +322,7 @@ struct TimelineScreen: View {
             } label: {
                 Label("Тег", systemImage: "tag")
             }
-            .tint(.accentColor)
+            .tint(.orange)
         }
     }
 
@@ -554,9 +554,8 @@ struct TimelineScreen: View {
 
                 Spacer()
 
-                // Undo/Redo buttons
+                // Undo/Redo buttons — tap = single undo/redo, long-press = history menu
                 HStack(spacing: 0) {
-                    // Undo button with long press menu
                     Menu {
                         ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
                             Button {
@@ -572,22 +571,18 @@ struct TimelineScreen: View {
                             }
                         }
                     } label: {
-                        Button {
-                            viewModel.undoManager.undo()
-                        } label: {
-                            Image(systemName: "arrow.uturn.backward")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(viewModel.undoManager.canUndo ? .primary : .secondary)
-                                .frame(width: 40, height: 36)
-                        }
-                        .disabled(!viewModel.undoManager.canUndo)
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(viewModel.undoManager.canUndo ? .primary : .secondary)
+                            .frame(width: 40, height: 36)
+                    } primaryAction: {
+                        viewModel.undoManager.undo()
                     }
                     .disabled(!viewModel.undoManager.canUndo)
 
                     Divider()
                         .frame(height: 20)
 
-                    // Redo button with long press menu
                     Menu {
                         ForEach(Array(viewModel.undoManager.getRedoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
                             Button {
@@ -603,15 +598,12 @@ struct TimelineScreen: View {
                             }
                         }
                     } label: {
-                        Button {
-                            viewModel.undoManager.redo()
-                        } label: {
-                            Image(systemName: "arrow.uturn.forward")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(viewModel.undoManager.canRedo ? .primary : .secondary)
-                                .frame(width: 40, height: 36)
-                        }
-                        .disabled(!viewModel.undoManager.canRedo)
+                        Image(systemName: "arrow.uturn.forward")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(viewModel.undoManager.canRedo ? .primary : .secondary)
+                            .frame(width: 40, height: 36)
+                    } primaryAction: {
+                        viewModel.undoManager.redo()
                     }
                     .disabled(!viewModel.undoManager.canRedo)
                 }

@@ -36,12 +36,17 @@ struct ProjectView: View {
     @State private var csvImportError: String?
     @State private var showCSVImportError = false
 
+    // Project-level undo/redo
+    @StateObject private var projectUndo: ProjectUndoManager
+
     private let availableFPS = [25, 30, 50, 60, 100]
 
     init(document: Binding<ShowMarkerDocument>) {
         _document = document
+        let repo = document.wrappedValue.repository
         // ✅ КРИТИЧНО: безопасное извлечение repository
-        _repository = ObservedObject(wrappedValue: document.wrappedValue.repository)
+        _repository = ObservedObject(wrappedValue: repo)
+        _projectUndo = StateObject(wrappedValue: ProjectUndoManager(repository: repo))
     }
 
     private var isRenamingPresented: Binding<Bool> {
@@ -292,7 +297,9 @@ struct ProjectView: View {
             Button("Создать") {
                 let name = newTimelineName.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
-                repository.addTimeline(name: name)
+                let timeline = Timeline(name: name, fps: repository.project.fps)
+                let action = CreateTimelineAction(timeline: timeline)
+                projectUndo.performAction(action)
                 newTimelineName = ""
             }
             Button("Отмена", role: .cancel) {}
@@ -357,6 +364,23 @@ struct ProjectView: View {
                 // Menu with select option (right)
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        // Undo/Redo section
+                        Button {
+                            projectUndo.undo()
+                        } label: {
+                            Label("Отменить", systemImage: "arrow.uturn.backward")
+                        }
+                        .disabled(!projectUndo.canUndo)
+
+                        Button {
+                            projectUndo.redo()
+                        } label: {
+                            Label("Повторить", systemImage: "arrow.uturn.forward")
+                        }
+                        .disabled(!projectUndo.canRedo)
+
+                        Divider()
+
                         Button {
                             isEditing = true
                         } label: {
@@ -614,10 +638,17 @@ struct ProjectView: View {
         )
 
         // Insert after the original timeline instead of at the end
-        if let currentIndex = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) {
-            repository.project.timelines.insert(newTimeline, at: currentIndex + 1)
-        } else {
-            repository.addTimeline(newTimeline)
+        let action = DuplicateTimelineAction(newTimeline: newTimeline)
+        projectUndo.performAction(action)
+
+        if let currentIndex = repository.project.timelines.firstIndex(where: { $0.id == newTimeline.id }),
+           let originalIndex = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) {
+            // Move to right after original
+            if currentIndex != originalIndex + 1 {
+                repository.project.timelines.remove(at: currentIndex)
+                let insertAt = min(originalIndex + 1, repository.project.timelines.count)
+                repository.project.timelines.insert(newTimeline, at: insertAt)
+            }
         }
     }
 
@@ -712,13 +743,18 @@ struct ProjectView: View {
             return
         }
 
-        repository.renameTimeline(id: id, newName: name)
+        let oldName = repository.project.timelines.first(where: { $0.id == id })?.name ?? ""
+        if name != oldName {
+            let action = RenameTimelineAction(timelineID: id, oldName: oldName, newName: name)
+            projectUndo.performAction(action)
+        }
         renamingTimelineID = nil
     }
 
     private func deleteTimeline(_ timeline: Timeline) {
         guard let index = repository.project.timelines.firstIndex(where: { $0.id == timeline.id }) else { return }
-        repository.removeTimelines(at: IndexSet(integer: index))
+        let action = DeleteTimelineAction(timeline: timeline, index: index)
+        projectUndo.performAction(action)
     }
 
     private func handleCSVBatchImport(_ result: Result<[URL], Error>) {

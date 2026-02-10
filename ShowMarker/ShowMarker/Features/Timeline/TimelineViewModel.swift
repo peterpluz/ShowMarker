@@ -647,9 +647,17 @@ final class TimelineViewModel: ObservableObject {
 
         metronome.scheduleClickAtHostTime(hostTime, isAccent: isAccent)
 
-        // Update visual state when the beat fires
+        // Update visual state synchronized with the audio click's host time
+        let now = mach_absolute_time()
+        let visualDelay: Double
+        if hostTime > now {
+            visualDelay = Double(hostTime - now) / MetronomeService.hostTicksPerSecond
+        } else {
+            visualDelay = 0
+        }
+
         let gen = self.beatScheduleGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + visualDelay) { [weak self] in
             guard let self = self,
                   self.isPlaying,
                   self.beatScheduleGeneration == gen else { return }
