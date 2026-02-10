@@ -128,11 +128,6 @@ struct TimelineScreen: View {
                 if isMarkerNamePopupPresented {
                     markerNamePopupOverlay
                 }
-
-                // Marker tag editing popup overlay
-                if let marker = editingTagMarker {
-                    tagPickerPopupOverlay(for: marker)
-                }
             }
         }
         .sheet(isPresented: $isPickerPresented) {
@@ -201,6 +196,12 @@ struct TimelineScreen: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(csvImportError ?? "Неизвестная ошибка")
+            }
+            .overlay {
+                if let marker = editingTagMarker {
+                    tagPickerPopupOverlay(for: marker)
+                        .ignoresSafeArea(.all)
+                }
             }
     }
 

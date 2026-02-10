@@ -8,118 +8,101 @@ struct MarkerTagPopup: View {
 
     var body: some View {
         ZStack {
-            // Dimmed background
-            Color.black.opacity(0.3)
-                .ignoresSafeArea()
+            // Dimmed background — full screen uniform
+            Color.black.opacity(0.35)
+                .ignoresSafeArea(.all)
                 .onTapGesture {
                     onCancel()
                 }
 
-            // Popup content with Liquid Glass style
-            VStack(spacing: 16) {
+            // Popup card — translucent glass
+            VStack(spacing: 0) {
                 // Title
                 Text("Теги")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .padding(.top, 24)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.top, 20)
+                    .padding(.bottom, 14)
 
                 // Tag list
                 ScrollView {
-                    VStack(spacing: 4) {
+                    VStack(spacing: 2) {
                         ForEach(tags) { tag in
                             tagRow(tag)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 12)
                 }
-                .frame(maxHeight: 320)
+                .frame(maxHeight: 300)
+
+                // Divider
+                Rectangle()
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
 
                 // Cancel button
                 Button {
                     onCancel()
                 } label: {
                     Text("Отмена")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(
-                            Capsule()
-                                .fill(Color(.systemGray5).opacity(0.6))
-                                .background(
-                                    Capsule()
-                                        .fill(.regularMaterial)
-                                )
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                        )
+                        .frame(height: 44)
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 24)
+                .padding(.bottom, 16)
             }
-            .frame(width: 320)
+            .frame(width: 300)
             .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color(.systemGray6).opacity(0.9))
-                    .background(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(.ultraThickMaterial)
-                    )
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 10)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.25), radius: 40, x: 0, y: 12)
         }
     }
 
     private func tagRow(_ tag: Tag) -> some View {
-        HStack(spacing: 12) {
-            // Checkbox circle
-            if tag.id == selectedTagId {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Color.accentColor)
-            } else {
-                Circle()
-                    .stroke(Color(.tertiaryLabel), lineWidth: 1.5)
-                    .frame(width: 22, height: 22)
-            }
+        let isSelected = tag.id == selectedTagId
+
+        return HStack(spacing: 10) {
+            // Color dot — subtle, small
+            Circle()
+                .fill(Color(hex: tag.colorHex))
+                .frame(width: 10, height: 10)
+                .opacity(isSelected ? 1.0 : 0.55)
 
             // Tag name
             Text(tag.name)
-                .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(.primary)
+                .font(.system(size: 16, weight: isSelected ? .medium : .regular))
+                .foregroundStyle(isSelected ? .primary : .secondary)
 
             Spacer()
 
-            // Color indicator
-            Circle()
-                .fill(Color(hex: tag.colorHex))
-                .frame(width: 24, height: 24)
+            // Checkmark for selected
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color(hex: tag.colorHex))
+            }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 11)
         .background(
-            Capsule()
-                .fill(tag.id == selectedTagId
-                      ? Color(.systemGray4).opacity(0.5)
-                      : Color(.systemGray5).opacity(0.3))
-                .background(
-                    Capsule()
-                        .fill(.regularMaterial)
-                )
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isSelected
+                      ? Color.primary.opacity(0.06)
+                      : Color.clear)
         )
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-        )
-        .contentShape(Capsule())
+        .contentShape(Rectangle())
         .onTapGesture {
             let impact = UIImpactFeedbackGenerator(style: .light)
             impact.impactOccurred()
