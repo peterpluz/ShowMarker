@@ -301,8 +301,28 @@ struct TimelineScreen: View {
         .contextMenu {
             markerContextMenu(for: marker)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            markerSwipeActions(for: marker)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                viewModel.deleteMarker(marker)
+            } label: {
+                Label("Удалить", systemImage: "trash")
+            }
+
+            Button {
+                renamingMarker = marker
+                renamingMarkerOldName = marker.name
+            } label: {
+                Label("Переименовать", systemImage: "pencil")
+            }
+            .tint(.orange)
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                editingTagMarker = marker
+            } label: {
+                Label("Тег", systemImage: "tag")
+            }
+            .tint(.accentColor)
         }
     }
 
@@ -329,15 +349,6 @@ struct TimelineScreen: View {
 
         Divider()
 
-        Button(role: .destructive) {
-            viewModel.deleteMarker(marker)
-        } label: {
-            Label("Удалить", systemImage: "trash")
-        }
-    }
-
-    @ViewBuilder
-    private func markerSwipeActions(for marker: TimelineMarker) -> some View {
         Button(role: .destructive) {
             viewModel.deleteMarker(marker)
         } label: {
@@ -509,42 +520,42 @@ struct TimelineScreen: View {
 
     private func fullPlayerContent(waveformHeight: CGFloat) -> some View {
         VStack(spacing: 16) {
-            // Undo/Redo and Tag Filter buttons above timeline
-            HStack {
-                // Tag filter button (left side, separate)
+            // Undo/Redo, Tag Filter, Metronome buttons — Liquid Glass, uniform height
+            HStack(spacing: 8) {
+                // Tag filter button
                 Button {
                     isTagFilterPresented = true
                 } label: {
                     Image(systemName: hasActiveFilter ? "line.horizontal.3.decrease.circle.fill" : "line.horizontal.3.decrease")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundColor(hasActiveFilter ? .accentColor : .secondary)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(hasActiveFilter ? .accentColor : .primary)
+                        .frame(height: 36)
+                        .padding(.horizontal, 14)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(Color.secondary.opacity(0.2))
-                )
+                .glassEffect(.regular.interactive(), in: .capsule)
+
+                // Metronome indicator (only if BPM is set)
+                if viewModel.bpm != nil {
+                    Button {
+                        viewModel.toggleMetronome()
+                    } label: {
+                        MetronomeIcon(
+                            isPlaying: viewModel.isMetronomeEnabled,
+                            currentBeat: viewModel.currentBeat,
+                            isEnabled: viewModel.isMetronomeUserEnabled
+                        )
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(viewModel.isMetronomeUserEnabled ? .accentColor : .primary)
+                        .frame(height: 36)
+                        .padding(.horizontal, 14)
+                    }
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                }
 
                 Spacer()
 
-                // Metronome indicator (center, only if BPM is set)
-                if viewModel.bpm != nil {
-                    MetronomeIndicator(
-                        isPlaying: viewModel.isMetronomeEnabled,
-                        currentBeat: viewModel.currentBeat,
-                        bpm: viewModel.bpm,
-                        isEnabled: viewModel.isMetronomeUserEnabled,
-                        onToggle: {
-                            viewModel.toggleMetronome()
-                        }
-                    )
-
-                    Spacer()
-                }
-
-                // Undo/Redo buttons (right side)
-                HStack(spacing: 12) {
+                // Undo/Redo buttons
+                HStack(spacing: 0) {
                     // Undo button with long press menu
                     Menu {
                         ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
@@ -565,12 +576,16 @@ struct TimelineScreen: View {
                             viewModel.undoManager.undo()
                         } label: {
                             Image(systemName: "arrow.uturn.backward")
-                                .font(.system(size: 16, weight: .regular))
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(viewModel.undoManager.canUndo ? .primary : .secondary)
+                                .frame(width: 40, height: 36)
                         }
                         .disabled(!viewModel.undoManager.canUndo)
                     }
                     .disabled(!viewModel.undoManager.canUndo)
+
+                    Divider()
+                        .frame(height: 20)
 
                     // Redo button with long press menu
                     Menu {
@@ -592,19 +607,15 @@ struct TimelineScreen: View {
                             viewModel.undoManager.redo()
                         } label: {
                             Image(systemName: "arrow.uturn.forward")
-                                .font(.system(size: 16, weight: .regular))
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(viewModel.undoManager.canRedo ? .primary : .secondary)
+                                .frame(width: 40, height: 36)
                         }
                         .disabled(!viewModel.undoManager.canRedo)
                     }
                     .disabled(!viewModel.undoManager.canRedo)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(Color.secondary.opacity(0.2))
-                )
+                .glassEffect(.regular.interactive(), in: .capsule)
             }
             .padding(.bottom, 8)
 
@@ -810,10 +821,10 @@ struct TimelineScreen: View {
 
     @ViewBuilder
     private func playerSheet(screenHeight: CGFloat) -> some View {
-        // Height is based on committed detent only — never changes during drag
-        let detentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
-        let isCompact = sheetDetent == .compact
-        let wfHeight = waveformDynamicHeight(sheetHeight: detentHeight)
+        // Sheet grows upward from bottom — use continuous height for smooth tracking
+        let dragHeight = sheetDragHeight(screenHeight: screenHeight)
+        let isCompact = sheetDetent == .compact && sheetDragOffset == 0
+        let wfHeight = waveformDynamicHeight(sheetHeight: sheetHeight(for: sheetDetent, screenHeight: screenHeight))
 
         VStack(spacing: 0) {
             // Grab handle
@@ -825,17 +836,27 @@ struct TimelineScreen: View {
             } else {
                 fullPlayerContent(waveformHeight: wfHeight)
             }
+
+            Spacer(minLength: 0)
         }
-        .frame(height: detentHeight)
+        .frame(height: dragHeight)
         .frame(maxWidth: .infinity)
+        .clipped()
         .background(
             UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
                 .fill(.regularMaterial)
                 .shadow(color: .black.opacity(0.12), radius: 8, y: -4)
                 .ignoresSafeArea(edges: .bottom)
         )
-        // Offset-based drag: GPU-composited, no layout recalculation, true 1:1 tracking
-        .offset(y: sheetDragOffset)
+    }
+
+    /// Continuous sheet height during drag — anchored to bottom, grows upward
+    private func sheetDragHeight(screenHeight: CGFloat) -> CGFloat {
+        let base = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+        // sheetDragOffset: positive = dragged down (shrink), negative = dragged up (grow)
+        let h = base - sheetDragOffset
+        let maxH = expandedSheetHeight(screenHeight: screenHeight)
+        return max(compactSheetHeight, min(maxH, h))
     }
 
     private func sheetGrabHandle(screenHeight: CGFloat) -> some View {
@@ -853,27 +874,10 @@ struct TimelineScreen: View {
     private func sheetHandleDragGesture(screenHeight: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 4)
             .onChanged { value in
-                let detentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
-                let raw = value.translation.height
-
-                // Clamp: don't let sheet go above expanded or below compact
-                let maxUp = -(expandedSheetHeight(screenHeight: screenHeight) - detentHeight)
-                let maxDown = detentHeight - compactSheetHeight
-
-                // Rubber-band at boundaries for natural feel
-                if raw < maxUp {
-                    let over = maxUp - raw
-                    sheetDragOffset = maxUp - rubberBand(over, dimension: 300)
-                } else if raw > maxDown {
-                    let over = raw - maxDown
-                    sheetDragOffset = maxDown + rubberBand(over, dimension: 300)
-                } else {
-                    sheetDragOffset = raw
-                }
+                sheetDragOffset = value.translation.height
             }
             .onEnded { value in
                 let detentHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
-                // Visual height the user dragged to (offset is positive when dragged down)
                 let currentHeight = detentHeight - value.translation.height
                 let velocity = value.predictedEndTranslation.height - value.translation.height
 
@@ -883,25 +887,11 @@ struct TimelineScreen: View {
                     screenHeight: screenHeight
                 )
 
-                let targetHeight = sheetHeight(for: newDetent, screenHeight: screenHeight)
-                // Residual offset so the sheet doesn't jump when detent changes
-                let residual = detentHeight - sheetDragOffset - targetHeight
-
-                // Set residual offset immediately (no animation) to maintain visual position
-                sheetDragOffset = -residual
-                sheetDetent = newDetent
-
-                // Then animate offset to 0 for smooth snap
-                withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.88)) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                    sheetDetent = newDetent
                     sheetDragOffset = 0
                 }
             }
-    }
-
-    /// Rubber-band effect for dragging past boundaries
-    private func rubberBand(_ offset: CGFloat, dimension: CGFloat) -> CGFloat {
-        let clamped = max(0, offset)
-        return (1.0 - (1.0 / ((clamped * 0.55 / dimension) + 1.0))) * dimension
     }
 
     private func resolveDetent(
