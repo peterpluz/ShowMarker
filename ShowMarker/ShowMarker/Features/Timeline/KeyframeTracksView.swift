@@ -5,11 +5,13 @@ import SwiftUI
 /// as the corresponding markers. Scroll and playhead are synchronized with
 /// the parent waveform via the same time/zoom model.
 ///
-/// Layout: [Label Panel | Resize Handle | Keyframe Area]
+/// Layout: [Label Panel | Grab Handle | Keyframe Area]
 /// - Label panel shows tag names (or first letter when collapsed).
-/// - Resize handle allows dragging to collapse/expand the label panel.
+/// - Grab handle (sheet-style vertical pill) allows dragging to collapse/expand labels.
 /// - Keyframe area matches the waveform content width and supports
 ///   pinch-to-zoom, drag-to-seek, and double-tap-hold zoom gestures.
+/// - Playhead is aligned with the waveform's center by computing positions
+///   relative to the full parent width (label + handle + keyframe area).
 struct KeyframeTracksView: View {
 
     let duration: Double          // Audio duration (without preroll)
@@ -37,9 +39,15 @@ struct KeyframeTracksView: View {
     private static let labelExpandedWidth: CGFloat = 60
     private static let labelCollapsedWidth: CGFloat = 24
     private static let labelCollapseThreshold: CGFloat = 42
+    private static let handleWidth: CGFloat = 14
 
     private var isLabelCollapsed: Bool {
         labelWidth < Self.labelCollapseThreshold
+    }
+
+    /// Total width consumed by the left panel (labels + handle)
+    private var leftPanelWidth: CGFloat {
+        labelWidth + Self.handleWidth
     }
 
     // MARK: - Zoom Gesture State
@@ -101,7 +109,7 @@ struct KeyframeTracksView: View {
     var body: some View {
         HStack(spacing: 0) {
             labelPanel
-            labelResizeHandle
+            labelGrabHandle
             keyframeTracksContent
         }
         .padding(.vertical, 4)
@@ -146,34 +154,42 @@ struct KeyframeTracksView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
-    // MARK: - Label Resize Handle
+    // MARK: - Sheet-Style Grab Handle
 
-    private var labelResizeHandle: some View {
-        Rectangle()
-            .fill(Color.secondary.opacity(0.2))
-            .frame(width: 3)
-            .contentShape(Rectangle().inset(by: -8))
-            .gesture(
-                DragGesture(minimumDistance: 2)
-                    .onChanged { value in
-                        if labelDragStartWidth == nil {
-                            labelDragStartWidth = labelWidth
-                        }
-                        guard let startWidth = labelDragStartWidth else { return }
-                        let newWidth = startWidth + value.translation.width
-                        labelWidth = max(Self.labelCollapsedWidth, min(Self.labelExpandedWidth, newWidth))
+    private var labelGrabHandle: some View {
+        ZStack {
+            // Subtle background strip
+            Rectangle()
+                .fill(Color.secondary.opacity(0.06))
+
+            // Vertical capsule indicator (like a sheet grab bar)
+            Capsule()
+                .fill(Color.secondary.opacity(0.35))
+                .frame(width: 4, height: 32)
+        }
+        .frame(width: Self.handleWidth)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 2)
+                .onChanged { value in
+                    if labelDragStartWidth == nil {
+                        labelDragStartWidth = labelWidth
                     }
-                    .onEnded { _ in
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            if labelWidth < Self.labelCollapseThreshold {
-                                labelWidth = Self.labelCollapsedWidth
-                            } else {
-                                labelWidth = Self.labelExpandedWidth
-                            }
+                    guard let startWidth = labelDragStartWidth else { return }
+                    let newWidth = startWidth + value.translation.width
+                    labelWidth = max(Self.labelCollapsedWidth, min(Self.labelExpandedWidth, newWidth))
+                }
+                .onEnded { _ in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        if labelWidth < Self.labelCollapseThreshold {
+                            labelWidth = Self.labelCollapsedWidth
+                        } else {
+                            labelWidth = Self.labelExpandedWidth
                         }
-                        labelDragStartWidth = nil
                     }
-            )
+                    labelDragStartWidth = nil
+                }
+        )
     }
 
     // MARK: - Keyframe Tracks Content
@@ -198,11 +214,13 @@ struct KeyframeTracksView: View {
     // MARK: - Gesture Overlay (zoom, seek, double-tap-hold)
 
     /// Transparent overlay that captures all gestures on the keyframe area.
-    /// Uses GeometryReader to compute secondsPerPixel for drag-to-seek.
+    /// Uses full parent width for secondsPerPixel to match waveform scale.
     private var gestureOverlay: some View {
         GeometryReader { geo in
             let viewportWidth = geo.size.width
-            let contentWidth = viewportWidth * zoomScale
+            // Use full width (same as waveform) for consistent scale
+            let totalWidth = viewportWidth + leftPanelWidth
+            let contentWidth = totalWidth * zoomScale
             let secondsPerPixel = effectiveDuration > 0 ? effectiveDuration / contentWidth : 0
 
             Color.clear
@@ -221,9 +239,16 @@ struct KeyframeTracksView: View {
 
         return GeometryReader { geo in
             let viewportWidth = geo.size.width
-            let contentWidth = viewportWidth * zoomScale
+
+            // Compute positions relative to the full parent width so playhead
+            // aligns exactly with the waveform's center playhead
+            let totalWidth = viewportWidth + leftPanelWidth
+            let contentWidth = totalWidth * zoomScale
             let secondsPerPixel = effectiveDuration > 0 ? effectiveDuration / contentWidth : 0
-            let centerX = viewportWidth / 2
+
+            // Waveform center is at totalWidth/2 (screen coords).
+            // In keyframe-local coords: totalWidth/2 - leftPanelWidth
+            let centerX = totalWidth / 2 - leftPanelWidth
 
             // Offset so that effectiveDisplayTime is always at center
             let offset = effectiveDuration > 0
