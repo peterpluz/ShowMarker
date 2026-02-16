@@ -224,52 +224,86 @@ struct TimelineScreen: View {
 
     private var mainContent: some View {
         GeometryReader { geometry in
-            let screenHeight = geometry.size.height
-            let stableInsetHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+            let isLandscape = geometry.size.width > geometry.size.height
 
-            ZStack(alignment: .bottom) {
-                ScrollViewReader { proxy in
-                    List {
-                        Section {
-                            ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
-                                markerRow(marker, index: index + 1)
-                                    .id(marker.id)
-                                    .transition(.asymmetric(
-                                        insertion: .opacity.combined(with: .scale(scale: 0.95)),
-                                        removal: .opacity
-                                    ))
-                            }
-                        }
-                    }
-                    .listStyle(.insetGrouped)
-                    .animation(.easeInOut(duration: 0.3), value: viewModel.visibleMarkers.map(\.id))
-                    .safeAreaInset(edge: .bottom) {
-                        Color.clear.frame(height: stableInsetHeight + 8)
-                    }
-                    .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
-                        guard viewModel.isAutoScrollEnabled, let nextID = nextID else { return }
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            proxy.scrollTo(nextID, anchor: .center)
-                        }
-                    }
-                }
-
-                // Dimming overlay — fades in continuously as sheet approaches expanded height
-                let dimmingOpacity = dimmingOverlayOpacity(screenHeight: screenHeight)
-                if dimmingOpacity > 0.001 {
-                    Color.black
-                        .opacity(dimmingOpacity)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                }
-
-                // Player sheet
-                playerSheet(screenHeight: screenHeight)
+            if isLandscape {
+                landscapeContent(geometry: geometry)
+            } else {
+                portraitContent(geometry: geometry)
             }
-            .navigationTitle(viewModel.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                toolbarContent
+        }
+        .navigationTitle(viewModel.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            toolbarContent
+        }
+    }
+
+    // MARK: - Portrait Layout
+
+    private func portraitContent(geometry: GeometryProxy) -> some View {
+        let screenHeight = geometry.size.height
+        let stableInsetHeight = sheetHeight(for: sheetDetent, screenHeight: screenHeight)
+
+        return ZStack(alignment: .bottom) {
+            markerListView(bottomInset: stableInsetHeight + 8)
+
+            // Dimming overlay — fades in continuously as sheet approaches expanded height
+            let dimmingOpacity = dimmingOverlayOpacity(screenHeight: screenHeight)
+            if dimmingOpacity > 0.001 {
+                Color.black
+                    .opacity(dimmingOpacity)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+
+            // Player sheet
+            playerSheet(screenHeight: screenHeight)
+        }
+    }
+
+    // MARK: - Landscape Layout
+
+    private func landscapeContent(geometry: GeometryProxy) -> some View {
+        HStack(spacing: 0) {
+            // Left 1/3 — marker list
+            markerListView(bottomInset: 8)
+                .frame(width: geometry.size.width / 3)
+
+            Divider()
+
+            // Right 2/3 — full player with timeline + keyframes
+            fullPlayerContent(isLandscape: true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    // MARK: - Shared Marker List
+
+    private func markerListView(bottomInset: CGFloat) -> some View {
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    ForEach(Array(viewModel.visibleMarkers.enumerated()), id: \.element.id) { index, marker in
+                        markerRow(marker, index: index + 1)
+                            .id(marker.id)
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.95)),
+                                removal: .opacity
+                            ))
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .animation(.easeInOut(duration: 0.3), value: viewModel.visibleMarkers.map(\.id))
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: bottomInset)
+            }
+            .onChange(of: viewModel.nextMarkerID) { oldValue, nextID in
+                guard viewModel.isAutoScrollEnabled, let nextID = nextID else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(nextID, anchor: .center)
+                }
             }
         }
     }
@@ -507,9 +541,9 @@ struct TimelineScreen: View {
 
     // MARK: - Full Player Content (Medium / Expanded)
 
-    /// Whether keyframe tracks should be shown (expanded mode, has audio & markers)
-    private var showKeyframeTracks: Bool {
-        sheetDetent == .expanded && hasAudio && !viewModel.visibleMarkers.isEmpty
+    /// Whether keyframe tracks should be shown (expanded mode or landscape, has audio & markers)
+    private func showKeyframeTracks(isLandscape: Bool) -> Bool {
+        (isLandscape || sheetDetent == .expanded) && hasAudio && !viewModel.visibleMarkers.isEmpty
     }
 
     /// Estimated height of keyframe tracks based on active tags with markers
@@ -520,7 +554,7 @@ struct TimelineScreen: View {
         return CGFloat(activeTagCount) * 22 + 8  // trackHeight(22) * count + vertical padding(8)
     }
 
-    private func fullPlayerContent() -> some View {
+    private func fullPlayerContent(isLandscape: Bool = false) -> some View {
         VStack(spacing: 16) {
             // MARK: Fixed top — Undo/Redo, Tag Filter, Metronome buttons
             HStack(spacing: 8) {
@@ -619,8 +653,9 @@ struct TimelineScreen: View {
             // spanning both layers — no duplication, no manual offset compensation.
             GeometryReader { geo in
                 let available = geo.size.height
-                let kfHeight: CGFloat = showKeyframeTracks ? keyframeTracksEstimatedHeight : 0
-                let kfSpacing: CGFloat = showKeyframeTracks ? 8 : 0
+                let showKF = showKeyframeTracks(isLandscape: isLandscape)
+                let kfHeight: CGFloat = showKF ? keyframeTracksEstimatedHeight : 0
+                let kfSpacing: CGFloat = showKF ? 8 : 0
                 // TimelineBarView overhead: overview indicator(6) + spacing(8) + ruler(24) + spacing(8) = 46
                 let timelineOverhead: CGFloat = hasAudio ? 46 : 0
                 let wfHeight = max(60, available - kfHeight - kfSpacing - timelineOverhead)
@@ -631,7 +666,7 @@ struct TimelineScreen: View {
                     VStack(spacing: 8) {
                         timelineBar(waveformHeight: wfHeight)
 
-                        if showKeyframeTracks {
+                        if showKF {
                             KeyframeTracksView(
                                 duration: viewModel.duration,
                                 currentTime: viewModel.currentTime,
@@ -651,7 +686,7 @@ struct TimelineScreen: View {
                     // Starts below the chrome area (overview + ruler) and extends
                     // through the waveform and keyframe tracks.
                     if hasAudio {
-                        let playheadHeight = wfHeight + (showKeyframeTracks ? kfSpacing + kfHeight : 0)
+                        let playheadHeight = wfHeight + (showKF ? kfSpacing + kfHeight : 0)
 
                         Rectangle()
                             .fill(Color.accentColor)

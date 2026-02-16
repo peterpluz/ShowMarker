@@ -201,8 +201,6 @@ struct KeyframeTracksView: View {
                     }
                 }
             }
-            .frame(width: vw, height: Self.trackHeight)
-            .clipped()
         }
         .frame(height: Self.trackHeight)
     }
