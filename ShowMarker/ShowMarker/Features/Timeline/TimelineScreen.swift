@@ -636,8 +636,11 @@ struct TimelineScreen: View {
                             markers: viewModel.visibleMarkers,
                             tags: viewModel.tags,
                             prerollSeconds: viewModel.prerollSeconds,
-                            zoomScale: viewModel.zoomScale,
-                            effectiveDisplayTime: viewModel.currentTime + viewModel.prerollSeconds
+                            zoomScale: $viewModel.zoomScale,
+                            effectiveDisplayTime: viewModel.currentTime + viewModel.prerollSeconds,
+                            onSeek: { viewModel.seek(to: $0) },
+                            onScrubStart: { viewModel.startScrubbing() },
+                            onScrubEnd: { viewModel.stopScrubbing() }
                         )
                     }
                 }
