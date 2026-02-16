@@ -212,8 +212,8 @@ struct KeyframeTracksView: View {
     private var gestureOverlay: some View {
         GeometryReader { geo in
             let viewportWidth = geo.size.width
-            // Same formula as waveform: contentWidth = viewportWidth * zoomScale
-            let contentWidth = viewportWidth * zoomScale
+            // Identical formula to TimelineBarView.timelineContent
+            let contentWidth = max(viewportWidth * zoomScale, viewportWidth)
             let secondsPerPixel = effectiveDuration > 0 ? effectiveDuration / contentWidth : 0
 
             Color.clear
@@ -232,8 +232,8 @@ struct KeyframeTracksView: View {
 
         return GeometryReader { geo in
             let viewportWidth = geo.size.width
-            // Identical coordinate system to waveform — no compensation
-            let contentWidth = viewportWidth * zoomScale
+            // Identical formula to TimelineBarView.timelineContent
+            let contentWidth = max(viewportWidth * zoomScale, viewportWidth)
             let secondsPerPixel = effectiveDuration > 0 ? effectiveDuration / contentWidth : 0
             let centerX = viewportWidth / 2
 

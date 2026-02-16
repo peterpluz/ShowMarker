@@ -268,7 +268,7 @@ struct TimelineScreen: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) {
+                ToolbarItem(placement: .topBarLeading) {
                     customNavigationTitle
                 }
                 toolbarContent
