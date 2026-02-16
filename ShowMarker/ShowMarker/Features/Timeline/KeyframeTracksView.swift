@@ -2,16 +2,17 @@ import SwiftUI
 
 /// Displays keyframe tracks below the waveform, one row per tag.
 /// Each track shows downward-triangle keyframe indicators at the same timecodes
-/// as the corresponding markers. Scroll and playhead are synchronized with
-/// the parent waveform via the same time/zoom model.
+/// as the corresponding markers.
 ///
-/// Layout: [Label Panel | Grab Handle | Keyframe Area]
-/// - Label panel shows tag names (or first letter when collapsed).
-/// - Grab handle (sheet-style vertical pill) allows dragging to collapse/expand labels.
-/// - Keyframe area matches the waveform content width and supports
-///   pinch-to-zoom, drag-to-seek, and double-tap-hold zoom gestures.
-/// - Playhead is aligned with the waveform's center by computing positions
-///   relative to the full parent width (label + handle + keyframe area).
+/// Architecture:
+/// - Track rows use the FULL parent width — identical coordinate system to the waveform.
+///   centerX = viewportWidth / 2, contentWidth = viewportWidth * zoomScale.
+///   No manual offset compensation. Left edge of tracks = left edge of waveform.
+/// - Playhead is NOT rendered here — the parent TimelineContainer provides
+///   a single unified playhead spanning waveform + keyframes.
+/// - Label panel floats as an overlay on the leading edge, so changing its width
+///   does NOT affect the coordinate system or cause X desync.
+/// - Zoom/seek gestures are handled on the track area (same scale as waveform).
 struct KeyframeTracksView: View {
 
     let duration: Double          // Audio duration (without preroll)
@@ -33,7 +34,7 @@ struct KeyframeTracksView: View {
 
     // MARK: - Label Resize State
 
-    @State private var labelWidth: CGFloat = 60
+    @State private var labelWidth: CGFloat = Self.labelExpandedWidth
     @State private var labelDragStartWidth: CGFloat? = nil
 
     private static let labelExpandedWidth: CGFloat = 60
@@ -43,11 +44,6 @@ struct KeyframeTracksView: View {
 
     private var isLabelCollapsed: Bool {
         labelWidth < Self.labelCollapseThreshold
-    }
-
-    /// Total width consumed by the left panel (labels + handle)
-    private var leftPanelWidth: CGFloat {
-        labelWidth + Self.handleWidth
     }
 
     // MARK: - Zoom Gesture State
@@ -71,7 +67,7 @@ struct KeyframeTracksView: View {
 
     // MARK: - Constants
 
-    private static let trackHeight: CGFloat = 22
+    static let trackHeight: CGFloat = 22
     private static let keySize: CGFloat = 10
 
     private static let minZoom: CGFloat = 1.0
@@ -82,23 +78,20 @@ struct KeyframeTracksView: View {
         duration + prerollSeconds
     }
 
-    /// Convert audio time to display time
     private func audioToDisplayTime(_ audioTime: Double) -> Double {
         audioTime + prerollSeconds
     }
 
-    /// Convert display time to audio time
     private func displayToAudioTime(_ displayTime: Double) -> Double {
         displayTime - prerollSeconds
     }
 
-    /// Group markers by tagId
     private var markersByTag: [UUID: [TimelineMarker]] {
         Dictionary(grouping: markers, by: \.tagId)
     }
 
     /// Tags that have at least one marker, sorted by order
-    private var activeTags: [Tag] {
+    var activeTags: [Tag] {
         tags
             .filter { tag in markersByTag[tag.id] != nil }
             .sorted { $0.order < $1.order }
@@ -107,94 +100,7 @@ struct KeyframeTracksView: View {
     // MARK: - Body
 
     var body: some View {
-        HStack(spacing: 0) {
-            labelPanel
-            labelGrabHandle
-            keyframeTracksContent
-        }
-        .padding(.vertical, 4)
-    }
-
-    // MARK: - Label Panel
-
-    private var labelPanel: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(activeTags.enumerated()), id: \.element.id) { index, tag in
-                let tagColor = Color(hex: tag.colorHex)
-
-                if index > 0 {
-                    Divider().opacity(0.15)
-                }
-
-                Group {
-                    if isLabelCollapsed {
-                        Text(String(tag.name.prefix(1)).uppercased())
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(tagColor)
-                    } else {
-                        Text(tag.name)
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(tagColor)
-                            .lineLimit(1)
-                    }
-                }
-                .frame(
-                    width: labelWidth,
-                    height: Self.trackHeight,
-                    alignment: isLabelCollapsed ? .center : .leading
-                )
-                .padding(.leading, isLabelCollapsed ? 0 : 4)
-                .background(tagColor.opacity(0.06))
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.secondary.opacity(0.04))
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
-    // MARK: - Sheet-Style Grab Handle
-
-    private var labelGrabHandle: some View {
-        ZStack {
-            // Subtle background strip
-            Rectangle()
-                .fill(Color.secondary.opacity(0.06))
-
-            // Vertical capsule indicator (like a sheet grab bar)
-            Capsule()
-                .fill(Color.secondary.opacity(0.35))
-                .frame(width: 4, height: 32)
-        }
-        .frame(width: Self.handleWidth)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 2)
-                .onChanged { value in
-                    if labelDragStartWidth == nil {
-                        labelDragStartWidth = labelWidth
-                    }
-                    guard let startWidth = labelDragStartWidth else { return }
-                    let newWidth = startWidth + value.translation.width
-                    labelWidth = max(Self.labelCollapsedWidth, min(Self.labelExpandedWidth, newWidth))
-                }
-                .onEnded { _ in
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        if labelWidth < Self.labelCollapseThreshold {
-                            labelWidth = Self.labelCollapsedWidth
-                        } else {
-                            labelWidth = Self.labelExpandedWidth
-                        }
-                    }
-                    labelDragStartWidth = nil
-                }
-        )
-    }
-
-    // MARK: - Keyframe Tracks Content
-
-    private var keyframeTracksContent: some View {
+        // Track rows at FULL width (identical coordinate space as waveform)
         VStack(spacing: 0) {
             ForEach(Array(activeTags.enumerated()), id: \.element.id) { index, tag in
                 if index > 0 {
@@ -203,24 +109,111 @@ struct KeyframeTracksView: View {
                 keyframeRow(for: tag)
             }
         }
+        .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.secondary.opacity(0.04))
         )
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        // Gesture overlay (zoom, seek, double-tap-hold) — uses full width
         .overlay(gestureOverlay)
+        // Label panel floats on the leading edge — does NOT affect coordinate system
+        .overlay(alignment: .leading) {
+            labelOverlay
+        }
     }
 
-    // MARK: - Gesture Overlay (zoom, seek, double-tap-hold)
+    // MARK: - Label Overlay (floating, does not shift coordinates)
 
-    /// Transparent overlay that captures all gestures on the keyframe area.
-    /// Uses full parent width for secondsPerPixel to match waveform scale.
+    private var labelOverlay: some View {
+        HStack(spacing: 0) {
+            // Tag labels
+            VStack(spacing: 0) {
+                ForEach(Array(activeTags.enumerated()), id: \.element.id) { index, tag in
+                    let tagColor = Color(hex: tag.colorHex)
+
+                    if index > 0 {
+                        Divider().opacity(0.15)
+                    }
+
+                    Group {
+                        if isLabelCollapsed {
+                            Text(String(tag.name.prefix(1)).uppercased())
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(tagColor)
+                        } else {
+                            Text(tag.name)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(tagColor)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(
+                        width: labelWidth,
+                        height: Self.trackHeight,
+                        alignment: isLabelCollapsed ? .center : .leading
+                    )
+                    .padding(.leading, isLabelCollapsed ? 0 : 4)
+                    .background(tagColor.opacity(0.1))
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.ultraThinMaterial)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            // Sheet-style grab handle
+            ZStack {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.06))
+                Capsule()
+                    .fill(Color.secondary.opacity(0.35))
+                    .frame(width: 4, height: 32)
+            }
+            .frame(width: Self.handleWidth)
+            .contentShape(Rectangle())
+            .gesture(labelResizeGesture)
+        }
+        .padding(.vertical, 4)
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: labelWidth)
+    }
+
+    // MARK: - Label Resize Gesture
+
+    private var labelResizeGesture: some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                if labelDragStartWidth == nil {
+                    labelDragStartWidth = labelWidth
+                }
+                guard let startWidth = labelDragStartWidth else { return }
+                let newWidth = startWidth + value.translation.width
+                // Animate during drag with interactive spring
+                withAnimation(.interactiveSpring()) {
+                    labelWidth = max(Self.labelCollapsedWidth, min(Self.labelExpandedWidth, newWidth))
+                }
+            }
+            .onEnded { _ in
+                // Snap to collapsed or expanded with spring
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    if labelWidth < Self.labelCollapseThreshold {
+                        labelWidth = Self.labelCollapsedWidth
+                    } else {
+                        labelWidth = Self.labelExpandedWidth
+                    }
+                }
+                labelDragStartWidth = nil
+            }
+    }
+
+    // MARK: - Gesture Overlay
+
     private var gestureOverlay: some View {
         GeometryReader { geo in
             let viewportWidth = geo.size.width
-            // Use full width (same as waveform) for consistent scale
-            let totalWidth = viewportWidth + leftPanelWidth
-            let contentWidth = totalWidth * zoomScale
+            // Same formula as waveform: contentWidth = viewportWidth * zoomScale
+            let contentWidth = viewportWidth * zoomScale
             let secondsPerPixel = effectiveDuration > 0 ? effectiveDuration / contentWidth : 0
 
             Color.clear
@@ -239,18 +232,11 @@ struct KeyframeTracksView: View {
 
         return GeometryReader { geo in
             let viewportWidth = geo.size.width
-
-            // Compute positions relative to the full parent width so playhead
-            // aligns exactly with the waveform's center playhead
-            let totalWidth = viewportWidth + leftPanelWidth
-            let contentWidth = totalWidth * zoomScale
+            // Identical coordinate system to waveform — no compensation
+            let contentWidth = viewportWidth * zoomScale
             let secondsPerPixel = effectiveDuration > 0 ? effectiveDuration / contentWidth : 0
+            let centerX = viewportWidth / 2
 
-            // Waveform center is at totalWidth/2 (screen coords).
-            // In keyframe-local coords: totalWidth/2 - leftPanelWidth
-            let centerX = totalWidth / 2 - leftPanelWidth
-
-            // Offset so that effectiveDisplayTime is always at center
             let offset = effectiveDuration > 0
                 ? (effectiveDisplayTime / effectiveDuration) * contentWidth
                 : 0
@@ -262,11 +248,7 @@ struct KeyframeTracksView: View {
                     .frame(width: contentWidth, height: Self.trackHeight)
                     .position(x: centerX - offset + contentWidth / 2, y: Self.trackHeight / 2)
 
-                // Playhead position indicator (thin vertical line)
-                Rectangle()
-                    .fill(Color.accentColor.opacity(0.5))
-                    .frame(width: 1, height: Self.trackHeight)
-                    .position(x: centerX, y: Self.trackHeight / 2)
+                // No playhead here — unified playhead is in parent container
 
                 // Keyframe triangles (downward-pointing)
                 ForEach(tagMarkers, id: \.id) { marker in
@@ -276,7 +258,6 @@ struct KeyframeTracksView: View {
                         : 0
                     let markerX = centerX - offset + (normalizedPos * contentWidth)
 
-                    // Only render if within visible viewport (with margin)
                     if markerX > -Self.keySize && markerX < viewportWidth + Self.keySize {
                         let isNearPlayhead = abs(marker.timeSeconds - currentTime) < (secondsPerPixel * 8)
 
@@ -302,7 +283,6 @@ struct KeyframeTracksView: View {
             .onChanged { value in
                 guard !isPinching else { return }
 
-                // Double-tap-hold zoom detection
                 if !isDoubleTapZoomMode && !isDragging {
                     if let tapTime = lastTapTime {
                         let timeSinceTap = Date().timeIntervalSince(tapTime)
@@ -322,7 +302,6 @@ struct KeyframeTracksView: View {
                     return
                 }
 
-                // Seek drag
                 if !isDragging {
                     isDragging = true
                     dragStartDisplayTime = effectiveDisplayTime
@@ -369,7 +348,6 @@ struct KeyframeTracksView: View {
 
 // MARK: - Keyframe Triangle Shape
 
-/// A small downward-pointing triangle indicator used on keyframe tracks.
 private struct KeyframeTriangle: View {
     let color: Color
     let size: CGFloat
@@ -386,13 +364,12 @@ private struct KeyframeTriangle: View {
     }
 }
 
-/// A downward-pointing triangle shape (apex at bottom center).
 private struct DownTriangle: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))       // top-left
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))     // top-right
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))     // bottom-center
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
         path.closeSubpath()
         return path
     }

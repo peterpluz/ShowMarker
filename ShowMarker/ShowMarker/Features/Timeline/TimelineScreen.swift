@@ -615,9 +615,10 @@ struct TimelineScreen: View {
             }
             .padding(.bottom, 8)
 
-            // MARK: Flexible middle — Timeline bar + keyframe tracks
-            // GeometryReader fills the remaining space after fixed elements.
-            // The waveform height is computed from available space minus keyframe tracks overhead.
+            // MARK: Flexible middle — Unified Timeline Container
+            // Single coordinate system: waveform and keyframe tracks share the same
+            // width, origin.x, and zoom scale. The playhead is a single element
+            // spanning both layers — no duplication, no manual offset compensation.
             GeometryReader { geo in
                 let available = geo.size.height
                 let kfHeight: CGFloat = showKeyframeTracks ? keyframeTracksEstimatedHeight : 0
@@ -625,23 +626,40 @@ struct TimelineScreen: View {
                 // TimelineBarView overhead: overview indicator(6) + spacing(8) + ruler(24) + spacing(8) = 46
                 let timelineOverhead: CGFloat = hasAudio ? 46 : 0
                 let wfHeight = max(60, available - kfHeight - kfSpacing - timelineOverhead)
+                let centerX = geo.size.width / 2
 
-                VStack(spacing: 8) {
-                    timelineBar(waveformHeight: wfHeight)
+                ZStack(alignment: .topLeading) {
+                    // Content layer — waveform + keyframes in VStack
+                    VStack(spacing: 8) {
+                        timelineBar(waveformHeight: wfHeight)
 
-                    if showKeyframeTracks {
-                        KeyframeTracksView(
-                            duration: viewModel.duration,
-                            currentTime: viewModel.currentTime,
-                            markers: viewModel.visibleMarkers,
-                            tags: viewModel.tags,
-                            prerollSeconds: viewModel.prerollSeconds,
-                            zoomScale: $viewModel.zoomScale,
-                            effectiveDisplayTime: viewModel.currentTime + viewModel.prerollSeconds,
-                            onSeek: { viewModel.seek(to: $0) },
-                            onScrubStart: { viewModel.startScrubbing() },
-                            onScrubEnd: { viewModel.stopScrubbing() }
-                        )
+                        if showKeyframeTracks {
+                            KeyframeTracksView(
+                                duration: viewModel.duration,
+                                currentTime: viewModel.currentTime,
+                                markers: viewModel.visibleMarkers,
+                                tags: viewModel.tags,
+                                prerollSeconds: viewModel.prerollSeconds,
+                                zoomScale: $viewModel.zoomScale,
+                                effectiveDisplayTime: viewModel.currentTime + viewModel.prerollSeconds,
+                                onSeek: { viewModel.seek(to: $0) },
+                                onScrubStart: { viewModel.startScrubbing() },
+                                onScrubEnd: { viewModel.stopScrubbing() }
+                            )
+                        }
+                    }
+
+                    // Unified playhead — single element spanning waveform + keyframes
+                    // Starts below the chrome area (overview + ruler) and extends
+                    // through the waveform and keyframe tracks.
+                    if hasAudio {
+                        let playheadHeight = wfHeight + (showKeyframeTracks ? kfSpacing + kfHeight : 0)
+
+                        Rectangle()
+                            .fill(Color.accentColor)
+                            .frame(width: 2, height: playheadHeight)
+                            .offset(x: centerX - 1, y: timelineOverhead)
+                            .allowsHitTesting(false)
                     }
                 }
             }

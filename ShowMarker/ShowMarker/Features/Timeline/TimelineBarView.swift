@@ -549,10 +549,7 @@ struct TimelineBarView: View {
                 ))
             }
 
-            Rectangle()
-                .fill(Color.accentColor)
-                .frame(width: Self.playheadLineWidth, height: barHeight)
-                .position(x: centerX, y: barHeight / 2)
+            // Playhead is rendered by the parent TimelineContainer (unified across waveform + keyframes)
         }
         .gesture(doubleTapGesture())
         .gesture(playheadDrag(secondsPerPixel: secondsPerPixel))
