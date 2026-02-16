@@ -269,7 +269,10 @@ struct TimelineScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    customNavigationTitle
+                    Text(viewModel.name)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
                 }
                 toolbarContent
             }

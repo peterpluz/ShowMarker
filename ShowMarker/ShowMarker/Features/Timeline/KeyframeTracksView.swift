@@ -110,14 +110,9 @@ struct KeyframeTracksView: View {
             }
         }
         .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.secondary.opacity(0.04))
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        // Gesture overlay (zoom, seek, double-tap-hold) — uses full width
+        // No separate background or clipShape — keyframes are a seamless
+        // continuation of the timeline, not a separate block
         .overlay(gestureOverlay)
-        // Label panel floats on the leading edge — does NOT affect coordinate system
         .overlay(alignment: .leading) {
             labelOverlay
         }
@@ -127,7 +122,7 @@ struct KeyframeTracksView: View {
 
     private var labelOverlay: some View {
         HStack(spacing: 0) {
-            // Tag labels
+            // Tag labels — left edge aligns with waveform left edge
             VStack(spacing: 0) {
                 ForEach(Array(activeTags.enumerated()), id: \.element.id) { index, tag in
                     let tagColor = Color(hex: tag.colorHex)
@@ -154,26 +149,17 @@ struct KeyframeTracksView: View {
                         alignment: isLabelCollapsed ? .center : .leading
                     )
                     .padding(.leading, isLabelCollapsed ? 0 : 4)
-                    .background(tagColor.opacity(0.1))
+                    .background(tagColor.opacity(0.12))
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(.ultraThinMaterial)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            // Sheet-style grab handle
-            ZStack {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.06))
-                Capsule()
-                    .fill(Color.secondary.opacity(0.35))
-                    .frame(width: 4, height: 32)
-            }
-            .frame(width: Self.handleWidth)
-            .contentShape(Rectangle())
-            .gesture(labelResizeGesture)
+            // Grab handle — always at the right edge of the label panel
+            Capsule()
+                .fill(Color.secondary.opacity(0.35))
+                .frame(width: 4, height: 28)
+                .padding(.horizontal, 5)
+                .contentShape(Rectangle().inset(by: -8))
+                .gesture(labelResizeGesture)
         }
         .padding(.vertical, 4)
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: labelWidth)
