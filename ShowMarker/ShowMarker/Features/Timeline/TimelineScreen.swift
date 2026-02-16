@@ -266,14 +266,9 @@ struct TimelineScreen: View {
                 // Player sheet
                 playerSheet(screenHeight: screenHeight)
             }
+            .navigationTitle(viewModel.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Text(viewModel.name)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                }
                 toolbarContent
             }
         }
