@@ -103,6 +103,7 @@ struct KeyframeTracksView: View {
                             Text(String(tag.name.prefix(1)).uppercased())
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(c)
+                                .padding(.leading, 4)
                         } else {
                             Text(tag.name)
                                 .font(.system(size: 9, weight: .semibold))
@@ -112,15 +113,15 @@ struct KeyframeTracksView: View {
                         }
                     }
                     .frame(width: labelWidth, height: Self.trackHeight,
-                           alignment: isLabelCollapsed ? .center : .leading)
+                           alignment: .leading)
                     .background(c.opacity(0.12))
                 }
             }
 
-            // Resize divider — pinned at x = labelWidth
+            // Resize divider — pinned at x = labelWidth, same height as label column
             Rectangle()
                 .fill(Color.secondary.opacity(0.3))
-                .frame(width: 3)
+                .frame(width: 3, height: CGFloat(activeTags.count) * Self.trackHeight)
                 .contentShape(Rectangle().inset(by: -10))
                 .gesture(labelResizeGesture)
         }

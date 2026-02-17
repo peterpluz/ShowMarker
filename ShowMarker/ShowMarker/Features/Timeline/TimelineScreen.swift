@@ -275,6 +275,7 @@ struct TimelineScreen: View {
             // Right 2/3 — full player with timeline + keyframes
             fullPlayerContent(isLandscape: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
         }
     }
 
@@ -705,8 +706,8 @@ struct TimelineScreen: View {
 
             addMarkerButton
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 24)
+        .padding(.horizontal, isLandscape ? 12 : 24)
+        .padding(.bottom, isLandscape ? 8 : 24)
         .padding(.top, 4)
     }
 
