@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Keyframe tracks below the waveform — one row per tag.
 ///
@@ -6,8 +7,9 @@ import SwiftUI
 /// - Track rows use the FULL parent width — identical coordinate system to the waveform.
 ///   centerX = viewportWidth / 2, contentWidth = max(viewportWidth * zoomScale, viewportWidth).
 /// - Playhead is NOT rendered here — the parent provides a single unified playhead.
-/// - Labels and resize divider are embedded in each row using explicit .position(x:y:)
-///   so they are always at the left edge regardless of zoom/scroll state.
+/// - Label column is a separate opaque overlay rendered ON TOP of the gesture layer,
+///   so label area gestures (resize drag) take priority over timeline gestures.
+/// - Keyframe flash is event-based, synced with marker card flash via markerFlashPublisher.
 struct KeyframeTracksView: View {
 
     let duration: Double
@@ -18,6 +20,7 @@ struct KeyframeTracksView: View {
 
     @Binding var zoomScale: CGFloat
     let effectiveDisplayTime: Double
+    let markerFlashPublisher: PassthroughSubject<TimelineViewModel.MarkerFlashEvent, Never>
 
     let onSeek: (Double) -> Void
     var onScrubStart: (() -> Void)? = nil
@@ -28,13 +31,19 @@ struct KeyframeTracksView: View {
     @State private var labelWidth: CGFloat = Self.labelExpandedWidth
     @State private var labelDragStartWidth: CGFloat? = nil
 
-    private static let labelExpandedWidth: CGFloat = 60
-    private static let labelCollapsedWidth: CGFloat = 24
-    private static let labelCollapseThreshold: CGFloat = 42
+    private static let labelExpandedWidth: CGFloat = 80
+    private static let labelCollapsedWidth: CGFloat = 20
+    private static let labelCollapseThreshold: CGFloat = 40
+    private static let labelMinWidth: CGFloat = 20
+    private static let labelMaxWidth: CGFloat = 120
 
     private var isLabelCollapsed: Bool {
         labelWidth < Self.labelCollapseThreshold
     }
+
+    // MARK: - Flash State
+
+    @State private var flashingMarkerIDs: Set<UUID> = []
 
     // MARK: - Gesture State
 
@@ -81,17 +90,21 @@ struct KeyframeTracksView: View {
             }
         }
         .padding(.vertical, 4)
+        // 1. Gesture overlay — seek/pinch/zoom on the timeline area
         .overlay(gestureOverlay)
+        // 2. Opaque label column ON TOP — its gestures take priority over gesture overlay
+        .overlay { labelColumnOverlay }
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: labelWidth)
+        .onReceive(markerFlashPublisher) { event in
+            flashingMarkerIDs.insert(event.markerID)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                flashingMarkerIDs.remove(event.markerID)
+            }
+        }
     }
 
-    // MARK: - Keyframe Row
+    // MARK: - Keyframe Row (only scrollable content — no labels)
 
-    /// Each row contains ALL elements positioned explicitly:
-    /// 1. Colored background strip — scrolls with content
-    /// 2. Keyframe triangles — scroll with content
-    /// 3. Label — FIXED at x=0 (left edge), never moves
-    /// 4. Resize divider — FIXED at x=labelWidth, never moves
     private func keyframeRow(for tag: Tag) -> some View {
         let tagColor = Color(hex: tag.colorHex)
         let tagMarkers = markersByTag[tag.id] ?? []
@@ -99,64 +112,97 @@ struct KeyframeTracksView: View {
         return GeometryReader { geo in
             let vw = geo.size.width
             let cw = max(vw * zoomScale, vw)
-            let spp = effectiveDuration > 0 ? effectiveDuration / cw : 0
             let cx = vw / 2
             let off = effectiveDuration > 0
                 ? (effectiveDisplayTime / effectiveDuration) * cw : 0
             let midY = Self.trackHeight / 2
 
             ZStack {
-                // 1. Background strip — scrolls with timeline
+                // Background strip — scrolls with timeline
                 Rectangle()
                     .fill(tagColor.opacity(0.08))
                     .frame(width: cw, height: Self.trackHeight)
                     .position(x: cx - off + cw / 2, y: midY)
 
-                // 2. Keyframe triangles — scroll with timeline
+                // Keyframe triangles — scroll with timeline
                 ForEach(tagMarkers, id: \.id) { marker in
                     let dt = audioToDisplayTime(marker.timeSeconds)
                     let np = effectiveDuration > 0 ? dt / effectiveDuration : 0
                     let mx = cx - off + np * cw
+                    let isFlashing = flashingMarkerIDs.contains(marker.id)
 
                     if mx > -Self.keySize && mx < vw + Self.keySize {
                         KeyframeTriangle(
                             color: tagColor,
                             size: Self.keySize,
-                            isHighlighted: abs(marker.timeSeconds - currentTime) < spp * 8
+                            isHighlighted: isFlashing
                         )
                         .position(x: mx, y: midY)
                     }
                 }
-
-                // 3. Label — FIXED at left edge (x = labelWidth/2 centers it in label area)
-                HStack(spacing: 0) {
-                    if isLabelCollapsed {
-                        Text(String(tag.name.prefix(1)).uppercased())
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(tagColor)
-                    } else {
-                        Text(tag.name)
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(tagColor)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, 4)
-                .frame(width: labelWidth, height: Self.trackHeight)
-                .background(tagColor.opacity(0.12))
-                .position(x: labelWidth / 2, y: midY)
-
-                // 4. Resize divider — at right edge of label column
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.3))
-                    .frame(width: 3, height: Self.trackHeight)
-                    .contentShape(Rectangle().inset(by: -10))
-                    .position(x: labelWidth + 1.5, y: midY)
-                    .gesture(labelResizeGesture)
             }
         }
         .frame(height: Self.trackHeight)
+    }
+
+    // MARK: - Label Column Overlay
+
+    /// Opaque label panel rendered as a GeometryReader overlay with explicit .position().
+    /// Sits ON TOP of the gesture overlay so resize drag is never intercepted.
+    private var labelColumnOverlay: some View {
+        GeometryReader { geo in
+            let totalH = geo.size.height
+            let midY = totalH / 2
+
+            // Opaque column background — fully covers keyframes underneath
+            Rectangle()
+                .fill(Color(UIColor.secondarySystemBackground))
+                .frame(width: labelWidth, height: totalH)
+                .position(x: labelWidth / 2, y: midY)
+
+            // Per-row label texts
+            VStack(spacing: 0) {
+                ForEach(Array(activeTags.enumerated()), id: \.element.id) { index, tag in
+                    let c = Color(hex: tag.colorHex)
+                    if index > 0 {
+                        Divider().frame(width: labelWidth).opacity(0.2)
+                    }
+
+                    HStack(spacing: 0) {
+                        if isLabelCollapsed {
+                            Text(String(tag.name.prefix(1)).uppercased())
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(c)
+                        } else {
+                            Text(tag.name)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(c)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 4)
+                    .frame(height: Self.trackHeight)
+                }
+            }
+            .frame(width: labelWidth)
+            .padding(.vertical, 4)
+            .position(x: labelWidth / 2, y: midY)
+
+            // Resize divider — draggable vertical line at right edge of label column
+            Rectangle()
+                .fill(Color.secondary.opacity(0.4))
+                .frame(width: 2, height: totalH)
+                .position(x: labelWidth + 1, y: midY)
+
+            // Invisible wide hit area for the resize gesture
+            Color.clear
+                .frame(width: 20, height: totalH)
+                .contentShape(Rectangle())
+                .position(x: labelWidth + 1, y: midY)
+                .gesture(labelResizeGesture)
+        }
+        .allowsHitTesting(true)
     }
 
     // MARK: - Label Resize Gesture
@@ -166,16 +212,19 @@ struct KeyframeTracksView: View {
             .onChanged { value in
                 if labelDragStartWidth == nil { labelDragStartWidth = labelWidth }
                 guard let start = labelDragStartWidth else { return }
+                let newWidth = start + value.translation.width
                 withAnimation(.interactiveSpring()) {
-                    labelWidth = max(Self.labelCollapsedWidth,
-                                     min(Self.labelExpandedWidth, start + value.translation.width))
+                    labelWidth = max(Self.labelMinWidth, min(Self.labelMaxWidth, newWidth))
                 }
             }
             .onEnded { _ in
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                    labelWidth = labelWidth < Self.labelCollapseThreshold
-                        ? Self.labelCollapsedWidth
-                        : Self.labelExpandedWidth
+                    if labelWidth < Self.labelCollapseThreshold {
+                        labelWidth = Self.labelCollapsedWidth
+                    } else if labelWidth < Self.labelExpandedWidth {
+                        labelWidth = Self.labelExpandedWidth
+                    }
+                    // If dragged wider than default, keep the custom width
                 }
                 labelDragStartWidth = nil
             }
@@ -260,9 +309,11 @@ private struct KeyframeTriangle: View {
     var body: some View {
         DownTriangle()
             .fill(color.opacity(isHighlighted ? 1.0 : 0.7))
-            .frame(width: size, height: size)
-            .shadow(color: isHighlighted ? color.opacity(0.6) : .clear,
-                    radius: isHighlighted ? 3 : 0)
+            .frame(width: isHighlighted ? size * 1.3 : size,
+                   height: isHighlighted ? size * 1.3 : size)
+            .shadow(color: isHighlighted ? color.opacity(0.8) : .clear,
+                    radius: isHighlighted ? 4 : 0)
+            .animation(.easeOut(duration: 0.15), value: isHighlighted)
     }
 }
 

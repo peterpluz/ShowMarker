@@ -589,6 +589,7 @@ struct TimelineScreen: View {
                                 prerollSeconds: viewModel.prerollSeconds,
                                 zoomScale: $viewModel.zoomScale,
                                 effectiveDisplayTime: viewModel.currentTime + viewModel.prerollSeconds,
+                                markerFlashPublisher: viewModel.markerFlashPublisher,
                                 onSeek: { viewModel.seek(to: $0) },
                                 onScrubStart: { viewModel.startScrubbing() },
                                 onScrubEnd: { viewModel.stopScrubbing() }
