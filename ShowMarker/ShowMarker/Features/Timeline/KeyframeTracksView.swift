@@ -98,22 +98,21 @@ struct KeyframeTracksView: View {
                     let c = Color(hex: tag.colorHex)
                     if index > 0 { Divider().opacity(0.15) }
 
-                    Group {
+                    HStack(spacing: 0) {
                         if isLabelCollapsed {
                             Text(String(tag.name.prefix(1)).uppercased())
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(c)
-                                .padding(.leading, 4)
                         } else {
                             Text(tag.name)
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundColor(c)
                                 .lineLimit(1)
-                                .padding(.leading, 4)
                         }
+                        Spacer(minLength: 0)
                     }
-                    .frame(width: labelWidth, height: Self.trackHeight,
-                           alignment: .leading)
+                    .padding(.leading, 4)
+                    .frame(width: labelWidth, height: Self.trackHeight)
                     .background(c.opacity(0.12))
                 }
             }

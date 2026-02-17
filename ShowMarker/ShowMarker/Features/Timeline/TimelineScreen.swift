@@ -556,114 +556,27 @@ struct TimelineScreen: View {
     }
 
     private func fullPlayerContent(isLandscape: Bool = false) -> some View {
-        VStack(spacing: 16) {
-            // MARK: Fixed top — Undo/Redo, Tag Filter, Metronome buttons
-            HStack(spacing: 8) {
-                // Tag filter button
-                Button {
-                    isTagFilterPresented = true
-                } label: {
-                    Image(systemName: hasActiveFilter ? "line.horizontal.3.decrease.circle.fill" : "line.horizontal.3.decrease")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(hasActiveFilter ? .accentColor : .primary)
-                        .frame(height: 36)
-                        .padding(.horizontal, 14)
-                }
-                .glassEffect(.regular.interactive(), in: .capsule)
-
-                // Metronome indicator (only if BPM is set)
-                if viewModel.bpm != nil {
-                    Button {
-                        viewModel.toggleMetronome()
-                    } label: {
-                        MetronomeIcon(
-                            isPlaying: viewModel.isMetronomeEnabled,
-                            currentBeat: viewModel.currentBeat,
-                            isEnabled: viewModel.isMetronomeUserEnabled
-                        )
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(viewModel.isMetronomeUserEnabled ? .accentColor : .primary)
-                        .frame(height: 36)
-                        .padding(.horizontal, 14)
-                    }
-                    .glassEffect(.regular.interactive(), in: .capsule)
-                }
-
-                Spacer()
-
-                // Undo/Redo buttons — tap = single undo/redo, long-press = history menu
-                HStack(spacing: 0) {
-                    Menu {
-                        ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
-                            Button {
-                                viewModel.undoManager.undoToIndex(offset)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.description)
-                                        .font(.system(size: 15, weight: .regular))
-                                    Text(item.timeAgo)
-                                        .font(.system(size: 12, weight: .regular))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(viewModel.undoManager.canUndo ? .primary : .secondary)
-                            .frame(width: 40, height: 36)
-                    } primaryAction: {
-                        viewModel.undoManager.undo()
-                    }
-                    .disabled(!viewModel.undoManager.canUndo)
-
-                    Divider()
-                        .frame(height: 20)
-
-                    Menu {
-                        ForEach(Array(viewModel.undoManager.getRedoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
-                            Button {
-                                viewModel.undoManager.redoToIndex(offset)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.description)
-                                        .font(.system(size: 15, weight: .regular))
-                                    Text(item.timeAgo)
-                                        .font(.system(size: 12, weight: .regular))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.uturn.forward")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(viewModel.undoManager.canRedo ? .primary : .secondary)
-                            .frame(width: 40, height: 36)
-                    } primaryAction: {
-                        viewModel.undoManager.redo()
-                    }
-                    .disabled(!viewModel.undoManager.canRedo)
-                }
-                .glassEffect(.regular.interactive(), in: .capsule)
+        VStack(spacing: isLandscape ? 4 : 16) {
+            if isLandscape {
+                // MARK: Landscape — compact control bar above timeline
+                landscapeControlBar
+            } else {
+                // MARK: Portrait — standard toolbar buttons
+                portraitToolbarButtons
+                    .padding(.bottom, 8)
             }
-            .padding(.bottom, 8)
 
             // MARK: Flexible middle — Unified Timeline Container
-            // Single coordinate system: waveform and keyframe tracks share the same
-            // width, origin.x, and zoom scale. The playhead is a single element
-            // spanning both layers — no duplication, no manual offset compensation.
             GeometryReader { geo in
                 let available = geo.size.height
                 let showKF = showKeyframeTracks(isLandscape: isLandscape)
                 let kfHeight: CGFloat = showKF ? keyframeTracksEstimatedHeight : 0
                 let kfSpacing: CGFloat = showKF ? 8 : 0
-                // TimelineBarView overhead: overview indicator(6) + spacing(8) + ruler(24) + spacing(8) = 46
                 let timelineOverhead: CGFloat = hasAudio ? 46 : 0
                 let wfHeight = max(60, available - kfHeight - kfSpacing - timelineOverhead)
                 let centerX = geo.size.width / 2
 
                 ZStack(alignment: .topLeading) {
-                    // Content layer — waveform + keyframes in VStack
                     VStack(spacing: 8) {
                         timelineBar(waveformHeight: wfHeight)
 
@@ -683,9 +596,6 @@ struct TimelineScreen: View {
                         }
                     }
 
-                    // Unified playhead — single element spanning waveform + keyframes
-                    // Starts below the chrome area (overview + ruler) and extends
-                    // through the waveform and keyframe tracks.
                     if hasAudio {
                         let playheadHeight = wfHeight + (showKF ? kfSpacing + kfHeight : 0)
 
@@ -698,17 +608,254 @@ struct TimelineScreen: View {
                 }
             }
 
-            // MARK: Fixed bottom — Timecode, controls, marker button
-            if hasAudio {
-                timecode
-                playbackControls
+            if !isLandscape {
+                // MARK: Portrait bottom — Timecode, controls, marker button
+                if hasAudio {
+                    timecode
+                    playbackControls
+                }
+                addMarkerButton
+            }
+        }
+        .padding(.horizontal, isLandscape ? 8 : 24)
+        .padding(.bottom, isLandscape ? 4 : 24)
+        .padding(.top, 4)
+    }
+
+    // MARK: - Landscape Compact Control Bar
+
+    /// Single horizontal row: timecode | rewind | play | forward | add marker
+    /// All elements compact to leave maximum vertical space for timeline.
+    private var landscapeControlBar: some View {
+        HStack(spacing: 12) {
+            // Tag filter
+            Button {
+                isTagFilterPresented = true
+            } label: {
+                Image(systemName: hasActiveFilter ? "line.horizontal.3.decrease.circle.fill" : "line.horizontal.3.decrease")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(hasActiveFilter ? .accentColor : .primary)
+                    .frame(height: 28)
+                    .padding(.horizontal, 8)
+            }
+            .glassEffect(.regular.interactive(), in: .capsule)
+
+            // Metronome
+            if viewModel.bpm != nil {
+                Button {
+                    viewModel.toggleMetronome()
+                } label: {
+                    MetronomeIcon(
+                        isPlaying: viewModel.isMetronomeEnabled,
+                        currentBeat: viewModel.currentBeat,
+                        isEnabled: viewModel.isMetronomeUserEnabled
+                    )
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(viewModel.isMetronomeUserEnabled ? .accentColor : .primary)
+                    .frame(height: 28)
+                    .padding(.horizontal, 8)
+                }
+                .glassEffect(.regular.interactive(), in: .capsule)
             }
 
-            addMarkerButton
+            Spacer()
+
+            if hasAudio {
+                // Compact timecode
+                Text(viewModel.timecode())
+                    .font(.system(size: 16, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundColor(viewModel.isPlaying ? .green : .primary)
+                    .opacity(timelineRedrawTrigger ? 0.9999 : 1.0)
+
+                // Compact playback controls
+                HStack(spacing: 16) {
+                    Button { viewModel.seekBackward() } label: {
+                        Image(systemName: "gobackward.5")
+                            .font(.system(size: 18, weight: .medium))
+                    }
+                    .frame(width: 28, height: 28)
+
+                    Button { playButtonAction() } label: {
+                        Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 22, weight: .medium))
+                    }
+                    .frame(width: 32, height: 32)
+                    .scaleEffect(playButtonScale)
+
+                    Button { viewModel.seekForward() } label: {
+                        Image(systemName: "goforward.5")
+                            .font(.system(size: 18, weight: .medium))
+                    }
+                    .frame(width: 28, height: 28)
+                }
+                .foregroundColor(.primary)
+            }
+
+            Spacer()
+
+            // Undo/Redo
+            HStack(spacing: 0) {
+                Menu {
+                    ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
+                        Button {
+                            viewModel.undoManager.undoToIndex(offset)
+                        } label: {
+                            Text(item.description)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(viewModel.undoManager.canUndo ? .primary : .secondary)
+                        .frame(width: 28, height: 28)
+                } primaryAction: {
+                    viewModel.undoManager.undo()
+                }
+                .disabled(!viewModel.undoManager.canUndo)
+
+                Divider().frame(height: 16)
+
+                Menu {
+                    ForEach(Array(viewModel.undoManager.getRedoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
+                        Button {
+                            viewModel.undoManager.redoToIndex(offset)
+                        } label: {
+                            Text(item.description)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.uturn.forward")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(viewModel.undoManager.canRedo ? .primary : .secondary)
+                        .frame(width: 28, height: 28)
+                } primaryAction: {
+                    viewModel.undoManager.redo()
+                }
+                .disabled(!viewModel.undoManager.canRedo)
+            }
+            .glassEffect(.regular.interactive(), in: .capsule)
+
+            // Compact add marker button
+            Button {
+                markerCreationTime = viewModel.currentTime
+                if viewModel.shouldShowMarkerPopup {
+                    wasPlayingBeforePopup = viewModel.isPlaying
+                    if viewModel.shouldPauseOnMarkerCreation && wasPlayingBeforePopup {
+                        viewModel.pausePlayback()
+                    }
+                    isMarkerNamePopupPresented = true
+                } else {
+                    let markerNumber = viewModel.markers.count + 1
+                    let defaultName = "Marker \(markerNumber)"
+                    let defaultTag = viewModel.defaultTag ?? viewModel.tags.first!
+                    viewModel.addMarker(name: defaultName, tagId: defaultTag.id, at: markerCreationTime)
+                }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color.accentColor.gradient))
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasAudio)
+            .opacity(hasAudio ? 1 : 0.5)
         }
-        .padding(.horizontal, isLandscape ? 12 : 24)
-        .padding(.bottom, isLandscape ? 8 : 24)
-        .padding(.top, 4)
+        .frame(height: 36)
+    }
+
+    // MARK: - Portrait Toolbar Buttons
+
+    private var portraitToolbarButtons: some View {
+        HStack(spacing: 8) {
+            // Tag filter button
+            Button {
+                isTagFilterPresented = true
+            } label: {
+                Image(systemName: hasActiveFilter ? "line.horizontal.3.decrease.circle.fill" : "line.horizontal.3.decrease")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(hasActiveFilter ? .accentColor : .primary)
+                    .frame(height: 36)
+                    .padding(.horizontal, 14)
+            }
+            .glassEffect(.regular.interactive(), in: .capsule)
+
+            // Metronome indicator (only if BPM is set)
+            if viewModel.bpm != nil {
+                Button {
+                    viewModel.toggleMetronome()
+                } label: {
+                    MetronomeIcon(
+                        isPlaying: viewModel.isMetronomeEnabled,
+                        currentBeat: viewModel.currentBeat,
+                        isEnabled: viewModel.isMetronomeUserEnabled
+                    )
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(viewModel.isMetronomeUserEnabled ? .accentColor : .primary)
+                    .frame(height: 36)
+                    .padding(.horizontal, 14)
+                }
+                .glassEffect(.regular.interactive(), in: .capsule)
+            }
+
+            Spacer()
+
+            // Undo/Redo buttons
+            HStack(spacing: 0) {
+                Menu {
+                    ForEach(Array(viewModel.undoManager.getUndoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
+                        Button {
+                            viewModel.undoManager.undoToIndex(offset)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.description)
+                                    .font(.system(size: 15, weight: .regular))
+                                Text(item.timeAgo)
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(viewModel.undoManager.canUndo ? .primary : .secondary)
+                        .frame(width: 40, height: 36)
+                } primaryAction: {
+                    viewModel.undoManager.undo()
+                }
+                .disabled(!viewModel.undoManager.canUndo)
+
+                Divider()
+                    .frame(height: 20)
+
+                Menu {
+                    ForEach(Array(viewModel.undoManager.getRedoHistory(limit: 10).enumerated()), id: \.offset) { offset, item in
+                        Button {
+                            viewModel.undoManager.redoToIndex(offset)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.description)
+                                    .font(.system(size: 15, weight: .regular))
+                                Text(item.timeAgo)
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.uturn.forward")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(viewModel.undoManager.canRedo ? .primary : .secondary)
+                        .frame(width: 40, height: 36)
+                } primaryAction: {
+                    viewModel.undoManager.redo()
+                }
+                .disabled(!viewModel.undoManager.canRedo)
+            }
+            .glassEffect(.regular.interactive(), in: .capsule)
+        }
     }
 
     private func timelineBar(waveformHeight: CGFloat = 140) -> some View {
