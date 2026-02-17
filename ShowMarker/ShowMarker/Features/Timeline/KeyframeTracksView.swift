@@ -5,11 +5,9 @@ import SwiftUI
 /// Architecture:
 /// - Track rows use the FULL parent width — identical coordinate system to the waveform.
 ///   centerX = viewportWidth / 2, contentWidth = max(viewportWidth * zoomScale, viewportWidth).
-///   No manual offset compensation. Left edge of tracks = left edge of waveform.
 /// - Playhead is NOT rendered here — the parent provides a single unified playhead.
-/// - Label panel floats as an .overlay(alignment: .leading) so it does NOT affect
-///   the coordinate system. Changing label width cannot cause X desync.
-/// - Resize divider is pinned at x = labelWidth (right edge of labels).
+/// - Labels and resize divider are embedded in each row using explicit .position(x:y:)
+///   so they are always at the left edge regardless of zoom/scroll state.
 struct KeyframeTracksView: View {
 
     let duration: Double
@@ -76,7 +74,6 @@ struct KeyframeTracksView: View {
     // MARK: - Body
 
     var body: some View {
-        // Full-width track rows — same coordinate space as waveform
         VStack(spacing: 0) {
             ForEach(Array(activeTags.enumerated()), id: \.element.id) { index, tag in
                 if index > 0 { Divider().opacity(0.15) }
@@ -85,47 +82,81 @@ struct KeyframeTracksView: View {
         }
         .padding(.vertical, 4)
         .overlay(gestureOverlay)
-        .overlay(alignment: .leading) { labelOverlay }
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: labelWidth)
     }
 
-    // MARK: - Label Overlay
+    // MARK: - Keyframe Row
 
-    private var labelOverlay: some View {
-        HStack(spacing: 0) {
-            // Tag name labels — left edge = waveform left edge (no internal padding)
-            VStack(spacing: 0) {
-                ForEach(Array(activeTags.enumerated()), id: \.element.id) { index, tag in
-                    let c = Color(hex: tag.colorHex)
-                    if index > 0 { Divider().opacity(0.15) }
+    /// Each row contains ALL elements positioned explicitly:
+    /// 1. Colored background strip — scrolls with content
+    /// 2. Keyframe triangles — scroll with content
+    /// 3. Label — FIXED at x=0 (left edge), never moves
+    /// 4. Resize divider — FIXED at x=labelWidth, never moves
+    private func keyframeRow(for tag: Tag) -> some View {
+        let tagColor = Color(hex: tag.colorHex)
+        let tagMarkers = markersByTag[tag.id] ?? []
 
-                    HStack(spacing: 0) {
-                        if isLabelCollapsed {
-                            Text(String(tag.name.prefix(1)).uppercased())
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(c)
-                        } else {
-                            Text(tag.name)
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundColor(c)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
+        return GeometryReader { geo in
+            let vw = geo.size.width
+            let cw = max(vw * zoomScale, vw)
+            let spp = effectiveDuration > 0 ? effectiveDuration / cw : 0
+            let cx = vw / 2
+            let off = effectiveDuration > 0
+                ? (effectiveDisplayTime / effectiveDuration) * cw : 0
+            let midY = Self.trackHeight / 2
+
+            ZStack {
+                // 1. Background strip — scrolls with timeline
+                Rectangle()
+                    .fill(tagColor.opacity(0.08))
+                    .frame(width: cw, height: Self.trackHeight)
+                    .position(x: cx - off + cw / 2, y: midY)
+
+                // 2. Keyframe triangles — scroll with timeline
+                ForEach(tagMarkers, id: \.id) { marker in
+                    let dt = audioToDisplayTime(marker.timeSeconds)
+                    let np = effectiveDuration > 0 ? dt / effectiveDuration : 0
+                    let mx = cx - off + np * cw
+
+                    if mx > -Self.keySize && mx < vw + Self.keySize {
+                        KeyframeTriangle(
+                            color: tagColor,
+                            size: Self.keySize,
+                            isHighlighted: abs(marker.timeSeconds - currentTime) < spp * 8
+                        )
+                        .position(x: mx, y: midY)
                     }
-                    .padding(.leading, 4)
-                    .frame(width: labelWidth, height: Self.trackHeight)
-                    .background(c.opacity(0.12))
                 }
-            }
 
-            // Resize divider — pinned at x = labelWidth, same height as label column
-            Rectangle()
-                .fill(Color.secondary.opacity(0.3))
-                .frame(width: 3, height: CGFloat(activeTags.count) * Self.trackHeight)
-                .contentShape(Rectangle().inset(by: -10))
-                .gesture(labelResizeGesture)
+                // 3. Label — FIXED at left edge (x = labelWidth/2 centers it in label area)
+                HStack(spacing: 0) {
+                    if isLabelCollapsed {
+                        Text(String(tag.name.prefix(1)).uppercased())
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(tagColor)
+                    } else {
+                        Text(tag.name)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(tagColor)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 4)
+                .frame(width: labelWidth, height: Self.trackHeight)
+                .background(tagColor.opacity(0.12))
+                .position(x: labelWidth / 2, y: midY)
+
+                // 4. Resize divider — at right edge of label column
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(width: 3, height: Self.trackHeight)
+                    .contentShape(Rectangle().inset(by: -10))
+                    .position(x: labelWidth + 1.5, y: midY)
+                    .gesture(labelResizeGesture)
+            }
         }
-        .padding(.vertical, 4)
-        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: labelWidth)
+        .frame(height: Self.trackHeight)
     }
 
     // MARK: - Label Resize Gesture
@@ -162,47 +193,6 @@ struct KeyframeTracksView: View {
                 .gesture(seekDrag(secondsPerPixel: spp))
                 .simultaneousGesture(pinchGesture())
         }
-    }
-
-    // MARK: - Keyframe Row
-
-    private func keyframeRow(for tag: Tag) -> some View {
-        let tagColor = Color(hex: tag.colorHex)
-        let tagMarkers = markersByTag[tag.id] ?? []
-
-        return GeometryReader { geo in
-            let vw = geo.size.width
-            let cw = max(vw * zoomScale, vw)
-            let spp = effectiveDuration > 0 ? effectiveDuration / cw : 0
-            let cx = vw / 2
-            let off = effectiveDuration > 0
-                ? (effectiveDisplayTime / effectiveDuration) * cw : 0
-
-            ZStack {
-                // Background — same width as waveform content
-                Rectangle()
-                    .fill(tagColor.opacity(0.08))
-                    .frame(width: cw, height: Self.trackHeight)
-                    .position(x: cx - off + cw / 2, y: Self.trackHeight / 2)
-
-                // Keyframe triangles
-                ForEach(tagMarkers, id: \.id) { marker in
-                    let dt = audioToDisplayTime(marker.timeSeconds)
-                    let np = effectiveDuration > 0 ? dt / effectiveDuration : 0
-                    let mx = cx - off + np * cw
-
-                    if mx > -Self.keySize && mx < vw + Self.keySize {
-                        KeyframeTriangle(
-                            color: tagColor,
-                            size: Self.keySize,
-                            isHighlighted: abs(marker.timeSeconds - currentTime) < spp * 8
-                        )
-                        .position(x: mx, y: Self.trackHeight / 2)
-                    }
-                }
-            }
-        }
-        .frame(height: Self.trackHeight)
     }
 
     // MARK: - Gestures
